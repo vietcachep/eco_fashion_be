@@ -1,0 +1,21 @@
+import { Injectable } from '@nestjs/common';
+import { OutboxEventInput, writeOutboxEvent } from '@common/outbox/outbox';
+import { PrismaService } from '@common/prisma/prisma.service';
+import type { Tx } from '@common/prisma/types';
+
+/* Outbox product → product.outbox_events: PRODUCT_PUBLISHED/UPDATED/HIDDEN (ai nhúng lại), STOCK_LOW (thông báo kho). */
+@Injectable()
+export class ProductOutboxService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async publish(tx: Tx | null, input: OutboxEventInput): Promise<void> {
+    await writeOutboxEvent((tx ?? this.prisma).productOutboxEvent, input);
+  }
+
+  async markProcessed(tx: Tx, eventId: string, eventType: string, handler: string): Promise<boolean> {
+    const existing = await tx.productProcessedEvent.findUnique({ where: { eventId_handler: { eventId, handler } } });
+    if (existing) return false;
+    await tx.productProcessedEvent.create({ data: { eventId, eventType, handler } });
+    return true;
+  }
+}

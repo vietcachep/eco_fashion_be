@@ -1,0 +1,132 @@
+@startuml 04-erd-identity
+title ERD — schema identity (người dùng, vai, quyền, phiên, địa chỉ)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide circle
+
+entity "roles" as roles {
+  * id : uuid <<PK>>
+  --
+  * code : varchar(40) <<U>>  admin | manager | sales | warehouse | accountant | marketing | customer
+  * name : varchar(100)
+  description : varchar(255)
+  * is_system : boolean
+}
+
+entity "permissions" as permissions {
+  * id : uuid <<PK>>
+  --
+  * code : varchar(100) <<U>>  module.resource.action
+  * module_code : varchar(40)
+  * description : varchar(255)
+  * is_active : boolean
+}
+
+entity "role_permissions" as role_permissions {
+  * role_id : uuid <<PK,FK>>
+  * permission_id : uuid <<PK,FK>>
+  --
+  created_at, created_by
+}
+
+entity "users" as users {
+  * id : uuid <<PK>>
+  --
+  * email : varchar(255)  (unique WHERE is_deleted = false)
+  phone : varchar(20)
+  * password_hash : varchar(255)
+  * full_name : varchar(120)
+  avatar_url : varchar(500)
+  * role_id : uuid <<FK>>
+  * status : varchar(30)  pending_verification | active | locked | deleted
+  * permission_version : int
+  email_verified_at : timestamptz
+  last_login_at : timestamptz
+  locked_reason : varchar(255)
+  google_sub : varchar(64) <<U>>
+}
+
+entity "user_permissions" as user_permissions {
+  * user_id : uuid <<PK,FK>>
+  * permission_id : uuid <<PK,FK>>
+  --
+  * allowed : boolean  true = cấp thêm, false = chặn (deny thắng)
+  reason : varchar(255)
+}
+
+entity "refresh_tokens" as refresh_tokens {
+  * id : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  * token_hash : varchar(64) <<U>>  SHA-256
+  * family_id : uuid  thu hồi cả họ khi dùng lại token đã xoay
+  device_name, ip_address, user_agent
+  * expires_at : timestamptz
+  revoked_at, revoked_reason, replaced_by_id, last_used_at
+}
+
+entity "login_histories" as login_histories {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid
+  * email : varchar(255)
+  * success : boolean
+  reason : varchar(40)
+  ip_address, user_agent
+  * created_at : timestamptz
+}
+
+entity "addresses" as addresses {
+  * id : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  * recipient_name : varchar(120)
+  * phone : varchar(20)
+  province_code : varchar(10)
+  * province_name : varchar(100)
+  district_name, ward_name : varchar(100)
+  * street : varchar(255)
+  * is_default : boolean  (một mặc định / user)
+  note : varchar(255)
+}
+
+entity "audit_logs" as audit_logs {
+  * id : uuid <<PK>>
+  --
+  actor_user_id, actor_email
+  * action, module_code, entity_type
+  entity_id, entity_code, request_id, idempotency_key
+  before_summary, after_summary : jsonb
+  ip_address, user_agent
+  * created_at
+}
+
+entity "outbox_events / processed_events" as outbox {
+  * id : uuid <<PK>>
+  --
+  event_type, aggregate_type, aggregate_id, payload
+  status PENDING | SENT | FAILED, retry_count, next_attempt_at
+}
+
+roles ||--o{ users
+roles ||--o{ role_permissions
+permissions ||--o{ role_permissions
+users ||--o{ user_permissions
+permissions ||--o{ user_permissions
+users ||--o{ refresh_tokens
+users ||--o{ addresses
+users ||..o{ login_histories : user_id (null khi sai email)
+
+note bottom of users
+  Khách lẫn nhân viên cùng bảng, phân biệt bằng vai.
+  Quyền hiệu lực = quyền của vai ∪ cấp riêng − chặn riêng.
+  Mọi bảng nghiệp vụ có thêm cột chuẩn: version, created_at/by,
+  updated_at/by, is_deleted (bỏ qua trong sơ đồ cho gọn).
+end note
+
+@enduml

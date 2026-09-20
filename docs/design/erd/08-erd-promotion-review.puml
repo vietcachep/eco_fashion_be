@@ -1,0 +1,89 @@
+@startuml 08-erd-promotion-review
+title ERD — schema promotion (mã giảm giá) và review (đánh giá)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide circle
+
+package "promotion" {
+  entity "promotions" as promotions {
+    * id : uuid <<PK>>
+    --
+    * code : varchar(40)  (unique upper(code) sống)
+    * name : varchar(200)
+    description : varchar(500)
+    * type : varchar(20)  percentage | fixed_amount | free_shipping
+    * value : numeric(14,2)  % hoặc VND
+    max_discount : numeric(14,0)
+    * min_order_amount : numeric(14,0)
+    usage_limit, usage_limit_per_user : int
+    * used_count : int
+    * applies_to : varchar(20)  all | category | product
+    * starts_at, ends_at : timestamptz
+    * is_active, is_public : boolean
+  }
+  entity "promotion_targets" as promotion_targets {
+    * id : uuid <<PK>>
+    --
+    * promotion_id : uuid <<FK>>
+    * target_type : varchar(20)  category | product
+    * target_ref : varchar(160)  slug ngành / id sản phẩm
+    (unique promotion_id, target_type, target_ref)
+  }
+  entity "promotion_usages" as promotion_usages {
+    * id : uuid <<PK>>
+    --
+    * promotion_id : uuid <<FK>>
+    * user_id : uuid
+    * order_code : varchar(20)  (unique theo promotion)
+    * discount_amount : numeric(14,0)
+    released_at : timestamptz  khi huỷ đơn (giữ dòng truy vết)
+  }
+}
+
+package "review" {
+  entity "reviews" as reviews {
+    * id : uuid <<PK>>
+    --
+    * product_id : uuid
+    * product_slug, product_name : snapshot
+    * user_id : uuid
+    * author_name : varchar(120)
+    avatar_url
+    order_code : varchar(20)
+    order_item_id : uuid  (unique user_id + order_item_id: một dòng đơn một đánh giá)
+    variant_label : varchar(80)
+    * rating : int  CHECK 1..5
+    * content : text
+    * media : jsonb  MediaItem[]
+    * status : varchar(20)  pending | approved | hidden
+    moderation_note, moderated_by, moderated_at
+    * helpful_count : int
+  }
+  entity "review_replies" as review_replies {
+    * id : uuid <<PK>>
+    --
+    * review_id : uuid <<FK>>
+    * staff_user_id : uuid
+    * staff_name : varchar(120)
+    * content : text
+  }
+}
+
+promotions ||--o{ promotion_targets
+promotions ||--o{ promotion_usages
+reviews ||--o| review_replies : một trả lời / đánh giá
+
+note bottom of reviews
+  Chỉ khách có order_item đã delivered/completed mới được đánh giá.
+  Điểm avg_rating / review_count ghi sang product.products qua
+  ProductStatsGateway trong cùng transaction; outbox REVIEW_CREATED
+  cho AI tóm tắt + kiểm duyệt.
+end note
+
+@enduml

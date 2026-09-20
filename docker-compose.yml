@@ -1,0 +1,141 @@
+# =====================================================================
+# EcoFashion Backend — MỘT LỆNH LÀ CHẠY ĐƯỢC trên máy trống:
+#
+#     Copy-Item .env.example .env      # điền EF_OPENAI_API_KEY, EF_CLOUDINARY_*, EF_VNPAY_* nếu có
+#     docker compose up -d --build
+#
+# Thứ tự: db/redis/mailpit (healthy) → migrate (chạy 1 lần: migration + sync catalog quyền) → seed (chạy 1 lần,
+# idempotent: admin + dữ liệu demo) → api + worker. Bản .env của máy host dùng localhost:5434/6381 (chạy
+# ngoài docker); trong compose các URL đó được GHI ĐÈ sang tên service.
+# Cổng publish (không đụng dự án eco_books cùng máy): API 4000 · Postgres 5434 · Redis 6381 · Mailpit 8026/1026.
+# =====================================================================
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ecofashion-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecofashion
+      POSTGRES_USER: ecofashion
+      POSTGRES_PASSWORD: ecofashion
+    ports:
+      - "5434:5432"
+    volumes:
+      - ecofashion_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecofashion -d ecofashion"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecofashion-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6381:6379"
+    volumes:
+      - ecofashion_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ecofashion-mailpit
+    restart: unless-stopped
+    ports:
+      - "1026:1025"
+      - "8026:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/livez"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Chạy MỘT LẦN rồi thoát: migration + đồng bộ catalog quyền vào DB. api/worker chờ nó exit 0.
+  migrate:
+    build: .
+    image: ecofashion-backend:dev
+    container_name: ecofashion-migrate
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run -s perms:sync"]
+    restart: "no"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      EF_DATABASE_URL: postgresql://ecofashion:ecofashion@db:5432/ecofashion
+      EF_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Chạy MỘT LẦN rồi thoát: tạo admin (EF_ADMIN_*) + dữ liệu demo. Idempotent — `up` lần hai không tạo trùng.
+  seed:
+    image: ecofashion-backend:dev
+    container_name: ecofashion-seed
+    command: ["sh", "-c", "npm run -s seed:admin && npm run -s seed"]
+    restart: "no"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      EF_DATABASE_URL: postgresql://ecofashion:ecofashion@db:5432/ecofashion
+      EF_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    image: ecofashion-backend:dev
+    container_name: ecofashion-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      EF_PORT: 4000
+      EF_DATABASE_URL: postgresql://ecofashion:ecofashion@db:5432/ecofashion
+      EF_REDIS_URL: redis://redis:6379/0
+      EF_MAIL_HOST: mailpit
+      EF_MAIL_PORT: 1025
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+
+  worker:
+    image: ecofashion-backend:dev
+    container_name: ecofashion-worker
+    restart: unless-stopped
+    command: ["node", "dist/src/worker.js"]
+    # Image dùng chung với api có HEALTHCHECK gọi HTTP :4000 — worker không mở cổng nên tắt, kẻo báo "unhealthy" oan.
+    healthcheck:
+      disable: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      EF_DATABASE_URL: postgresql://ecofashion:ecofashion@db:5432/ecofashion
+      EF_REDIS_URL: redis://redis:6379/0
+      EF_MAIL_HOST: mailpit
+      EF_MAIL_PORT: 1025
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+volumes:
+  ecofashion_pg_data:
+  ecofashion_redis_data:

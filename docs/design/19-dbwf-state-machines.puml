@@ -1,0 +1,107 @@
+@startuml 19-dbwf-state-machines
+title Database Workflow 10 — Máy trạng thái dữ liệu: orders.status · orders.payment_status / payments.status · refunds.status (SePay) · return_requests.status · tồn kho
+
+skinparam shadowing false
+skinparam linetype polyline
+skinparam StateBackgroundColor #FFFFFF
+skinparam StateBorderColor #444444
+skinparam ArrowColor #444444
+skinparam StateFontSize 12
+
+state "order.orders.status" as OS {
+  [*] --> pending : checkout (TX 2)
+  pending --> confirmed : staff — yêu cầu paid (trừ COD)\n(inventory.commit: stock −= qty, SALE)
+  pending --> cancelled : khách / staff / job 60 s\n(release tồn, release mã)
+  confirmed --> packing : staff
+  confirmed --> cancelled : staff\n(restock tồn)
+  packing --> shipping : staff (tracking_url)
+  shipping --> delivered : staff\n(COD → markCodCollected)
+  delivered --> completed : staff / job 09:30 VN\n(sold_count += qty)
+  delivered --> returned : đổi trả toàn bộ được duyệt
+  completed --> returned : đổi trả toàn bộ được duyệt
+  cancelled --> [*]
+  completed --> [*]
+  returned --> [*]
+}
+
+state "payment.payments.status (đồng bộ sang orders.payment_status)" as PS {
+  [*] --> p_pending : createForOrder\n(bank_transfer: qr_url + nội dung DH…)
+  state "pending" as p_pending
+  state "processing" as p_processing
+  state "paid" as p_paid
+  state "failed" as p_failed
+  state "expired" as p_expired
+  state "cancelled" as p_cancelled
+  state "partially_refunded" as p_partial
+  state "refunded" as p_refunded
+  p_pending --> p_processing : khách bấm "đã chuyển"\n(tuỳ chọn)
+  p_pending --> p_paid : SePay webhook in + DH… khớp tiền\n/ COD: markCodCollected khi delivered\n/ staff xác nhận tay (payment.transfer.confirm)
+  p_processing --> p_paid : SePay webhook in + DH…
+  p_pending --> p_expired : job cancelExpired\n(payment_expires_at < now)
+  p_processing --> p_expired : job cancelExpired
+  p_pending --> p_cancelled : huỷ đơn khi chưa thu tiền
+  p_pending --> p_failed : cổng báo lỗi (VNPay — không dùng)
+  p_paid --> p_partial : SePay webhook out + HT…\n(refunded_amount < amount)
+  p_paid --> p_refunded : SePay webhook out + HT…\n(refunded_amount = amount)
+  p_partial --> p_refunded : hoàn tiếp phần còn lại
+  p_paid --> [*]
+  p_refunded --> [*]
+}
+
+state "payment.refunds.status (hoàn tiền qua QR — SePay xác nhận)" as RS {
+  state "requested" as r_requested
+  state "processing" as r_processing
+  state "done" as r_done
+  state "failed" as r_failed
+  [*] --> r_requested : requestRefund (huỷ đơn đã paid\n/ đổi trả approved) — code HT…
+  r_requested --> r_requested : kế toán bổ sung TK ngân hàng\n(bank_code / account_no / account_name)\n→ dựng qr_url
+  r_requested --> r_processing : kế toán bấm "Đã chuyển"\n(transferred_at, processed_by)
+  r_requested --> r_done : SePay webhook out + HT…\n(khớp code + số tiền)
+  r_processing --> r_done : SePay webhook out + HT…\n/ hoàn tay POST /process { providerRef }
+  r_requested --> r_failed : kế toán từ chối / sai TK\n(reason) — tạo yêu cầu mới
+  r_processing --> r_failed : ngân hàng từ chối lệnh chuyển
+  r_done --> [*]
+  r_failed --> [*]
+}
+
+state "payment.sepay_transactions.match_status" as SS {
+  state "matched" as s_matched
+  state "unmatched" as s_unmatched
+  state "amount_mismatch" as s_mismatch
+  state "ignored" as s_ignored
+  [*] --> s_matched : webhook khớp DH… / HT…\n(matched_type, matched_id)
+  [*] --> s_unmatched : không có mã / mã không tìm thấy\n→ outbox SEPAY_UNMATCHED
+  [*] --> s_mismatch : có mã nhưng lệch số tiền
+  [*] --> s_ignored : accountNumber ≠ TK shop
+  s_unmatched --> s_matched : kế toán khớp tay\nPOST /admin/sepay/events/{id}/match
+  s_mismatch --> s_matched : kế toán khớp tay\n(ghi chú thu thêm / hoàn dư)
+  s_matched --> [*]
+  s_ignored --> [*]
+}
+
+state "order.return_requests.status" as RR {
+  state "requested" as rr_requested
+  state "approved" as rr_approved
+  state "rejected" as rr_rejected
+  state "refunded" as rr_refunded
+  [*] --> rr_requested : khách gửi (kèm TK nhận hoàn)
+  rr_requested --> rr_rejected : staff process (reject_reason)
+  rr_requested --> rr_approved : staff process\n(restock; paid → refunds requested)
+  rr_requested --> rr_refunded : staff process, đơn COD chưa thu\n(không có tiền để hoàn)
+  rr_approved --> rr_refunded : SePay webhook out + HT…\n(refunds done → refunded_at)
+  rr_rejected --> [*]
+  rr_refunded --> [*]
+}
+
+state "product.product_variants (stock / reserved) — mỗi bước ghi 1 dòng stock_movements" as ST {
+  state "Có sẵn\navailable = stock − reserved" as st_avail
+  state "Đang giữ\nreserved += qty" as st_reserved
+  state "Đã bán (SALE)\nstock −= qty, reserved −= qty" as st_deducted
+  [*] --> st_avail : nhập kho (RECEIPT +qty)\n/ điều chỉnh (ADJUST ±)
+  st_avail --> st_reserved : checkout — reserve (RESERVE)\n(FOR UPDATE, available ≥ qty)
+  st_reserved --> st_avail : huỷ pending / job quá hạn\n— release (RELEASE)
+  st_reserved --> st_deducted : confirmed — commit (SALE)
+  st_deducted --> st_avail : huỷ confirmed / đổi trả approved\n— restock (RETURN, +qty)
+}
+
+@enduml

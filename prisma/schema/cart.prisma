@@ -1,0 +1,47 @@
+// =====================================================================
+// Module cart (PLAN-0005) — schema "cart": giỏ hàng theo user (khoá dòng = biến thể) + yêu thích.
+// Không lưu giá/tên snapshot trong giỏ: đọc sống qua ProductQueryApi (giá đổi là giỏ đổi); snapshot chỉ chốt khi tạo đơn.
+// =====================================================================
+
+model Cart {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  version   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  items CartItem[]
+
+  @@map("carts")
+  @@schema("cart")
+}
+
+model CartItem {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cartId    String   @map("cart_id") @db.Uuid
+  variantId String   @map("variant_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  quantity  Int
+  /* Dòng được tick để thanh toán (FE cho chọn từng dòng). */
+  selected  Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@index([variantId])
+  @@map("cart_items")
+  @@schema("cart")
+}
+
+model Wishlist {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([userId, productId])
+  @@map("wishlists")
+  @@schema("cart")
+}

@@ -1,0 +1,101 @@
+@startuml 09-erd-system-reporting
+title ERD — schema system (tham số, tỉnh, banner, thông báo, nội dung) và reporting (read model)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide circle
+
+package "system" {
+  entity "settings" as settings {
+    * key : varchar(80) <<PK>>
+    --
+    * value : jsonb
+    * group_code : varchar(40)  shop | order | shipping | payment | review | ai
+    description : varchar(255)
+    * is_public : boolean  → GET /settings/public
+  }
+  entity "provinces" as provinces {
+    * code : varchar(10) <<PK>>
+    --
+    * name : varchar(100)
+    * region : varchar(20)  bac | trung | nam
+    * shipping_fee : numeric(14,0)
+    * sort_order : int
+    * is_active : boolean
+  }
+  entity "banners" as banners {
+    * id : uuid <<PK>>
+    --
+    * title : varchar(200)
+    subtitle : varchar(300)
+    * image_url, image_public_id
+    link_url : varchar(500)
+    * position : varchar(20)  hero | promo
+    * sort_order : int
+    * is_active : boolean
+    starts_at, ends_at : timestamptz
+  }
+  entity "notifications" as notifications {
+    * id : uuid <<PK>>
+    --
+    * user_id : uuid
+    * type : varchar(40)  order_status | payment | refund | promo | system
+    * title : varchar(200)
+    content : varchar(1000)
+    link : varchar(500)
+    payload : jsonb
+    read_at : timestamptz
+    * created_at
+  }
+  entity "contact_messages" as contact_messages {
+    * id : uuid <<PK>>
+    --
+    * name, email : varchar
+    phone : varchar(20)
+    * message : text
+    * status : varchar(20)  new | handled
+    reply : text
+    handled_by, handled_at
+    ip_address
+  }
+  entity "faqs" as faqs {
+    * id : uuid <<PK>>
+    --
+    * question : varchar(300)
+    * answer : text
+    * group_code : varchar(40)
+    * sort_order : int
+    * is_active : boolean
+  }
+  entity "pages" as pages {
+    * slug : varchar(60) <<PK>>  about | shipping | returns-policy | privacy | terms
+    --
+    * title : varchar(200)
+    * content : text  Markdown
+    * is_active : boolean
+  }
+}
+
+package "reporting" {
+  entity "daily_sales" as daily_sales {
+    * day : date <<PK>>  giờ VN
+    --
+    * order_count, paid_count, cancelled_count : int
+    * revenue, discount, shipping_fee, refunded : numeric(14,0)
+    * items_sold, new_customers : int
+    (worker tính lại hôm nay 5 phút / lần, chốt hôm qua 00:05)
+  }
+}
+
+note bottom of daily_sales
+  Read model chỉ đọc; nguồn là order.orders + payment.refunds
+  (SELECT chỉ đọc xuyên schema — ngoại lệ có chủ đích, không bao giờ ghi).
+  Dashboard / báo cáo doanh thu đọc bảng này, cache Redis 60–300 s.
+end note
+
+@enduml

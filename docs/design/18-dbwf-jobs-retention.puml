@@ -1,0 +1,92 @@
+@startuml 18-dbwf-jobs-retention
+title Database Workflow 9 — Tiến trình nền (worker) tác động DB theo lịch: huỷ đơn quá hạn, tự hoàn tất, tổng hợp báo cáo, dọn dữ liệu theo retention, AI
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Worker (process riêng: WorkerModule)|
+start
+:Khởi động: chạy relay outbox mọi schema (3 s/lần),
+đăng ký lịch (@nestjs/schedule, giờ UTC của container);
+fork
+  |Đơn hàng — order|
+  :@Interval 60 s — cancelExpired;
+  #EEF6FF:Mỗi đơn 1 TX: orders (pending, chưa paid,
+  payment_expires_at < now) FOR UPDATE → cancelled
+  + release tồn + release mã + payments expired
+  + histories + audit + outbox ORDER_CANCELLED;
+  :@Cron 02:30 UTC (09:30 VN) — autoComplete;
+  #EEF6FF:Mỗi đơn 1 TX: orders delivered quá
+  setting order.auto_complete_days → completed
+  + histories + products.sold_count += qty;
+  :@Cron 03:40 UTC — purge order.idempotency_keys
+  WHERE expires_at < now();
+fork again
+  |Thanh toán — payment|
+  :Relay outbox payment (PAYMENT_PAID / PAYMENT_REFUNDED /
+  SEPAY_UNMATCHED) → mail + notifications;
+  :Đề xuất: @Cron 04:00 UTC — đối soát ngày:
+  SELECT sepay_transactions WHERE match_status ≠ matched
+  AND received_at ≥ hôm qua → notification kế toán;
+fork again
+  |Báo cáo — reporting|
+  :Khởi động: recomputeRange(30 ngày gần nhất → hôm nay);
+  :@Cron mỗi 5 phút — recomputeDay(hôm nay, theo ngày VN);
+  #EEF6FF:UPSERT **reporting.daily_sales** (day)
+  = SUM từ order.orders / order_items / payment.refunds
+  (orders_count, items_sold, revenue, refunded, cod, transfer);
+  :@Cron 17:05 UTC (00:05 VN) — closeYesterday: chốt ngày hôm qua;
+fork again
+  |Kho — product|
+  :Relay outbox catalog/product (PRODUCT_UPDATED → AI reindex);
+  :@Cron 03:30 UTC — purge product.idempotency_keys hết hạn;
+  :Đề xuất: @Cron 03:30 UTC — cảnh báo sắp hết hàng
+  (available ≤ setting inventory.low_stock_threshold)
+  → INSERT system.notifications cho vai kho;
+fork again
+  |Tài khoản — identity|
+  :@Cron 03:00 UTC — purge:
+  DELETE identity.refresh_tokens WHERE created_at < now − 30 ngày
+  (đã revoked / hết hạn);
+  :DELETE identity.login_histories
+  WHERE created_at < now − EF_LOGIN_HISTORY_RETENTION_DAYS (180);
+fork again
+  |Hệ thống — system|
+  :NotificationService.purgeRead(olderThan):
+  DELETE system.notifications WHERE read_at < now −
+  EF_NOTIFICATION_PURGE_RETENTION_DAYS (90)
+  — hàm có sẵn, cần gắn @Cron (đề xuất 03:10 UTC);
+fork again
+  |AI — ai|
+  :@Interval 3 s — relay outbox review (REVIEW_CREATED → insight);
+  :@Cron hh:15 mỗi giờ — embedPending: nhúng bù sản phẩm
+  chưa có embedding (ai.product_embeddings);
+  :@Cron 03:40 UTC — purge theo retention:
+  DELETE ai.product_view_events < EF_VIEW_EVENT_RETENTION_DAYS (90)
+  DELETE ai.chat_sessions (+ messages) < EF_CHAT_SESSION_RETENTION_DAYS (90)
+  DELETE ai.try_on_results > 7 ngày (+ xoá ảnh Cloudinary)
+  UPDATE ai.style_analyses xoá image_public_id > 7 ngày;
+end fork
+
+|Worker (process riêng: WorkerModule)|
+:Mọi job: cờ `running` chống chồng lấn trong 1 process;
+job nhiều instance dùng FOR UPDATE SKIP LOCKED / TX từng bản ghi;
+note right
+  Quy ước job ghi DB:
+  • Không UPDATE hàng loạt "mù": luôn SELECT ứng viên
+    → khoá từng dòng → kiểm lại điều kiện trong TX.
+  • Job KHÔNG gửi mail/notification trực tiếp — ghi outbox,
+    relay làm tiếp (cùng khuôn với API).
+  • Retention chỉ xoá bảng nhật ký/hành vi; KHÔNG bao giờ
+    xoá orders, payments, refunds, sepay_transactions,
+    stock_movements, audit_logs (giữ vĩnh viễn để đối soát).
+end note
+stop
+
+@enduml

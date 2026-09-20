@@ -1,0 +1,91 @@
+@startuml 15-dbwf-fulfillment-cod-stock
+title Database Workflow 6 — Xử lý đơn: xác nhận (trừ kho SALE) → đóng gói → giao → đã giao (thu COD) → hoàn tất; job huỷ đơn quá hạn thanh toán
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Nhân viên (web quản trị)|
+start
+:PUT /admin/orders/{code}/status { status, trackingUrl?, note? };
+
+|API order (NestJS)|
+#EEF6FF:BEGIN TRANSACTION;
+|PostgreSQL|
+:SELECT orders FOR UPDATE;
+|API order (NestJS)|
+if (Chuyển hợp lệ theo lưới STAFF_TRANSITIONS?) then (không)
+  #FFE5E5:ROLLBACK → 409 ORDER_INVALID_TRANSITION;
+  stop
+else (có)
+endif
+switch (Trạng thái đích)
+case (confirmed)
+  if (Không phải COD và payment_status ≠ paid?) then (chưa thanh toán)
+    #FFE5E5:ROLLBACK → 409 ORDER_UNPAID
+    (chờ SePay báo tiền vào);
+    stop
+  else (ok)
+  endif
+  |Gateway (cùng transaction)|
+  :InventoryGateway.commit (bán thật):
+  SELECT product_variants FOR UPDATE, kiểm stock ≥ qty
+  UPDATE product_variants stock −= qty, reserved −= qty
+  INSERT stock_movements (type = SALE, quantity = −qty, ref = order);
+  |PostgreSQL|
+  :UPDATE orders status = confirmed, confirmed_at;
+case (packing / shipping)
+  |PostgreSQL|
+  :UPDATE orders status, packed_at | shipped_at, tracking_url;
+case (delivered)
+  |Gateway (cùng transaction)|
+  if (COD và chưa thu?) then (có)
+    :PaymentGateway.markCodCollected:
+    UPDATE payment.payments status = paid, paid_at
+    INSERT payment_transactions (type = cod_collect)
+    UPDATE orders payment_status = paid;
+  else (đã thanh toán CK)
+  endif
+  |PostgreSQL|
+  :UPDATE orders status = delivered, delivered_at;
+case (completed)
+  |Gateway (cùng transaction)|
+  :ProductStatsGateway: UPDATE products sold_count += qty;
+  |PostgreSQL|
+  :UPDATE orders status = completed, completed_at;
+endswitch
+|PostgreSQL|
+:INSERT order_status_histories (from → to, actor, note);
+:INSERT system.notifications (khách, type = order_status);
+:INSERT order.audit_logs (ORDER_STATUS_CHANGED);
+:INSERT order.outbox_events (ORDER_STATUS_CHANGED | ORDER_DELIVERED);
+|API order (NestJS)|
+#EEF6FF:COMMIT → OrderResponse;
+
+|Worker (outbox relay)|
+:Email trạng thái cho khách; ORDER_DELIVERED → AI ghi tín hiệu mua
+(ai.product_view_events) cho gợi ý "mua cùng";
+:Job reporting 5 phút → daily_sales (items_sold, revenue);
+
+|Worker (job mỗi 60 s)|
+:cancelExpired: SELECT orders WHERE status = pending
+AND payment_status ≠ paid AND payment_expires_at < now();
+#EEF6FF:TX từng đơn: UPDATE orders cancelled (cancelled_by = NULL)
+InventoryGateway.release · PromotionGateway.release
+UPDATE payment.payments status = expired
++ histories + audit + outbox ORDER_CANCELLED;
+note right
+  Tiền vào TRỄ sau khi đơn đã huỷ:
+  webhook SePay khớp mã đơn nhưng payments
+  đã expired → sepay_transactions unmatched
+  → kế toán tạo hoàn tiền tay (refund requested)
+  hoặc khớp lại nếu khách muốn giữ đơn.
+end note
+stop
+
+@enduml

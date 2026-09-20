@@ -1,0 +1,234 @@
+// =====================================================================
+// Module order (PLAN-0006) — schema "order": đơn hàng (chụp snapshot mọi thứ: địa chỉ, dòng hàng, giá, mã giảm),
+// lịch sử trạng thái, đổi trả có minh chứng, chuỗi số đơn theo ngày. Tiền numeric(14,0) do server tính.
+// Trạng thái: pending → confirmed → packing → shipping → delivered → completed; pending/confirmed → cancelled; delivered/completed → returned.
+// =====================================================================
+
+model Order {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /* DH + yymmdd + 4 số — order_sequences theo ngày, khoá dòng */
+  code              String    @unique @db.VarChar(30)
+  userId            String    @map("user_id") @db.Uuid
+  status            String    @default("pending") @db.VarChar(20)
+  paymentMethodCode String    @map("payment_method_code") @db.VarChar(20)
+  /* unpaid | processing | paid | refunded — payment cập nhật qua gateway/outbox */
+  paymentStatus     String    @default("unpaid") @map("payment_status") @db.VarChar(20)
+  recipientName     String    @map("recipient_name") @db.VarChar(120)
+  recipientPhone    String    @map("recipient_phone") @db.VarChar(20)
+  provinceCode      String?   @map("province_code") @db.VarChar(10)
+  provinceName      String    @map("province_name") @db.VarChar(100)
+  districtName      String?   @map("district_name") @db.VarChar(100)
+  wardName          String?   @map("ward_name") @db.VarChar(100)
+  street            String    @db.VarChar(255)
+  /* Chuỗi địa chỉ đầy đủ để hiện/ in vận đơn */
+  shippingAddress   String    @map("shipping_address") @db.VarChar(500)
+  customerNote      String?   @map("customer_note") @db.VarChar(500)
+  subtotal          Decimal   @db.Decimal(14, 0)
+  shippingFee       Decimal   @map("shipping_fee") @db.Decimal(14, 0)
+  discount          Decimal   @default(0) @db.Decimal(14, 0)
+  promotionCode     String?   @map("promotion_code") @db.VarChar(40)
+  promotionName     String?   @map("promotion_name") @db.VarChar(200)
+  total             Decimal   @db.Decimal(14, 0)
+  itemCount         Int       @map("item_count")
+  cancelReason      String?   @map("cancel_reason") @db.VarChar(255)
+  cancelledBy       String?   @map("cancelled_by") @db.Uuid
+  trackingUrl       String?   @map("tracking_url") @db.VarChar(500)
+  /* Đơn online chưa thanh toán quá hạn → job huỷ + nhả kho */
+  paymentExpiresAt  DateTime? @map("payment_expires_at") @db.Timestamptz
+  confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz
+  packedAt          DateTime? @map("packed_at") @db.Timestamptz
+  shippedAt         DateTime? @map("shipped_at") @db.Timestamptz
+  deliveredAt       DateTime? @map("delivered_at") @db.Timestamptz
+  completedAt       DateTime? @map("completed_at") @db.Timestamptz
+  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz
+  version           Int       @default(0)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy         String?   @map("created_by") @db.Uuid
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy         String?   @map("updated_by") @db.Uuid
+  isDeleted         Boolean   @default(false) @map("is_deleted")
+
+  items     OrderItem[]
+  histories OrderStatusHistory[]
+  returns   ReturnRequest[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([paymentStatus, paymentExpiresAt])
+  @@map("orders")
+  @@schema("order")
+}
+
+model OrderItem {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  variantId String  @map("variant_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  slug      String  @db.VarChar(160)
+  name      String  @db.VarChar(200)
+  imageUrl  String? @map("image_url") @db.VarChar(500)
+  color     String  @db.VarChar(120)
+  size      String  @db.VarChar(40)
+  sku       String  @db.VarChar(64)
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(14, 0)
+  lineTotal Decimal @map("line_total") @db.Decimal(14, 0)
+  /* Khách đã đánh giá dòng này (review báo qua gateway) */
+  reviewed  Boolean @default(false)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+  @@schema("order")
+}
+
+model OrderStatusHistory {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  fromStatus  String?  @map("from_status") @db.VarChar(20)
+  toStatus    String   @map("to_status") @db.VarChar(20)
+  note        String?  @db.VarChar(500)
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_histories")
+  @@schema("order")
+}
+
+/* Yêu cầu đổi trả: requested → approved → refunded | rejected. Minh chứng ảnh/video bắt buộc ≥ 1. */
+model ReturnRequest {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId      String    @map("order_id") @db.Uuid
+  orderCode    String    @map("order_code") @db.VarChar(30)
+  userId       String    @map("user_id") @db.Uuid
+  status       String    @default("requested") @db.VarChar(20)
+  reason       String    @db.VarChar(255)
+  detail       String?   @db.VarChar(1000)
+  rejectReason String?   @map("reject_reason") @db.VarChar(500)
+  refundAmount Decimal   @map("refund_amount") @db.Decimal(14, 0)
+  /* MediaItem[] {type,url,name} — ảnh/video Cloudinary */
+  evidence     Json      @default("[]")
+  processedBy  String?   @map("processed_by") @db.Uuid
+  processedAt  DateTime? @map("processed_at") @db.Timestamptz
+  refundedAt   DateTime? @map("refunded_at") @db.Timestamptz
+  version      Int       @default(0)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy    String?   @map("updated_by") @db.Uuid
+
+  order Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items ReturnRequestItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("return_requests")
+  @@schema("order")
+}
+
+model ReturnRequestItem {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  returnId    String  @map("return_id") @db.Uuid
+  orderItemId String  @map("order_item_id") @db.Uuid
+  variantId   String  @map("variant_id") @db.Uuid
+  name        String  @db.VarChar(200)
+  color       String  @db.VarChar(120)
+  size        String  @db.VarChar(40)
+  quantity    Int
+  imageUrl    String? @map("image_url") @db.VarChar(500)
+  unitPrice   Decimal @map("unit_price") @db.Decimal(14, 0)
+
+  request ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@unique([returnId, orderItemId])
+  @@map("return_request_items")
+  @@schema("order")
+}
+
+/* Bộ đếm số đơn theo ngày — SELECT FOR UPDATE rồi tăng; mã đơn không bao giờ trùng dù nhiều instance. */
+model OrderSequence {
+  day     String @id @db.VarChar(6)
+  counter Int    @default(0)
+
+  @@map("order_sequences")
+  @@schema("order")
+}
+
+model OrderAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("order")
+}
+
+model OrderOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  eventVersion  String    @default("v1") @map("event_version") @db.VarChar(10)
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  status        String    @default("PENDING") @db.VarChar(20)
+  retryCount    Int       @default(0) @map("retry_count")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  errorMessage  String?   @map("error_message")
+  requestId     String?   @map("request_id") @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+  @@schema("order")
+}
+
+model OrderProcessedEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(80)
+  handler     String   @db.VarChar(120)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@unique([eventId, handler])
+  @@map("processed_events")
+  @@schema("order")
+}
+
+model OrderIdempotencyKey {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope          String   @db.VarChar(60)
+  actorKey       String   @map("actor_key") @db.VarChar(64)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  requestHash    String   @map("request_hash") @db.VarChar(64)
+  status         String   @default("IN_PROGRESS") @db.VarChar(20)
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  resultRef      String?  @map("result_ref") @db.VarChar(64)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([scope, actorKey, idempotencyKey])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+  @@schema("order")
+}

@@ -1,0 +1,142 @@
+@startuml 07-erd-payment-sepay
+title ERD — schema payment (thanh toán VietQR qua SePay, hoàn tiền bằng QR + SePay xác nhận tiền ra)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+skinparam class<<new>> {
+  BackgroundColor #FFF4E5
+  BorderColor #E8564A
+}
+hide circle
+
+entity "payment_methods" as payment_methods {
+  * code : varchar(30) <<PK>>  cod | bank_transfer | vnpay
+  --
+  * name : varchar(100)
+  description : varchar(255)
+  * kind : varchar(20)  cash | transfer | gateway
+  * is_active : boolean  (vnpay = false khi dùng SePay)
+  * sort_order : int
+  config : jsonb  {"provider":"sepay","bankCode","accountNo","accountName"}
+}
+
+entity "payments" as payments {
+  * id : uuid <<PK>>
+  --
+  * order_id : uuid  (một thanh toán SỐNG / đơn: unique WHERE status IN pending, processing, paid)
+  * order_code : varchar(20)
+  * user_id : uuid
+  * method_code : varchar(30) <<FK>>
+  * amount : numeric(14,0)
+  * status : varchar(30)  pending | processing | paid | failed | expired | cancelled | refunded | partially_refunded
+  transaction_code : varchar(64)  mã tham chiếu ngân hàng (referenceCode)
+  bank_code : varchar(20)
+  card_brand, card_last4  (chỉ VNPay cũ)
+  * transfer_content : varchar(40)  = order_code, khách ghi khi CK
+  qr_url : varchar(500)  <<mới>> VietQR SePay hiện cho khách
+  sepay_transaction_id : bigint  <<mới>> giao dịch SePay đã khớp
+  * refunded_amount : numeric(14,0)
+  gateway_response : jsonb
+  paid_at, expires_at : timestamptz
+}
+
+entity "payment_transactions" as payment_transactions {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK>>
+  * type : varchar(30)  create_url | ipn | return | query | refund | manual_confirm | cod_collect | sepay_in | sepay_out
+  * status : varchar(20)  ok | failed
+  amount : numeric(14,0)
+  provider_ref : varchar(64)  (unique theo type → không ghi đôi)
+  raw_request, raw_response : jsonb  (đã che)
+  * created_at
+}
+
+entity "bank_transfer_confirmations" as bank_transfer_confirmations {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK>>
+  * amount : numeric(14,0)
+  bank_ref : varchar(120)
+  note : varchar(500)
+  * confirmed_by : uuid  kế toán (khớp tay khi SePay không bắt được)
+  * confirmed_at : timestamptz
+}
+
+entity "sepay_transactions" as sepay_transactions <<new>> {
+  * id : bigint <<PK>>  id giao dịch do SePay cấp → idempotent webhook
+  --
+  * gateway : varchar(50)  ngân hàng (MB, VCB…)
+  * account_number : varchar(30)  TK shop nhận
+  sub_account : varchar(30)
+  * transfer_type : varchar(3)  in | out
+  * transfer_amount : numeric(14,0)
+  accumulated : numeric(14,0)  số dư sau GD
+  content : varchar(500)  nội dung CK gốc
+  code : varchar(40)  mã SePay tự nhận diện (DH… / HT…)
+  reference_code : varchar(64)  mã tham chiếu ngân hàng
+  * transaction_date : timestamptz
+  * match_status : varchar(20)  matched | unmatched | amount_mismatch | ignored
+  matched_type : varchar(10)  payment | refund
+  matched_id : uuid
+  matched_by : uuid  (null = tự động, khác null = kế toán khớp tay)
+  raw : jsonb  toàn bộ payload webhook
+  * received_at : timestamptz
+  processed_at : timestamptz
+  error : varchar(500)
+}
+
+entity "refunds" as refunds {
+  * id : uuid <<PK>>
+  --
+  * code : varchar(20) <<U>>  <<mới>> HTyymmddNNNN (= nội dung CK hoàn tiền)
+  * payment_id : uuid <<FK>>
+  * order_code : varchar(20)
+  return_request_id : uuid  (khi từ đổi trả)
+  * amount : numeric(14,0)
+  * status : varchar(20)  requested | processing | done | failed
+  * method : varchar(30)  qr_transfer (SePay) | gateway (VNPay cũ) | manual_transfer
+  bank_code : varchar(20)  <<mới>> TK khách nhận tiền
+  bank_account_no : varchar(30)  <<mới>>
+  bank_account_name : varchar(120)  <<mới>>
+  qr_url : varchar(500)  <<mới>> VietQR để kế toán quét
+  sepay_transaction_id : bigint  <<mới>> GD tiền ra đã khớp
+  provider_ref : varchar(64)
+  reason : varchar(300)
+  note : varchar(500)
+  requested_by, processed_by : uuid
+  transferred_at : timestamptz  <<mới>> kế toán bấm "đã chuyển"
+  processed_at : timestamptz  SePay xác nhận
+}
+
+entity "refund_sequences" as refund_sequences <<new>> {
+  * day : char(6) <<PK>>  yymmdd
+  --
+  * counter : int
+}
+
+entity "audit_logs / outbox_events / processed_events" as pay_common {
+  khuôn common giống các module khác
+  --
+  outbox: PAYMENT_PAID, PAYMENT_REFUNDED,
+  SEPAY_UNMATCHED (báo kế toán)
+}
+
+payment_methods ||--o{ payments
+payments ||--o{ payment_transactions
+payments ||--o{ bank_transfer_confirmations
+payments ||--o{ refunds
+payments |o..o| sepay_transactions : matched_type = payment\n(tiền vào)
+refunds |o..o| sepay_transactions : matched_type = refund\n(tiền ra)
+
+note bottom of sepay_transactions
+  Mỗi webhook SePay = 1 dòng, khoá chính là id của SePay nên gửi lại
+  không ghi đôi. Khớp tự động theo nội dung CK: DH… → payments,
+  HT… → refunds; kiểm số tiền. Không khớp → unmatched, kế toán khớp tay.
+end note
+
+@enduml

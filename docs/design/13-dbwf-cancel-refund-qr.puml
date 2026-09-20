@@ -1,0 +1,116 @@
+@startuml 13-dbwf-cancel-refund-qr
+title Database Workflow 4 — Huỷ đơn đã thanh toán → yêu cầu hoàn tiền → kế toán quét QR chuyển khoản → SePay xác nhận tiền ra → cập nhật DB
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Người huỷ|
+start
+if (Ai huỷ?) then (Khách — đơn pending)
+  :POST /orders/{code}/cancel
+  { reason, refundBankCode, refundAccountNo, refundAccountName }
+  (bắt buộc TK nhận hoàn khi đơn đã thanh toán);
+else (Nhân viên — pending/confirmed)
+  :POST /admin/orders/{code}/cancel { reason }
+  (TK nhận hoàn kế toán bổ sung sau);
+endif
+
+|API order (NestJS)|
+#EEF6FF:BEGIN TRANSACTION;
+|PostgreSQL|
+:SELECT **order.orders** WHERE code FOR UPDATE;
+|API order (NestJS)|
+if (status ∈ {pending, confirmed}?) then (không)
+  #FFE5E5:ROLLBACK → 409 ORDER_INVALID_STATE;
+  stop
+else (có)
+endif
+|PostgreSQL|
+:UPDATE orders SET status = cancelled, cancel_reason,
+cancelled_by, cancelled_at;
+:INSERT order_status_histories (→ cancelled);
+|Gateway (cùng transaction)|
+:InventoryGateway.release (pending) / restock (confirmed):
+UPDATE product_variants reserved −= qty
+INSERT product.stock_movements (RELEASE | RETURN);
+:PromotionGateway.release:
+UPDATE promotion_usages released_at
+UPDATE promotions used_count −= 1;
+|API order (NestJS)|
+if (payment_status = paid?) then (không — chưa thu tiền)
+  |PostgreSQL|
+  :UPDATE payment.payments status = cancelled;
+  :INSERT order.audit_logs + outbox ORDER_CANCELLED;
+  |API order (NestJS)|
+  #EEF6FF:COMMIT;
+  stop
+else (có)
+endif
+|Gateway (cùng transaction)|
+:PaymentGateway.requestRefund:
+SELECT **payment.refund_sequences** (day) FOR UPDATE → code HTyymmddNNNN
+INSERT **payment.refunds**
+status = requested, method = qr_transfer, amount = total,
+bank_code / bank_account_no / bank_account_name (từ khách hoặc NULL),
+reason = "Huỷ đơn: …", requested_by;
+:INSERT order.audit_logs (ORDER_CANCELLED)
++ order.outbox_events (ORDER_CANCELLED, REFUND_REQUESTED);
+|API order (NestJS)|
+#EEF6FF:COMMIT;
+
+|Worker (outbox relay)|
+:Notification + email khách "Đơn đã huỷ, sẽ hoàn <số tiền>";
+:Notification nhân viên có payment.refund.process
+"Có yêu cầu hoàn tiền HT…";
+
+|Kế toán (web quản trị)|
+:Mở /payment/refunds → yêu cầu HT… (requested);
+if (Có TK ngân hàng khách?) then (chưa)
+  :Liên hệ khách → PATCH /admin/refunds/{id}/bank-account;
+  |PostgreSQL|
+  :UPDATE refunds bank_code, bank_account_no, bank_account_name
+  + payment.audit_logs;
+  |Kế toán (web quản trị)|
+else (rồi)
+endif
+:GET /admin/refunds/{id} → hệ thống dựng
+qr_url = VietQR(bank_code, account_no, amount, addInfo = HT…);
+|PostgreSQL|
+:UPDATE refunds qr_url (lưu để mở lại không dựng lại);
+|Kế toán (web quản trị)|
+:Màn hiện **mã QR**: TK khách · số tiền · nội dung HT…;
+:Quét bằng app ngân hàng của shop → xác nhận chuyển;
+:Bấm "Đã chuyển khoản" (tuỳ chọn)
+→ POST /admin/refunds/{id}/mark-transferred;
+|PostgreSQL|
+:UPDATE refunds status = processing, transferred_at, processed_by;
+
+|Ngân hàng / SePay|
+:Tiền RA khỏi TK shop, nội dung "HT…";
+:SePay webhook transferType = out → **Workflow 3**;
+
+|API payment (NestJS)|
+#EEF6FF:TX: refunds done + payments refunded
++ orders payment_status refunded + outbox PAYMENT_REFUNDED;
+
+|Worker (outbox relay)|
+:Notification + email khách "Đã hoàn tiền <số tiền> về TK …";
+:Job reporting → daily_sales.refunded += amount;
+
+|Kế toán (web quản trị)|
+:Danh sách hoàn tiền tự refetch (15 s / invalidate)
+→ HT… hiện "Đã hoàn" kèm mã tham chiếu ngân hàng;
+if (SePay không báo về (mất webhook)?) then (có)
+  :Hoàn tay: POST /admin/refunds/{id}/process { providerRef }
+  → cùng cập nhật DB như webhook, matched_by = kế toán;
+else (không)
+endif
+stop
+
+@enduml

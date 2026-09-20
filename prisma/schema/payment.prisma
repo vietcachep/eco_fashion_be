@@ -1,0 +1,177 @@
+// =====================================================================
+// Module payment (PLAN-0007) — schema "payment": phương thức (cod · bank_transfer · vnpay), giao dịch theo đơn,
+// nhật ký gọi cổng (IPN idempotent theo provider_ref unique), đối soát chuyển khoản, hoàn tiền.
+// KHÔNG BAO GIỜ lưu số thẻ / CVV / OTP — VNPay redirect; chỉ giữ thương hiệu + 4 số cuối nếu cổng trả về.
+// =====================================================================
+
+model PaymentMethod {
+  code        String   @id @db.VarChar(20)
+  name        String   @db.VarChar(120)
+  description String?  @db.VarChar(300)
+  /* cod | bank_transfer | gateway */
+  kind        String   @db.VarChar(20)
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  /* Cấu hình hiển thị công khai (tên ngân hàng, hướng dẫn…) — không chứa secret */
+  config      Json?
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  @@map("payment_methods")
+  @@schema("payment")
+}
+
+model Payment {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId         String    @map("order_id") @db.Uuid
+  orderCode       String    @map("order_code") @db.VarChar(30)
+  userId          String    @map("user_id") @db.Uuid
+  methodCode      String    @map("method_code") @db.VarChar(20)
+  amount          Decimal   @db.Decimal(14, 0)
+  /* pending | processing | paid | failed | expired | refunded | partially_refunded */
+  status          String    @default("pending") @db.VarChar(20)
+  /* Mã giao dịch phía cổng (vnp_TransactionNo) / mã tham chiếu ngân hàng */
+  transactionCode String?   @map("transaction_code") @db.VarChar(64)
+  bankCode        String?   @map("bank_code") @db.VarChar(20)
+  cardBrand       String?   @map("card_brand") @db.VarChar(20)
+  cardLast4       String?   @map("card_last4") @db.VarChar(4)
+  /* Chuyển khoản: nội dung CK để đối soát (= mã đơn) */
+  transferContent String?   @map("transfer_content") @db.VarChar(60)
+  refundedAmount  Decimal   @default(0) @map("refunded_amount") @db.Decimal(14, 0)
+  gatewayResponse Json?     @map("gateway_response")
+  paidAt          DateTime? @map("paid_at") @db.Timestamptz
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
+  version         Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy       String?   @map("created_by") @db.Uuid
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy       String?   @map("updated_by") @db.Uuid
+
+  transactions  PaymentTransaction[]
+  confirmations BankTransferConfirmation[]
+  refunds       Refund[]
+
+  @@index([orderId])
+  @@index([orderCode])
+  @@index([status, expiresAt])
+  @@map("payments")
+  @@schema("payment")
+}
+
+/* Mỗi lần gọi/nhận từ cổng một dòng — IPN trùng (provider_ref) bị unique chặn → không cộng tiền 2 lần. */
+model PaymentTransaction {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId   String   @map("payment_id") @db.Uuid
+  /* create_url | ipn | return | query | refund | manual_confirm */
+  type        String   @db.VarChar(20)
+  status      String   @db.VarChar(20)
+  amount      Decimal? @db.Decimal(14, 0)
+  providerRef String?  @map("provider_ref") @db.VarChar(120)
+  rawRequest  Json?    @map("raw_request")
+  rawResponse Json?    @map("raw_response")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+  @@map("payment_transactions")
+  @@schema("payment")
+}
+
+model BankTransferConfirmation {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId   String   @map("payment_id") @db.Uuid
+  amount      Decimal  @db.Decimal(14, 0)
+  bankRef     String?  @map("bank_ref") @db.VarChar(120)
+  note        String?  @db.VarChar(500)
+  confirmedBy String   @map("confirmed_by") @db.Uuid
+  confirmedAt DateTime @default(now()) @map("confirmed_at") @db.Timestamptz
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("bank_transfer_confirmations")
+  @@schema("payment")
+}
+
+/* Hoàn tiền: requested → processing → done | failed. Cổng (VNPay refund API) hoặc chuyển khoản tay (COD/bank). */
+model Refund {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId       String    @map("payment_id") @db.Uuid
+  orderCode       String    @map("order_code") @db.VarChar(30)
+  returnRequestId String?   @map("return_request_id") @db.Uuid
+  amount          Decimal   @db.Decimal(14, 0)
+  status          String    @default("requested") @db.VarChar(20)
+  /* gateway | manual_transfer */
+  method          String    @db.VarChar(20)
+  providerRef     String?   @map("provider_ref") @db.VarChar(120)
+  reason          String?   @db.VarChar(255)
+  note            String?   @db.VarChar(500)
+  requestedBy     String?   @map("requested_by") @db.Uuid
+  processedBy     String?   @map("processed_by") @db.Uuid
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz
+  version         Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("refunds")
+  @@schema("payment")
+}
+
+model PaymentAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("payment")
+}
+
+model PaymentOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  eventVersion  String    @default("v1") @map("event_version") @db.VarChar(10)
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  status        String    @default("PENDING") @db.VarChar(20)
+  retryCount    Int       @default(0) @map("retry_count")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  errorMessage  String?   @map("error_message")
+  requestId     String?   @map("request_id") @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+  @@schema("payment")
+}
+
+model PaymentProcessedEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(80)
+  handler     String   @db.VarChar(120)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@unique([eventId, handler])
+  @@map("processed_events")
+  @@schema("payment")
+}

@@ -1,0 +1,996 @@
+// EcoFashion — sơ đồ DB (dán vào https://dbdiagram.io). Cập nhật sau mỗi plan có migration.
+// Quy ước: schema = module; không FK xuyên schema (tham chiếu chéo bằng id + code + snapshot).
+// Cột chuẩn (+base): created_at, created_by, updated_at, updated_by, version, is_deleted.
+
+Project eco_fashion {
+  database_type: 'PostgreSQL'
+  Note: 'Nguồn sự thật là prisma/schema/*.prisma + prisma/migrations. File này chỉ để nhìn tổng thể.'
+}
+
+// ===================================================== identity (PLAN-0002)
+
+Table identity.roles {
+  id uuid [pk]
+  code varchar(40) [unique, note: 'admin · manager · sales · warehouse · accountant · marketing · customer']
+  name varchar(100)
+  description varchar(255)
+  is_system boolean [default: false]
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table identity.permissions {
+  id uuid [pk]
+  code varchar(100) [unique, note: 'module.resource.action — từ permission/catalog.ts qua perms:sync']
+  module_code varchar(40)
+  description varchar(255)
+  is_active boolean [default: true]
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table identity.role_permissions {
+  role_id uuid [pk]
+  permission_id uuid [pk]
+  created_at timestamptz
+  created_by uuid
+}
+
+Table identity.users {
+  id uuid [pk]
+  email varchar(255) [note: 'UQ partial lower(email) WHERE is_deleted=false']
+  phone varchar(20) [note: 'UQ partial WHERE is_deleted=false']
+  password_hash varchar(255) [note: 'argon2id']
+  full_name varchar(120)
+  avatar_url varchar(500)
+  role_id uuid
+  status varchar(20) [note: 'active · locked · inactive']
+  permission_version int [default: 0, note: 'bump khi đổi vai/quyền/mật khẩu/khoá → token cũ mất hiệu lực']
+  email_verified_at timestamptz
+  last_login_at timestamptz
+  locked_reason varchar(255)
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table identity.user_permissions {
+  user_id uuid [pk]
+  permission_id uuid [pk]
+  allowed boolean [note: 'true = cấp thêm, false = chặn (deny thắng vai)']
+  reason varchar(255)
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+}
+
+Table identity.refresh_tokens {
+  id uuid [pk]
+  user_id uuid
+  token_hash varchar(64) [unique, note: 'SHA-256 của token thô — DB không giữ token']
+  family_id uuid [note: 'một chuỗi rotation; dùng lại token đã rotate → thu hồi cả họ']
+  device_name varchar(120)
+  ip_address varchar(45)
+  user_agent varchar(255)
+  expires_at timestamptz
+  revoked_at timestamptz
+  revoked_reason varchar(40)
+  replaced_by_id uuid
+  last_used_at timestamptz
+  created_at timestamptz
+}
+
+Table identity.login_histories {
+  id uuid [pk]
+  user_id uuid [null]
+  email varchar(255)
+  success boolean
+  reason varchar(40) [note: 'REGISTER · INVALID_CREDENTIALS · THROTTLED · USER_LOCKED · tên thiết bị']
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz [note: 'dọn sau EF_LOGIN_HISTORY_RETENTION_DAYS']
+}
+
+Table identity.addresses {
+  id uuid [pk]
+  user_id uuid
+  recipient_name varchar(120)
+  phone varchar(20)
+  province_code varchar(10) [note: 'mã tỉnh (system.provinces) — chụp lại tên để địa chỉ cũ không đổi']
+  province_name varchar(100)
+  district_name varchar(100)
+  ward_name varchar(100)
+  street varchar(255)
+  is_default boolean [note: 'UQ partial (user_id) WHERE is_default AND NOT is_deleted']
+  note varchar(255)
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table identity.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+
+Table identity.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20) [note: 'PENDING · PROCESSING · DONE · FAILED']
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table identity.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler) — listener idempotent'
+}
+
+Ref: identity.role_permissions.role_id > identity.roles.id
+Ref: identity.role_permissions.permission_id > identity.permissions.id
+Ref: identity.users.role_id > identity.roles.id
+Ref: identity.user_permissions.user_id > identity.users.id
+Ref: identity.user_permissions.permission_id > identity.permissions.id
+Ref: identity.refresh_tokens.user_id > identity.users.id
+Ref: identity.addresses.user_id > identity.users.id
+
+
+
+// ===================================================== catalog (PLAN-0003)
+
+Table catalog.categories {
+  id uuid [pk]
+  slug varchar(120) [note: 'UQ partial WHERE is_deleted=false']
+  name varchar(120)
+  description varchar(500)
+  image_url varchar(500)
+  image_public_id varchar(255)
+  parent_id uuid [null]
+  sort_order int
+  is_active boolean
+  product_count int [note: 'đếm sẵn — product cập nhật qua CategoryStatsGateway']
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table catalog.collections {
+  id uuid [pk]
+  slug varchar(120) [note: 'UQ partial sống']
+  name varchar(120)
+  tagline varchar(200)
+  image_url varchar(500)
+  image_public_id varchar(255)
+  query_category_slug varchar(120) [note: 'bộ sưu tập = bộ lọc có sẵn']
+  query_gender varchar(10)
+  query_tag varchar(40)
+  sort_order int
+  is_active boolean
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table catalog.attributes {
+  id uuid [pk]
+  code varchar(40) [unique, note: 'color · size · material']
+  name varchar(120)
+  kind varchar(20)
+  is_filterable boolean
+  sort_order int
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table catalog.attribute_values {
+  id uuid [pk]
+  attribute_id uuid
+  code varchar(40) [note: 'UQ (attribute_id, code)']
+  name varchar(120)
+  hex varchar(9) [note: 'màu']
+  group_code varchar(20) [note: 'size: ao | quan']
+  sort_order int
+  is_active boolean
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table catalog.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table catalog.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
+
+Ref: catalog.categories.parent_id > catalog.categories.id
+Ref: catalog.attribute_values.attribute_id > catalog.attributes.id
+
+// ===================================================== product (PLAN-0004)
+
+Table product.products {
+  id uuid [pk]
+  slug varchar(160) [note: 'UQ partial sống']
+  name varchar(200)
+  category_id uuid [note: 'catalog.categories.id — không FK xuyên schema']
+  category_slug varchar(120) [note: 'snapshot, worker đồng bộ khi catalog đổi slug']
+  gender varchar(10) [note: 'nam · nu · unisex']
+  short_description varchar(500)
+  description text
+  material varchar(200)
+  care jsonb [note: 'string[]']
+  base_price numeric(14,0)
+  list_price numeric(14,0) [note: 'giá gốc (gạch) khi giảm']
+  status varchar(20) [note: 'draft · active · hidden']
+  is_new boolean
+  is_featured boolean
+  tags jsonb [note: 'string[] — new, sale…']
+  sold_count int
+  review_count int
+  avg_rating numeric(3,2)
+  view_count int
+  published_at timestamptz
+  search_vector tsvector [note: 'trigger; GIN']
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table product.product_variants {
+  id uuid [pk]
+  product_id uuid
+  sku varchar(64) [note: 'UQ partial sống — makeSku(slug, màu, size)']
+  color_code varchar(40)
+  color_name varchar(120) [note: 'snapshot từ catalog']
+  color_hex varchar(9)
+  size_code varchar(40)
+  price numeric(14,0) [null, note: 'NULL = base_price']
+  stock int [note: 'tồn thô']
+  reserved int [note: 'đang giữ cho đơn; CHECK 0 ≤ reserved ≤ stock']
+  is_active boolean
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+  Note: 'UQ (product_id, color_code, size_code)'
+}
+
+Table product.product_images {
+  id uuid [pk]
+  product_id uuid
+  url varchar(500)
+  public_id varchar(255)
+  color_code varchar(40) [null, note: 'ảnh thuộc màu; NULL = chung']
+  alt varchar(200)
+  sort_order int
+  is_primary boolean [note: 'UQ partial một ảnh chính / sản phẩm']
+  created_at timestamptz
+  created_by uuid
+}
+
+Table product.stock_receipts {
+  id uuid [pk]
+  code varchar(30) [unique, note: 'PNyymm00001']
+  supplier_name varchar(200)
+  note varchar(500)
+  status varchar(20) [note: 'draft · posted · cancelled']
+  total_cost numeric(14,0)
+  posted_at timestamptz
+  posted_by uuid
+  created_at timestamptz
+  created_by uuid
+  updated_at timestamptz
+  updated_by uuid
+  version int
+  is_deleted boolean
+}
+
+Table product.stock_receipt_items {
+  id uuid [pk]
+  receipt_id uuid
+  variant_id uuid
+  sku varchar(64)
+  quantity int
+  unit_cost numeric(14,0)
+  Note: 'UQ (receipt_id, variant_id)'
+}
+
+Table product.stock_movements {
+  id uuid [pk]
+  product_id uuid
+  variant_id uuid
+  type varchar(20) [note: 'RECEIPT · ADJUST · RESERVE · RELEASE · SALE · RETURN']
+  quantity int [note: '+/-']
+  stock_after int
+  ref_type varchar(40)
+  ref_id varchar(64)
+  note varchar(255)
+  actor_user_id uuid
+  created_at timestamptz
+}
+
+Table product.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table product.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
+Table product.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+Table product.idempotency_keys { id uuid [pk]  scope varchar(60)  actor_key varchar(64)  idempotency_key varchar(128)  request_hash varchar(64)  status varchar(20)  response_status int  response_body jsonb  result_ref varchar(64)  expires_at timestamptz  created_at timestamptz  Note: 'UQ (scope, actor_key, idempotency_key)' }
+
+Ref: product.product_variants.product_id > product.products.id
+Ref: product.product_images.product_id > product.products.id
+Ref: product.stock_receipt_items.receipt_id > product.stock_receipts.id
+Ref: product.stock_receipt_items.variant_id - product.product_variants.id
+Ref: product.stock_movements.variant_id > product.product_variants.id
+
+// ===================================================== cart (PLAN-0005)
+
+Table cart.carts {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [unique, not null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table cart.cart_items {
+  id uuid [pk, default: `gen_random_uuid()`]
+  cart_id uuid [not null]
+  variant_id uuid [not null]
+  product_id uuid [not null]
+  quantity int [not null]
+  selected bool [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  Note: 'UQ (cart_id, variant_id)'
+}
+
+Table cart.wishlists {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  product_id uuid [not null]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'UQ (user_id, product_id)'
+}
+
+Ref: cart.cart_items.cart_id > cart.carts.id
+
+
+// ===================================================== system (PLAN-0010)
+
+Table system.settings {
+  key varchar(80) [pk]
+  value jsonb [not null]
+  group_code varchar(40) [not null, default: 'general']
+  description varchar(255) [null]
+  is_public bool [not null, default: false]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+}
+
+Table system.provinces {
+  code varchar(10) [pk]
+  name varchar(100) [not null]
+  region varchar(20) [not null]
+  shipping_fee numeric(14,0) [not null]
+  sort_order int [not null, default: 0]
+  is_active bool [not null, default: true]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table system.banners {
+  id uuid [pk, default: `gen_random_uuid()`]
+  title varchar(200) [not null]
+  subtitle varchar(300) [null]
+  image_url varchar(500) [not null]
+  image_public_id varchar(255) [null]
+  link_url varchar(500) [null]
+  position varchar(20) [not null, default: 'hero']
+  sort_order int [not null, default: 0]
+  is_active bool [not null, default: true]
+  starts_at timestamptz [null]
+  ends_at timestamptz [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  is_deleted bool [not null, default: false]
+}
+
+Table system.notifications {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  type varchar(40) [not null]
+  title varchar(200) [not null]
+  content varchar(1000) [null]
+  link varchar(500) [null]
+  payload jsonb [null]
+  read_at timestamptz [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table system.contact_messages {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(120) [not null]
+  email varchar(255) [not null]
+  phone varchar(20) [null]
+  message varchar(2000) [not null]
+  status varchar(20) [not null, default: 'new']
+  reply varchar(2000) [null]
+  handled_by uuid [null]
+  handled_at timestamptz [null]
+  ip_address varchar(45) [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table system.faqs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  question varchar(300) [not null]
+  answer text [not null]
+  group_code varchar(40) [not null, default: 'general']
+  sort_order int [not null, default: 0]
+  is_active bool [not null, default: true]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  is_deleted bool [not null, default: false]
+}
+
+Table system.pages {
+  slug varchar(60) [pk]
+  title varchar(200) [not null]
+  content text [not null]
+  is_active bool [not null, default: true]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+}
+
+Table system.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+
+
+// ===================================================== promotion (PLAN-0008)
+
+Table promotion.promotions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(40) [not null]
+  name varchar(200) [not null]
+  description varchar(500) [null]
+  type varchar(20) [not null]
+  value numeric(14,2) [not null, default: 0]
+  max_discount numeric(14,0) [null]
+  min_order_amount numeric(14,0) [not null, default: 0]
+  usage_limit int [null]
+  usage_limit_per_user int [null]
+  used_count int [not null, default: 0]
+  applies_to varchar(20) [not null, default: 'all']
+  starts_at timestamptz [not null]
+  ends_at timestamptz [not null]
+  is_active bool [not null, default: true]
+  is_public bool [not null, default: true]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  is_deleted bool [not null, default: false]
+}
+
+Table promotion.promotion_targets {
+  id uuid [pk, default: `gen_random_uuid()`]
+  promotion_id uuid [not null]
+  target_type varchar(20) [not null]
+  target_ref varchar(160) [not null]
+  Note: 'UQ (promotion_id, target_type, target_ref)'
+}
+
+Table promotion.promotion_usages {
+  id uuid [pk, default: `gen_random_uuid()`]
+  promotion_id uuid [not null]
+  user_id uuid [not null]
+  order_code varchar(30) [not null]
+  discount_amount numeric(14,0) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  released_at timestamptz [null]
+  Note: 'UQ (promotion_id, order_code)'
+}
+
+Table promotion.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+
+Ref: promotion.promotion_targets.promotion_id > promotion.promotions.id
+Ref: promotion.promotion_usages.promotion_id > promotion.promotions.id
+
+
+// ===================================================== order (PLAN-0006)
+
+Table order.orders {
+  id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(30) [unique, not null]
+  user_id uuid [not null]
+  status varchar(20) [not null, default: 'pending']
+  payment_method_code varchar(20) [not null]
+  payment_status varchar(20) [not null, default: 'unpaid']
+  recipient_name varchar(120) [not null]
+  recipient_phone varchar(20) [not null]
+  province_code varchar(10) [null]
+  province_name varchar(100) [not null]
+  district_name varchar(100) [null]
+  ward_name varchar(100) [null]
+  street varchar(255) [not null]
+  shipping_address varchar(500) [not null]
+  customer_note varchar(500) [null]
+  subtotal numeric(14,0) [not null]
+  shipping_fee numeric(14,0) [not null]
+  discount numeric(14,0) [not null, default: 0]
+  promotion_code varchar(40) [null]
+  promotion_name varchar(200) [null]
+  total numeric(14,0) [not null]
+  item_count int [not null]
+  cancel_reason varchar(255) [null]
+  cancelled_by uuid [null]
+  tracking_url varchar(500) [null]
+  payment_expires_at timestamptz [null]
+  confirmed_at timestamptz [null]
+  packed_at timestamptz [null]
+  shipped_at timestamptz [null]
+  delivered_at timestamptz [null]
+  completed_at timestamptz [null]
+  cancelled_at timestamptz [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  is_deleted bool [not null, default: false]
+}
+
+Table order.order_items {
+  id uuid [pk, default: `gen_random_uuid()`]
+  order_id uuid [not null]
+  variant_id uuid [not null]
+  product_id uuid [not null]
+  slug varchar(160) [not null]
+  name varchar(200) [not null]
+  image_url varchar(500) [null]
+  color varchar(120) [not null]
+  size varchar(40) [not null]
+  sku varchar(64) [not null]
+  quantity int [not null]
+  unit_price numeric(14,0) [not null]
+  line_total numeric(14,0) [not null]
+  reviewed bool [not null, default: false]
+}
+
+Table order.order_status_histories {
+  id uuid [pk, default: `gen_random_uuid()`]
+  order_id uuid [not null]
+  from_status varchar(20) [null]
+  to_status varchar(20) [not null]
+  note varchar(500) [null]
+  actor_user_id uuid [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table order.return_requests {
+  id uuid [pk, default: `gen_random_uuid()`]
+  order_id uuid [not null]
+  order_code varchar(30) [not null]
+  user_id uuid [not null]
+  status varchar(20) [not null, default: 'requested']
+  reason varchar(255) [not null]
+  detail varchar(1000) [null]
+  reject_reason varchar(500) [null]
+  refund_amount numeric(14,0) [not null]
+  evidence jsonb [not null, default: '[]']
+  processed_by uuid [null]
+  processed_at timestamptz [null]
+  refunded_at timestamptz [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+}
+
+Table order.return_request_items {
+  id uuid [pk, default: `gen_random_uuid()`]
+  return_id uuid [not null]
+  order_item_id uuid [not null]
+  variant_id uuid [not null]
+  name varchar(200) [not null]
+  color varchar(120) [not null]
+  size varchar(40) [not null]
+  quantity int [not null]
+  image_url varchar(500) [null]
+  unit_price numeric(14,0) [not null]
+  Note: 'UQ (return_id, order_item_id)'
+}
+
+Table order.order_sequences {
+  day varchar(6) [pk]
+  counter int [not null, default: 0]
+}
+
+Table order.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table order.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
+Table order.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+Table order.idempotency_keys { id uuid [pk]  scope varchar(60)  actor_key varchar(64)  idempotency_key varchar(128)  request_hash varchar(64)  status varchar(20)  response_status int  response_body jsonb  result_ref varchar(64)  expires_at timestamptz  created_at timestamptz  Note: 'UQ (scope, actor_key, idempotency_key)' }
+
+Ref: order.order_items.order_id > order.orders.id
+Ref: order.order_status_histories.order_id > order.orders.id
+Ref: order.return_requests.order_id > order.orders.id
+Ref: order.return_request_items.return_id > order.return_requests.id
+
+
+// ===================================================== payment (PLAN-0007)
+
+Table payment.payment_methods {
+  code varchar(20) [pk]
+  name varchar(120) [not null]
+  description varchar(300) [null]
+  kind varchar(20) [not null]
+  is_active bool [not null, default: true]
+  sort_order int [not null, default: 0]
+  config jsonb [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+}
+
+Table payment.payments {
+  id uuid [pk, default: `gen_random_uuid()`]
+  order_id uuid [not null]
+  order_code varchar(30) [not null]
+  user_id uuid [not null]
+  method_code varchar(20) [not null]
+  amount numeric(14,0) [not null]
+  status varchar(20) [not null, default: 'pending']
+  transaction_code varchar(64) [null]
+  bank_code varchar(20) [null]
+  card_brand varchar(20) [null]
+  card_last4 varchar(4) [null]
+  transfer_content varchar(60) [null]
+  refunded_amount numeric(14,0) [not null, default: 0]
+  gateway_response jsonb [null]
+  paid_at timestamptz [null]
+  expires_at timestamptz [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+}
+
+Table payment.payment_transactions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  payment_id uuid [not null]
+  type varchar(20) [not null]
+  status varchar(20) [not null]
+  amount numeric(14,0) [null]
+  provider_ref varchar(120) [null]
+  raw_request jsonb [null]
+  raw_response jsonb [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table payment.bank_transfer_confirmations {
+  id uuid [pk, default: `gen_random_uuid()`]
+  payment_id uuid [not null]
+  amount numeric(14,0) [not null]
+  bank_ref varchar(120) [null]
+  note varchar(500) [null]
+  confirmed_by uuid [not null]
+  confirmed_at timestamptz [not null, default: `now()`]
+}
+
+Table payment.refunds {
+  id uuid [pk, default: `gen_random_uuid()`]
+  payment_id uuid [not null]
+  order_code varchar(30) [not null]
+  return_request_id uuid [null]
+  amount numeric(14,0) [not null]
+  status varchar(20) [not null, default: 'requested']
+  method varchar(20) [not null]
+  provider_ref varchar(120) [null]
+  reason varchar(255) [null]
+  note varchar(500) [null]
+  requested_by uuid [null]
+  processed_by uuid [null]
+  processed_at timestamptz [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table payment.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table payment.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
+Table payment.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+
+Ref: payment.payment_transactions.payment_id > payment.payments.id
+Ref: payment.bank_transfer_confirmations.payment_id > payment.payments.id
+Ref: payment.refunds.payment_id > payment.payments.id
+
+
+// ===================================================== review (PLAN-0009)
+
+Table review.reviews {
+  id uuid [pk, default: `gen_random_uuid()`]
+  product_id uuid [not null]
+  product_slug varchar(160) [not null]
+  product_name varchar(200) [not null]
+  user_id uuid [not null]
+  author_name varchar(120) [not null]
+  avatar_url varchar(500) [null]
+  order_code varchar(30) [null]
+  order_item_id uuid [null]
+  variant_label varchar(160) [null]
+  rating int [not null]
+  content varchar(2000) [not null]
+  media jsonb [not null, default: '[]']
+  status varchar(20) [not null, default: 'approved']
+  moderation_note varchar(500) [null]
+  moderated_by uuid [null]
+  moderated_at timestamptz [null]
+  helpful_count int [not null, default: 0]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  is_deleted bool [not null, default: false]
+  Note: 'UQ (user_id, order_item_id)'
+}
+
+Table review.review_replies {
+  id uuid [pk, default: `gen_random_uuid()`]
+  review_id uuid [not null]
+  staff_user_id uuid [not null]
+  staff_name varchar(120) [not null]
+  content varchar(2000) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table review.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table review.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
+Table review.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+
+Ref: review.review_replies.review_id > review.reviews.id
+
+
+// ===================================================== reporting (PLAN-0011)
+
+Table reporting.daily_sales {
+  day varchar(10) [pk]
+  order_count int [not null, default: 0]
+  paid_count int [not null, default: 0]
+  cancelled_count int [not null, default: 0]
+  revenue numeric(14,0) [not null, default: 0]
+  discount numeric(14,0) [not null, default: 0]
+  shipping_fee numeric(14,0) [not null, default: 0]
+  items_sold int [not null, default: 0]
+  new_customers int [not null, default: 0]
+  refunded numeric(14,0) [not null, default: 0]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+
+// ===================================================== ai (PLAN-0012/0013)
+
+Table ai.product_embeddings {
+  product_id uuid [pk]
+  product_slug varchar(160) [not null]
+  embedding vector(1536) [null]
+  source_hash varchar(64) [not null]
+  model varchar(60) [not null]
+  status varchar(20) [not null, default: 'pending']
+  error varchar(500) [null]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.documents {
+  id uuid [pk, default: `gen_random_uuid()`]
+  title varchar(200) [not null]
+  content text [not null]
+  kind varchar(20) [not null, default: 'policy']
+  status varchar(20) [not null, default: 'pending']
+  error varchar(500) [null]
+  is_active bool [not null, default: true]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  is_deleted bool [not null, default: false]
+}
+
+Table ai.document_chunks {
+  id uuid [pk, default: `gen_random_uuid()`]
+  document_id uuid [not null]
+  chunk_index int [not null]
+  content text [not null]
+  embedding vector(1536) [null]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'UQ (document_id, chunk_index)'
+}
+
+Table ai.chat_sessions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [null]
+  guest_key varchar(64) [null]
+  title varchar(200) [null]
+  message_count int [not null, default: 0]
+  last_message_at timestamptz [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.chat_messages {
+  id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [not null]
+  role varchar(20) [not null]
+  content text [not null]
+  product_ids jsonb [not null, default: '[]']
+  source varchar(10) [not null, default: 'rule']
+  tokens_in int [not null, default: 0]
+  tokens_out int [not null, default: 0]
+  meta jsonb [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.support_requests {
+  id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [null]
+  user_id uuid [null]
+  email varchar(255) [null]
+  summary varchar(1000) [not null]
+  status varchar(20) [not null, default: 'open']
+  assigned_to uuid [null]
+  resolved_by uuid [null]
+  resolved_at timestamptz [null]
+  note varchar(1000) [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.usage_logs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  feature varchar(40) [not null]
+  provider varchar(20) [not null]
+  model varchar(80) [not null]
+  tokens_in int [not null, default: 0]
+  tokens_out int [not null, default: 0]
+  cost_estimate numeric(12,6) [not null, default: 0]
+  duration_ms int [not null, default: 0]
+  success bool [not null, default: true]
+  user_id uuid [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.try_on_jobs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [null]
+  guest_key varchar(64) [null]
+  product_id uuid [not null]
+  product_name varchar(200) [not null]
+  garment_image_url varchar(500) [not null]
+  person_image_url varchar(500) [not null]
+  person_public_id varchar(255) [null]
+  category varchar(20) [not null, default: 'upper_body']
+  status varchar(20) [not null, default: 'queued']
+  provider_job_id varchar(120) [null]
+  result_url varchar(500) [null]
+  result_public_id varchar(255) [null]
+  error varchar(500) [null]
+  attempts int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  started_at timestamptz [null]
+  finished_at timestamptz [null]
+}
+
+Table ai.style_analyses {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [null]
+  guest_key varchar(64) [null]
+  image_url varchar(500) [not null]
+  image_public_id varchar(255) [null]
+  result jsonb [not null]
+  product_ids jsonb [not null, default: '[]']
+  source varchar(10) [not null, default: 'rule']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.review_summaries {
+  product_id uuid [pk]
+  summary varchar(2000) [not null]
+  pros jsonb [not null, default: '[]']
+  cons jsonb [not null, default: '[]']
+  review_count int [not null]
+  model varchar(80) [not null]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.moderation_flags {
+  review_id uuid [pk]
+  label varchar(20) [not null]
+  score numeric(4,3) [not null]
+  reason varchar(500) [null]
+  model varchar(80) [not null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.product_view_events {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [null]
+  guest_key varchar(64) [null]
+  product_id uuid [not null]
+  event_type varchar(15) [not null, default: 'view']
+  source varchar(30) [null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.product_faqs {
+  product_id uuid [pk]
+  items jsonb [not null, default: '[]']
+  source_hash varchar(64) [not null]
+  status varchar(20) [not null, default: 'pending']
+  model varchar(80) [null]
+  error varchar(500) [null]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table ai.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table ai.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+
+Ref: ai.document_chunks.document_id > ai.documents.id
+Ref: ai.chat_messages.session_id > ai.chat_sessions.id

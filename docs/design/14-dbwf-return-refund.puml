@@ -1,0 +1,108 @@
+@startuml 14-dbwf-return-refund
+title Database Workflow 5 — Đổi trả sau giao hàng: khách gửi yêu cầu → nhân viên duyệt → nhập lại kho → hoàn tiền qua QR/SePay
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Khách (web bán hàng)|
+start
+:Đơn delivered/completed còn trong hạn đổi trả;
+:POST /uploads/media (ảnh minh chứng → Cloudinary);
+:POST /orders/{code}/returns
+{ reason, detail, items[orderItemId, quantity], evidence[],
+refundBankCode, refundAccountNo, refundAccountName };
+
+|API order (NestJS)|
+#EEF6FF:BEGIN TRANSACTION;
+|PostgreSQL|
+:SELECT orders + order_items FOR UPDATE;
+kiểm quyền sở hữu (user_id từ JWT), hạn đổi trả,
+số lượng ≤ đã mua − đã trả;
+:INSERT **order.return_requests**
+status = requested, refund_amount = Σ line theo tỉ lệ giảm,
+evidence json, refund_bank_* (snapshot TK khách);
+:INSERT **order.return_request_items** (snapshot dòng);
+:INSERT order.audit_logs + outbox RETURN_REQUESTED;
+|API order (NestJS)|
+#EEF6FF:COMMIT;
+
+|Worker (outbox relay)|
+:Notification nhân viên (order.return.process):
+"Yêu cầu đổi trả mới";
+
+|Nhân viên CSKH (web quản trị)|
+:Mở /order/returns/{id}: xem hàng trả, ảnh, TK nhận hoàn;
+:POST /admin/returns/{id}/process
+{ decision, rejectReason | refundAmount };
+
+|API order (NestJS)|
+#EEF6FF:BEGIN TRANSACTION;
+|PostgreSQL|
+:SELECT return_requests FOR UPDATE (status = requested);
+|API order (NestJS)|
+if (decision?) then (rejected)
+  |PostgreSQL|
+  :UPDATE return_requests status = rejected,
+  reject_reason, processed_by/at;
+  :INSERT system.notifications (khách, "bị từ chối");
+  :INSERT audit_logs + outbox RETURN_PROCESSED;
+  |API order (NestJS)|
+  #EEF6FF:COMMIT;
+  stop
+else (approved)
+endif
+|Gateway (cùng transaction)|
+:InventoryGateway.restock:
+UPDATE product_variants stock += qty
+INSERT stock_movements (type = RETURN, ref = return);
+|PostgreSQL|
+:UPDATE return_requests status = approved,
+refund_amount (ghi đè nếu nhân viên sửa), processed_by/at;
+if (Trả toàn bộ đơn?) then (có)
+  :UPDATE orders status = returned
+  + order_status_histories (→ returned);
+else (một phần)
+  :order_status_histories ghi chú "trả một phần";
+endif
+|Gateway (cùng transaction)|
+if (Đơn đã thanh toán (paid)?) then (có)
+  :PaymentGateway.requestRefund:
+  refund_sequences FOR UPDATE → HT…
+  INSERT **payment.refunds** status = requested,
+  method = qr_transfer, return_request_id,
+  bank_* chép từ return_requests.refund_bank_*;
+else (COD chưa thu)
+  |PostgreSQL|
+  :UPDATE return_requests status = refunded (không có tiền để hoàn);
+  |Gateway (cùng transaction)|
+endif
+|PostgreSQL|
+:INSERT system.notifications (khách, "được duyệt, gửi hàng về");
+:INSERT audit_logs + outbox RETURN_PROCESSED;
+|API order (NestJS)|
+#EEF6FF:COMMIT;
+
+|Kế toán (web quản trị)|
+:Kho nhận hàng trả về (kiểm tra thực tế);
+:Mở /payment/refunds → HT… → QR VietQR (TK khách) → quét chuyển;
+(giống Workflow 4 từ bước "Kế toán");
+
+|Ngân hàng / SePay|
+:Webhook tiền RA khớp HT… → **Workflow 3**;
+
+|API payment (NestJS)|
+#EEF6FF:TX: refunds done · payments refunded_amount
+· orders payment_status · **return_requests status = refunded,
+refunded_at** · outbox PAYMENT_REFUNDED;
+
+|Khách (web bán hàng)|
+:Nhận thông báo + email "Đã hoàn tiền";
+stop
+
+@enduml

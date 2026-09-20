@@ -1,0 +1,103 @@
+@startuml 17-dbwf-consistency-outbox-idempotency
+title Database Workflow 8 — Cơ chế giữ nhất quán dữ liệu: transaction + audit + outbox (ghi cùng TX) → relay → listener idempotent (processed_events); cache Redis
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|API (mọi module ghi dữ liệu)|
+start
+:Request ghi (POST/PUT/PATCH/DELETE) đi qua
+JwtAuthGuard → PermissionGuard → ValidationPipe → Service;
+:JwtAuthGuard: so permission_version trong token với
+identity.users (cache Redis perm:<userId>) — lệch → 401 TOKEN_STALE;
+
+#EEF6FF:BEGIN TRANSACTION (prisma.$transaction, isolation READ COMMITTED);
+|PostgreSQL (schema của module)|
+:Khoá dòng nghiệp vụ: SELECT … FOR UPDATE
+(orders, payments, refunds, product_variants, promotions…);
+:Kiểm bất biến nghiệp vụ trên dữ liệu đã khoá
+(trạng thái hợp lệ, tồn ≥ giữ, hạn dùng mã…);
+|API (mọi module ghi dữ liệu)|
+if (Vi phạm?) then (có)
+  #FFE5E5:ném BusinessException → ROLLBACK toàn bộ
+  (không có dòng nào — kể cả audit/outbox — được ghi);
+  stop
+else (không)
+endif
+|PostgreSQL (schema của module)|
+:UPDATE / INSERT bảng nghiệp vụ;
+:INSERT **<module>.audit_logs**
+(actor_id, action, entity, entity_id, before/after json, request_id, ip);
+:INSERT **<module>.outbox_events**
+(id uuid, event_type, event_version, aggregate_type, aggregate_id,
+payload json, status = PENDING, next_attempt_at = now(), request_id);
+|Gateway (cùng transaction)|
+:Gọi module khác qua Gateway interface, TRUYỀN cùng `tx`
+(InventoryGateway, PromotionGateway, PaymentGateway, OrderPaymentGateway)
+→ ghi vào schema module kia trong cùng transaction;
+|API (mọi module ghi dữ liệu)|
+#EEF6FF:COMMIT — nghiệp vụ + audit + outbox + dữ liệu chéo module
+thành công hoặc thất bại CÙNG NHAU (atomic);
+:Trả response; sau commit mới xoá cache Redis
+(product:<slug>, catalog tree, settings, perm:<userId>);
+
+|Worker — OutboxRelay (mỗi schema 1 instance, @Interval 3 s)|
+#EEF6FF:TX claim ngắn:
+SELECT … FROM <schema>.outbox_events
+WHERE retry_count < 8 AND (
+  status IN (PENDING, FAILED) AND next_attempt_at ≤ now()
+  OR status = PROCESSING AND updated_at < now() − 10 phút)
+ORDER BY created_at LIMIT 50 FOR UPDATE SKIP LOCKED;
+:UPDATE … SET status = PROCESSING, updated_at = now(); COMMIT;
+:Dispatch NGOÀI transaction: emitter.emitAsync
+"outbox.<schema>.<EVENT_TYPE>" → các listener;
+
+|Listener (mail · notification · AI · reporting)|
+:INSERT **<schema>.processed_events** (event_id, handler)
+— unique (event_id, handler);
+if (Trùng (đã xử lý lần trước)?) then (có)
+  :Bỏ qua — an toàn khi relay claim lại
+  event PROCESSING treo > 10 phút;
+else (chưa)
+  :Tác vụ phụ: gửi email (SMTP), INSERT system.notifications,
+  BullMQ (AI embedding, try-on), cập nhật số liệu;
+endif
+
+|Worker — OutboxRelay (mỗi schema 1 instance, @Interval 3 s)|
+if (Listener ném lỗi?) then (có)
+  #FFE5E5:UPDATE outbox_events status = FAILED,
+  retry_count + 1, error_message,
+  next_attempt_at = now() + min(2^retry × 5 s, 3600 s);
+  if (retry_count ≥ 8?) then (có)
+    :Nằm lại FAILED — vận hành xem
+    /system/outbox (admin có system.outbox.read) → retry tay;
+  else (chưa)
+    :Lần poll sau claim lại;
+  endif
+else (không)
+  :UPDATE outbox_events status = DONE, processed_at = now();
+endif
+
+|Ranh giới module (không chạm DB chéo)|
+:Module KHÔNG JOIN sang schema module khác.
+Đọc chéo → QueryApi (vd ProductQueryApi.getVariantsForCart)
+Ghi chéo → Gateway trong cùng tx
+Bất đồng bộ → outbox event (payload đủ để listener không cần query ngược);
+note right
+  Hệ quả DB:
+  • Không FK vật lý giữa hai schema — chỉ tham chiếu
+    bằng id/code + kiểm ở tầng service.
+  • Xoá logic (deleted_at / is_active) thay vì DELETE
+    cho dữ liệu có tham chiếu chéo (user, product, promotion).
+  • Mỗi schema có bộ 4 bảng kỹ thuật giống nhau:
+    audit_logs · outbox_events · processed_events · idempotency_keys.
+end note
+stop
+
+@enduml

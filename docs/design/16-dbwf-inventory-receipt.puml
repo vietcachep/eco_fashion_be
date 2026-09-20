@@ -1,0 +1,98 @@
+@startuml 16-dbwf-inventory-receipt
+title Database Workflow 7 — Nhập kho (phiếu nháp → ghi sổ có Idempotency-Key) và điều chỉnh tồn; sổ kho append-only
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Nhân viên kho (web quản trị)|
+start
+:Lập phiếu: POST /admin/inventory/receipts
+{ supplierName, note, items[variantId, quantity, unitCost] };
+
+|API product (NestJS)|
+#EEF6FF:BEGIN TX;
+|PostgreSQL|
+:SELECT product_variants WHERE id IN (…) — kiểm tồn tại, is_active;
+:INSERT **product.stock_receipts** status = draft,
+code = PNyymmddNNNN, total_cost = Σ qty × unit_cost;
+:INSERT **product.stock_receipt_items** (snapshot sku, unit_cost);
+:INSERT product.audit_logs (RECEIPT_CREATED);
+|API product (NestJS)|
+#EEF6FF:COMMIT → StockReceiptResponse (draft);
+
+|Nhân viên kho (web quản trị)|
+:Kiểm phiếu → POST /admin/inventory/receipts/{id}/post
+header Idempotency-Key (UUID, giữ nguyên khi retry);
+
+|API product (NestJS)|
+#EEF6FF:BEGIN TX (idempotency sống CÙNG transaction nghiệp vụ);
+|PostgreSQL|
+:SELECT **product.idempotency_keys**
+WHERE (scope = inventory.post, actor_key, idempotency_key);
+|API product (NestJS)|
+if (Kết quả?) then (DONE, request_hash trùng)
+  :Replay response cũ — KHÔNG cộng tồn lần hai;
+  stop
+elseif (hash khác) then (dùng lại key cho body khác)
+  #FFE5E5:ROLLBACK → 409 COMMON_IDEMPOTENCY_KEY_REUSED;
+  stop
+elseif (IN_PROGRESS) then (instance khác đang chạy)
+  #FFE5E5:ROLLBACK → 409 COMMON_DUPLICATE (client thử lại nhận replay);
+  stop
+else (chưa có)
+endif
+|PostgreSQL|
+:INSERT idempotency_keys IN_PROGRESS, request_hash, expires_at
+(unique index là chốt khi 2 request song song);
+:SELECT stock_receipts FOR UPDATE (status = draft);
+:Với từng dòng: UPDATE **product_variants**
+SET stock = stock + quantity (FOR UPDATE);
+:INSERT **product.stock_movements**
+(type = RECEIPT, quantity = +qty, stock_after, ref = receipt);
+:UPDATE stock_receipts status = posted, posted_at, posted_by;
+:INSERT product.audit_logs (RECEIPT_POSTED);
+:UPDATE idempotency_keys DONE, response_status, response_body;
+|API product (NestJS)|
+#EEF6FF:COMMIT (lỗi giữa chừng → ROLLBACK, dòng key cũng mất → retry sạch);
+:Xoá cache Redis: product:<slug>, danh sách tồn kho;
+
+|Nhân viên kho (web quản trị)|
+:Điều chỉnh (kiểm kê / hỏng / mất):
+POST /admin/inventory/adjust { variantId, delta, reason };
+
+|API product (NestJS)|
+#EEF6FF:BEGIN TX;
+|PostgreSQL|
+:SELECT product_variants FOR UPDATE;
+|API product (NestJS)|
+if (stock + delta ≥ reserved?) then (không)
+  #FFE5E5:ROLLBACK → 409 INVENTORY_NEGATIVE
+  (không được thấp hơn số đang giữ cho đơn);
+  stop
+else (có)
+endif
+|PostgreSQL|
+:UPDATE product_variants stock += delta;
+:INSERT stock_movements (type = ADJUST, note = reason, actor);
+:INSERT product.audit_logs (STOCK_ADJUSTED);
+|API product (NestJS)|
+#EEF6FF:COMMIT;
+
+|Worker|
+:Job 03:30 hằng ngày: cảnh báo sắp hết
+(available ≤ ngưỡng setting) → notifications nhân viên kho;
+:Job reporting: inventory summary (giá trị tồn) cache Redis 5 phút;
+note right
+  Bất biến: stock_movements chỉ INSERT, không UPDATE/DELETE.
+  Tồn hiện tại của biến thể luôn = tổng quantity của các dòng
+  movement (kiểm tra được bằng SUM khi đối chiếu kho).
+end note
+stop
+
+@enduml

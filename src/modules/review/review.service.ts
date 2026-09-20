@@ -1,0 +1,275 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { AuditEntry, writeAuditLog } from '@common/audit/audit';
+import { BusinessException, ForbiddenException, NotFoundException } from '@common/exception/business.exception';
+import { PRODUCT_STATS_GATEWAY, ProductStatsGateway } from '@common/gateway/product-stats.gateway';
+import { USER_DIRECTORY_GATEWAY, UserDirectoryGateway } from '@common/gateway/user-directory.gateway';
+import { OutboxEventInput, writeOutboxEvent } from '@common/outbox/outbox';
+import { PrismaService } from '@common/prisma/prisma.service';
+import { Prisma, Tx } from '@common/prisma/types';
+import { PageResponse } from '@common/response/api-response';
+import type { AuthenticatedActor } from '@common/security/authenticated-actor';
+import { resolveAvatarUrl } from '@common/utils';
+import { OrderQueryApi } from '../order/queryapi/order.queryapi';
+import { ProductQueryApi } from '../product/queryapi/product.queryapi';
+
+import { REVIEW_EVENT, REVIEW_MODULE } from './enums/review-events';
+
+export const REVIEW_ERR = { NOT_FOUND: 'REVIEW_NOT_FOUND', NOT_PURCHASED: 'REVIEW_NOT_PURCHASED', ALREADY_REVIEWED: 'REVIEW_ALREADY_REVIEWED', PRODUCT_NOT_FOUND: 'REVIEW_PRODUCT_NOT_FOUND', INVALID_STATE: 'REVIEW_INVALID_STATE' } as const;
+export const REVIEW_STATUS = { PENDING: 'pending', APPROVED: 'approved', HIDDEN: 'hidden' } as const;
+
+export interface MediaItem {
+  type: string;
+  url: string;
+  name: string;
+}
+
+/* Đánh giá hiện ở trang sản phẩm (FE `ReviewResponse`). */
+export interface ReviewResponse {
+  id: string;
+  productId: string;
+  author: string;
+  avatarUrl: string | null;
+  rating: number;
+  content: string;
+  variantLabel: string | null;
+  media: MediaItem[];
+  /* Ảnh (url) tách riêng cho FE cũ */
+  images: string[];
+  reply: { staffName: string; content: string; createdAt: string } | null;
+  createdAt: string;
+}
+
+/* Đánh giá của tôi (FE `MyReviewResponse`). */
+export interface MyReviewResponse {
+  id: string;
+  productId: string;
+  productName: string;
+  productSlug: string;
+  imageUrl: string | null;
+  rating: number;
+  content: string;
+  media: MediaItem[];
+  variantLabel: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface ReviewAdminResponse extends ReviewResponse {
+  userId: string;
+  productSlug: string;
+  productName: string;
+  orderCode: string | null;
+  status: string;
+  moderationNote: string | null;
+  helpfulCount: number;
+}
+
+export interface ProductReviewSummary {
+  avgRating: number;
+  reviewCount: number;
+  distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
+}
+
+type ReviewRow = Prisma.ReviewGetPayload<{ include: { replies: true } }>;
+
+/*
+ * Đánh giá (PLAN-0009): chỉ khách ĐÃ NHẬN hàng (order delivered/completed) mới đánh giá, mỗi dòng đơn một lần; ảnh/video
+ * upload trước qua /uploads/media (Cloudinary). Mặc định hiện ngay (approved); nhân viên ẩn/hiện, trả lời thay shop.
+ * Điểm trung bình + số đánh giá ghi sang product (ProductStatsGateway) trong cùng tx; outbox REVIEW_CREATED cho AI tóm tắt/kiểm duyệt.
+ */
+@Injectable()
+export class ReviewService {
+  private readonly logger = new Logger(ReviewService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly products: ProductQueryApi,
+    private readonly orders: OrderQueryApi,
+    @Inject(PRODUCT_STATS_GATEWAY) private readonly stats: ProductStatsGateway,
+    @Inject(USER_DIRECTORY_GATEWAY) private readonly users: UserDirectoryGateway,
+  ) {}
+
+  // ------------------------------------------------------------ đọc công khai
+
+  async listForProduct(slug: string, page: number, size: number, rating?: number): Promise<PageResponse<ReviewResponse> & { summary: ProductReviewSummary }> {
+    const productId = await this.productIdBySlug(slug);
+    const where: Prisma.ReviewWhereInput = { productId, status: REVIEW_STATUS.APPROVED, isDeleted: false, ...(rating ? { rating } : {}) };
+    const [items, total, summary] = await Promise.all([
+      this.prisma.review.findMany({ where, include: { replies: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }),
+      this.prisma.review.count({ where }),
+      this.summary(productId),
+    ]);
+    return Object.assign(PageResponse.of(items.map((r) => ReviewService.toPublic(r)), page, size, total), { summary });
+  }
+
+  private async productIdBySlug(slug: string): Promise<string> {
+    const p = await this.products.findProductBriefBySlug(slug);
+    if (!p) throw new NotFoundException(REVIEW_ERR.PRODUCT_NOT_FOUND, 'Không tìm thấy sản phẩm');
+    return p.id;
+  }
+
+  async summary(productId: string): Promise<ProductReviewSummary> {
+    const rows = await this.prisma.review.groupBy({ by: ['rating'], where: { productId, status: REVIEW_STATUS.APPROVED, isDeleted: false }, _count: true });
+    const distribution = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 } as Record<'1' | '2' | '3' | '4' | '5', number>;
+    let sum = 0;
+    let count = 0;
+    for (const r of rows) {
+      distribution[String(r.rating) as '1'] = r._count;
+      sum += r.rating * r._count;
+      count += r._count;
+    }
+    return { avgRating: count ? Math.round((sum / count) * 10) / 10 : 0, reviewCount: count, distribution };
+  }
+
+  /* Khách có thể đánh giá sản phẩm này không (FE ẩn/hiện form). */
+  async eligibility(actor: AuthenticatedActor, slug: string): Promise<{ canReview: boolean; orderCode: string | null; variantLabel: string | null; reason: string | null }> {
+    const productId = await this.productIdBySlug(slug);
+    const item = await this.orders.purchasedItem(actor.userId, productId);
+    if (!item) return { canReview: false, orderCode: null, variantLabel: null, reason: 'Bạn cần mua và nhận sản phẩm trước khi đánh giá' };
+    if (item.reviewed) return { canReview: false, orderCode: item.orderCode, variantLabel: `${item.color} / ${item.size}`, reason: 'Bạn đã đánh giá sản phẩm này' };
+    return { canReview: true, orderCode: item.orderCode, variantLabel: `${item.color} / ${item.size}`, reason: null };
+  }
+
+  // ------------------------------------------------------------ khách viết
+
+  async create(actor: AuthenticatedActor, slug: string, input: { rating: number; content: string; media: MediaItem[] }): Promise<MyReviewResponse> {
+    const productId = await this.productIdBySlug(slug);
+    const [brief, item, user] = await Promise.all([this.products.findProductBrief(productId), this.orders.purchasedItem(actor.userId, productId), this.users.findSnapshot(actor.userId)]);
+    if (!brief) throw new NotFoundException(REVIEW_ERR.PRODUCT_NOT_FOUND, 'Không tìm thấy sản phẩm');
+    if (!item) throw new ForbiddenException(REVIEW_ERR.NOT_PURCHASED, 'Bạn cần mua và nhận sản phẩm trước khi đánh giá');
+    if (item.reviewed) throw new BusinessException(REVIEW_ERR.ALREADY_REVIEWED, 'Bạn đã đánh giá sản phẩm này', 409);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.review.create({
+        data: {
+          productId,
+          productSlug: brief.slug,
+          productName: brief.name,
+          userId: actor.userId,
+          authorName: user?.fullName ?? actor.email,
+          avatarUrl: null,
+          orderCode: item.orderCode,
+          orderItemId: item.orderItemId,
+          variantLabel: `${item.color} / ${item.size}`,
+          rating: input.rating,
+          content: input.content.trim(),
+          media: input.media as unknown as Prisma.InputJsonValue,
+          status: REVIEW_STATUS.APPROVED,
+        },
+        include: { replies: true },
+      });
+      await this.orders.markItemsReviewed([item.orderItemId], tx);
+      await this.syncStats(productId, tx);
+      await this.audit(tx, actor, { action: 'REVIEW_CREATED', entityType: 'review', entityId: r.id, entityCode: brief.slug, after: { rating: r.rating, media: input.media.length } });
+      await this.publish(tx, { eventType: REVIEW_EVENT.CREATED, aggregateType: 'review', aggregateId: r.id, payload: { reviewId: r.id, productId, rating: r.rating } });
+      return r;
+    });
+    this.logger.log({ reviewId: created.id, productId, userId: actor.userId }, 'Khách đánh giá sản phẩm');
+    return this.toMine(created, await this.imageOf(productId));
+  }
+
+  async mine(actor: AuthenticatedActor, page: number, size: number): Promise<PageResponse<MyReviewResponse>> {
+    const where = { userId: actor.userId, isDeleted: false };
+    const [items, total] = await Promise.all([this.prisma.review.findMany({ where, include: { replies: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }), this.prisma.review.count({ where })]);
+    const cards = await this.products.cardsByIds([...new Set(items.map((r) => r.productId))]);
+    const img = new Map(cards.map((c) => [c.id, c.imageUrl]));
+    return PageResponse.of(items.map((r) => this.toMine(r, img.get(r.productId) ?? null)), page, size, total);
+  }
+
+  async updateMine(actor: AuthenticatedActor, id: string, input: { rating?: number; content?: string; media?: MediaItem[] }): Promise<MyReviewResponse> {
+    const r = await this.prisma.review.findFirst({ where: { id, userId: actor.userId, isDeleted: false } });
+    if (!r) throw new NotFoundException(REVIEW_ERR.NOT_FOUND, 'Không tìm thấy đánh giá');
+    const after = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.review.update({ where: { id }, data: { ...(input.rating !== undefined ? { rating: input.rating } : {}), ...(input.content !== undefined ? { content: input.content.trim() } : {}), ...(input.media !== undefined ? { media: input.media as unknown as Prisma.InputJsonValue } : {}), version: { increment: 1 } }, include: { replies: true } });
+      if (input.rating !== undefined && input.rating !== r.rating) await this.syncStats(r.productId, tx);
+      await this.audit(tx, actor, { action: 'REVIEW_UPDATED', entityType: 'review', entityId: id, before: { rating: r.rating }, after: { rating: u.rating } });
+      return u;
+    });
+    return this.toMine(after, await this.imageOf(r.productId));
+  }
+
+  async deleteMine(actor: AuthenticatedActor, id: string): Promise<void> {
+    const r = await this.prisma.review.findFirst({ where: { id, userId: actor.userId, isDeleted: false } });
+    if (!r) throw new NotFoundException(REVIEW_ERR.NOT_FOUND, 'Không tìm thấy đánh giá');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.review.update({ where: { id }, data: { isDeleted: true, version: { increment: 1 } } });
+      await this.syncStats(r.productId, tx);
+      await this.audit(tx, actor, { action: 'REVIEW_DELETED', entityType: 'review', entityId: id });
+    });
+  }
+
+  // ------------------------------------------------------------ nhân viên
+
+  async listAdmin(page: number, size: number, f: { status?: string; rating?: number; q?: string }): Promise<PageResponse<ReviewAdminResponse>> {
+    const where: Prisma.ReviewWhereInput = { isDeleted: false, ...(f.status ? { status: f.status } : {}), ...(f.rating ? { rating: f.rating } : {}), ...(f.q ? { OR: [{ productName: { contains: f.q, mode: 'insensitive' } }, { content: { contains: f.q, mode: 'insensitive' } }, { authorName: { contains: f.q, mode: 'insensitive' } }] } : {}) };
+    const [items, total] = await Promise.all([this.prisma.review.findMany({ where, include: { replies: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }), this.prisma.review.count({ where })]);
+    return PageResponse.of(items.map((r) => ReviewService.toAdmin(r)), page, size, total);
+  }
+
+  async moderate(actor: AuthenticatedActor, id: string, status: 'approved' | 'hidden', note?: string): Promise<ReviewAdminResponse> {
+    const r = await this.prisma.review.findFirst({ where: { id, isDeleted: false } });
+    if (!r) throw new NotFoundException(REVIEW_ERR.NOT_FOUND, 'Không tìm thấy đánh giá');
+    const after = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.review.update({ where: { id }, data: { status, moderationNote: note ?? null, moderatedBy: actor.userId, moderatedAt: new Date(), version: { increment: 1 } }, include: { replies: true } });
+      await this.syncStats(r.productId, tx);
+      await this.audit(tx, actor, { action: 'REVIEW_MODERATED', entityType: 'review', entityId: id, before: { status: r.status }, after: { status, note: note ?? null } });
+      return u;
+    });
+    return ReviewService.toAdmin(after);
+  }
+
+  async reply(actor: AuthenticatedActor, id: string, content: string): Promise<ReviewAdminResponse> {
+    const r = await this.prisma.review.findFirst({ where: { id, isDeleted: false } });
+    if (!r) throw new NotFoundException(REVIEW_ERR.NOT_FOUND, 'Không tìm thấy đánh giá');
+    const staff = await this.users.findSnapshot(actor.userId);
+    const after = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.reviewReply.findFirst({ where: { reviewId: id } });
+      if (existing) await tx.reviewReply.update({ where: { id: existing.id }, data: { content: content.trim(), staffUserId: actor.userId, staffName: staff?.fullName ?? 'Cửa hàng' } });
+      else await tx.reviewReply.create({ data: { reviewId: id, staffUserId: actor.userId, staffName: staff?.fullName ?? 'Cửa hàng', content: content.trim() } });
+      await this.audit(tx, actor, { action: 'REVIEW_REPLIED', entityType: 'review', entityId: id, after: { length: content.length } });
+      return tx.review.findUniqueOrThrow({ where: { id }, include: { replies: true } });
+    });
+    return ReviewService.toAdmin(after);
+  }
+
+  // ------------------------------------------------------------ helpers
+
+  /* Đếm sẵn lên product (chỉ approved) trong cùng tx. */
+  private async syncStats(productId: string, tx: Tx): Promise<void> {
+    const agg = await tx.review.aggregate({ where: { productId, status: REVIEW_STATUS.APPROVED, isDeleted: false }, _avg: { rating: true }, _count: true });
+    await this.stats.setRating(productId, Math.round((agg._avg.rating ?? 0) * 100) / 100, agg._count, tx);
+  }
+
+  private async imageOf(productId: string): Promise<string | null> {
+    const [c] = await this.products.cardsByIds([productId]);
+    return c?.imageUrl ?? null;
+  }
+
+  static toPublic(r: ReviewRow): ReviewResponse {
+    const media = Array.isArray(r.media) ? (r.media as unknown as MediaItem[]) : [];
+    const reply = r.replies[0] ?? null;
+    return { id: r.id, productId: r.productId, author: ReviewService.maskName(r.authorName), avatarUrl: resolveAvatarUrl(r.avatarUrl, r.authorName), rating: r.rating, content: r.content, variantLabel: r.variantLabel, media, images: media.filter((m) => m.type === 'image').map((m) => m.url), reply: reply ? { staffName: reply.staffName, content: reply.content, createdAt: reply.createdAt.toISOString() } : null, createdAt: r.createdAt.toISOString() };
+  }
+
+  static toAdmin(r: ReviewRow): ReviewAdminResponse {
+    return { ...ReviewService.toPublic(r), author: r.authorName, userId: r.userId, productSlug: r.productSlug, productName: r.productName, orderCode: r.orderCode, status: r.status, moderationNote: r.moderationNote, helpfulCount: r.helpfulCount };
+  }
+
+  private toMine(r: ReviewRow, imageUrl: string | null): MyReviewResponse {
+    return { id: r.id, productId: r.productId, productName: r.productName, productSlug: r.productSlug, imageUrl, rating: r.rating, content: r.content, media: Array.isArray(r.media) ? (r.media as unknown as MediaItem[]) : [], variantLabel: r.variantLabel, status: r.status, createdAt: r.createdAt.toISOString() };
+  }
+
+  /* Ẩn bớt tên khách trên web công khai: "Nguyễn Văn An" → "Nguyễn V. A." */
+  static maskName(name: string): string {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length <= 1) return name;
+    return `${parts[0]} ${parts.slice(1).map((p) => `${p[0]}.`).join(' ')}`;
+  }
+
+  private audit(tx: Tx, actor: AuthenticatedActor | null, entry: AuditEntry): Promise<void> {
+    return writeAuditLog(tx.reviewAuditLog, REVIEW_MODULE, actor, entry);
+  }
+
+  private publish(tx: Tx, input: OutboxEventInput): Promise<void> {
+    return writeOutboxEvent(tx.reviewOutboxEvent, input);
+  }
+}

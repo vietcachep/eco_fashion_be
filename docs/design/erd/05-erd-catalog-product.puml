@@ -1,0 +1,175 @@
+@startuml 05-erd-catalog-product
+title ERD — schema catalog (ngành hàng, bộ sưu tập, thuộc tính) và product (sản phẩm, biến thể, tồn kho)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide circle
+
+package "catalog" {
+  entity "categories" as categories {
+    * id : uuid <<PK>>
+    --
+    * slug : varchar(120)  (unique sống)
+    * name : varchar(120)
+    description : varchar(500)
+    image_url, image_public_id
+    parent_id : uuid <<FK>>  cây cha–con
+    * sort_order : int
+    * is_active : boolean
+    * product_count : int  (product cập nhật qua gateway)
+  }
+
+  entity "collections" as collections {
+    * id : uuid <<PK>>
+    --
+    * slug, name : varchar(120)
+    tagline : varchar(200)
+    image_url, image_public_id
+    query_category_slug : varchar(120)
+    query_gender : varchar(10)  nam | nu | unisex
+    query_tag : varchar(40)
+    * sort_order : int
+    * is_active : boolean
+  }
+
+  entity "attributes" as attributes {
+    * id : uuid <<PK>>
+    --
+    * code : varchar(40) <<U>>  color | size | material
+    * name : varchar(120)
+    * kind : varchar(20)  color | size | text
+    * is_filterable : boolean
+    * sort_order : int
+  }
+
+  entity "attribute_values" as attribute_values {
+    * id : uuid <<PK>>
+    --
+    * attribute_id : uuid <<FK>>
+    * code : varchar(40)  (unique theo attribute)
+    * name : varchar(120)
+    hex : varchar(9)  (màu)
+    group_code : varchar(20)  (size: ao | quan)
+    * sort_order : int
+    * is_active : boolean
+  }
+}
+
+package "product" {
+  entity "products" as products {
+    * id : uuid <<PK>>
+    --
+    * slug : varchar(160)  (unique sống)
+    * name : varchar(200)
+    * category_id : uuid  (tham chiếu catalog, không FK)
+    * category_slug : varchar(120)  snapshot
+    * gender : varchar(10)
+    short_description, description, material
+    care : jsonb  string[]
+    * base_price : numeric(14,0) VND
+    list_price : numeric(14,0)  giá gạch
+    * status : varchar(20)  draft | active | hidden
+    * is_new, is_featured : boolean
+    tags : jsonb  string[]
+    * sold_count, review_count, view_count : int
+    * avg_rating : numeric(3,2)
+    published_at : timestamptz
+    search_vector : tsvector  (unaccent + trigram)
+  }
+
+  entity "product_variants" as product_variants {
+    * id : uuid <<PK>>
+    --
+    * product_id : uuid <<FK>>
+    * sku : varchar(64)  (unique sống)
+    * color_code, color_name : varchar
+    color_hex : varchar(9)
+    * size_code : varchar(20)
+    price : numeric(14,0)  null = theo base_price
+    * stock : int  tồn thô
+    * reserved : int  giữ cho đơn chưa giao
+    * is_active : boolean
+    (unique product_id, color_code, size_code)
+  }
+
+  entity "product_images" as product_images {
+    * id : uuid <<PK>>
+    --
+    * product_id : uuid <<FK>>
+    * url : varchar(500)  Cloudinary
+    public_id : varchar(255)
+    color_code : varchar(40)  null = ảnh chung
+    alt : varchar(200)
+    * sort_order : int
+    * is_primary : boolean
+  }
+
+  entity "stock_receipts" as stock_receipts {
+    * id : uuid <<PK>>
+    --
+    * code : varchar(30) <<U>>  PNyymmddNNNN
+    supplier_name : varchar(200)
+    note : varchar(500)
+    * status : varchar(20)  draft | posted | cancelled
+    * total_cost : numeric(14,0)
+    posted_at : timestamptz
+    posted_by : uuid
+  }
+
+  entity "stock_receipt_items" as stock_receipt_items {
+    * id : uuid <<PK>>
+    --
+    * receipt_id : uuid <<FK>>
+    * variant_id : uuid  (unique theo receipt)
+    * sku : varchar(64)
+    * quantity : int
+    * unit_cost : numeric(14,0)
+  }
+
+  entity "stock_movements" as stock_movements {
+    * id : uuid <<PK>>
+    --
+    * product_id, variant_id : uuid
+    * type : varchar(20)  RECEIPT | ADJUST | RESERVE | RELEASE | SALE | RETURN
+    * quantity : int  (+/−)
+    * stock_after : int
+    ref_type : varchar(30)  order | receipt | adjust
+    ref_id : varchar(64)
+    note : varchar(255)
+    actor_user_id : uuid
+    * created_at  (append-only)
+  }
+
+  entity "idempotency_keys" as idempotency_keys {
+    * id : uuid <<PK>>
+    --
+    * scope, actor_key, idempotency_key  (unique)
+    * request_hash, status
+    response_status, response_body, result_ref
+    * expires_at
+  }
+}
+
+categories ||--o{ categories : parent_id
+attributes ||--o{ attribute_values
+products ||--o{ product_variants
+products ||--o{ product_images
+stock_receipts ||--o{ stock_receipt_items
+product_variants ||..o{ stock_receipt_items : variant_id
+product_variants ||..o{ stock_movements : variant_id
+categories ||..o{ products : category_id + category_slug
+attribute_values ||..o{ product_variants : color_code / size_code
+
+note bottom of product_variants
+  Khả dụng = stock − reserved.
+  Đặt hàng: reserve (+reserved); xác nhận: SALE (−stock −reserved);
+  huỷ: release (−reserved); trả hàng: return (+stock).
+  Mọi biến động ghi stock_movements (sổ kho).
+end note
+
+@enduml

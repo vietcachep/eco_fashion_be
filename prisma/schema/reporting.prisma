@@ -1,0 +1,22 @@
+// =====================================================================
+// Module reporting (PLAN-0011) — schema "reporting": bảng tổng hợp theo ngày do worker tính (không đọc trực tiếp bảng
+// order/payment lúc hiện dashboard), + các truy vấn đọc chỉ SELECT xuyên schema (ngoại lệ có chủ đích, chỉ đọc).
+// =====================================================================
+
+model DailySales {
+  /* yyyy-mm-dd (giờ VN) */
+  day           String   @id @db.VarChar(10)
+  orderCount    Int      @default(0) @map("order_count")
+  paidCount     Int      @default(0) @map("paid_count")
+  cancelledCount Int     @default(0) @map("cancelled_count")
+  revenue       Decimal  @default(0) @db.Decimal(14, 0)
+  discount      Decimal  @default(0) @db.Decimal(14, 0)
+  shippingFee   Decimal  @default(0) @map("shipping_fee") @db.Decimal(14, 0)
+  itemsSold     Int      @default(0) @map("items_sold")
+  newCustomers  Int      @default(0) @map("new_customers")
+  refunded      Decimal  @default(0) @db.Decimal(14, 0)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("daily_sales")
+  @@schema("reporting")
+}

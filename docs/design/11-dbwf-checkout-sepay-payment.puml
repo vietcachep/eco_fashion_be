@@ -1,0 +1,125 @@
+@startuml 11-dbwf-checkout-sepay-payment
+title Database Workflow 2 — Đặt hàng & thanh toán chuyển khoản VietQR qua SePay (dữ liệu vào DB theo thứ tự nào, trong transaction nào)
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Khách (web bán hàng)|
+start
+:Tick dòng giỏ, chọn địa chỉ, mã KM,
+phương thức **bank_transfer**;
+:POST /orders + header Idempotency-Key;
+
+|API order (NestJS)|
+:Tìm (scope=order.place, actor, key)
+trong **order.idempotency_keys**;
+if (Đã có key?) then (DONE, hash trùng)
+  :Trả lại response cũ (replay);
+  stop
+elseif (hash khác) then (409)
+  :409 KEY_REUSED;
+  stop
+else (chưa có)
+  :INSERT idempotency_keys (IN_FLIGHT);
+endif
+:Đọc **cart.cart_items** (selected) → biến thể
+qua product QueryApi; phí ship theo **system.provinces**;
+báo giá KM qua promotion QueryApi;
+
+#EEF6FF:BEGIN TRANSACTION (order);
+|PostgreSQL|
+:SELECT **product.product_variants** FOR UPDATE
+kiểm stock − reserved ≥ quantity;
+if (Đủ hàng?) then (không)
+  |API order (NestJS)|
+  #FFE5E5:ROLLBACK → 409 ORDER_OUT_OF_STOCK
+  (idempotency key ghi FAILED);
+  stop
+else (đủ)
+endif
+:SELECT **order.order_sequences** (day) FOR UPDATE
+→ counter + 1 → code DHyymmddNNNN;
+:INSERT **order.orders**
+status = pending, payment_status = unpaid,
+snapshot địa chỉ + tiền, payment_expires_at = now + 24h;
+:INSERT **order.order_items** (snapshot sku/tên/ảnh/giá);
+:INSERT **order.order_status_histories** (→ pending);
+
+|Gateway (cùng transaction)|
+:InventoryGateway.reserve:
+UPDATE product_variants SET reserved += qty
+INSERT **product.stock_movements** (type = reserve, ref = order);
+:PromotionGateway.consume:
+INSERT **promotion.promotion_usages**
+UPDATE promotions SET used_count += 1;
+:PaymentGateway.createForOrder:
+INSERT **payment.payments**
+status = pending, method = bank_transfer,
+transfer_content = <mã đơn>, amount = total,
+qr_url = VietQR(SePay: TK shop, số tiền, nội dung), expires_at;
+INSERT **payment.payment_transactions** (type = create_url);
+:INSERT **order.audit_logs** (ORDER_CREATED);
+:INSERT **order.outbox_events** (ORDER_CREATED, PENDING);
+
+|API order (NestJS)|
+#EEF6FF:COMMIT;
+:UPDATE idempotency_keys DONE + response_body;
+:DELETE **cart.cart_items** đã mua;
+:201 → OrderResponse { paymentIntent: qrUrl, transferContent,
+bankCode, accountNumber, amount, expiresAt };
+
+|Khách (web bán hàng)|
+:Quét QR bằng app ngân hàng, chuyển đúng số tiền
+với nội dung = mã đơn;
+:Web poll GET /orders/{code} (3–5 s) hoặc chờ thông báo;
+
+|Ngân hàng / SePay|
+:Tiền vào TK shop;
+:SePay phát hiện giao dịch (transferType = in)
+→ POST /payments/sepay/webhook
+Authorization: Apikey <EF_SEPAY_API_KEY>;
+
+|API payment (NestJS)|
+:Xử lý webhook — xem **Workflow 3**
+(idempotent theo id SePay, khớp mã đơn + số tiền);
+#EEF6FF:BEGIN TRANSACTION (payment);
+|PostgreSQL|
+:INSERT **payment.sepay_transactions** (match_status = matched);
+:UPDATE **payment.payments** SET status = paid,
+paid_at, transaction_code = referenceCode,
+sepay_transaction_id;
+INSERT payment_transactions (type = sepay_in, provider_ref = id SePay);
+|Gateway (cùng transaction)|
+:OrderPaymentGateway.markPaid:
+UPDATE **order.orders** SET payment_status = paid,
+payment_expires_at = NULL;
+INSERT order_status_histories (ghi chú "Đã thanh toán");
+:INSERT **payment.outbox_events** (PAYMENT_PAID)
++ order.outbox_events (ORDER_PAID);
+|API payment (NestJS)|
+#EEF6FF:COMMIT → 200 cho SePay;
+
+|Worker (BullMQ + outbox relay)|
+fork
+  :Relay claim outbox (FOR UPDATE SKIP LOCKED)
+  → queue mail: email "Đã nhận thanh toán";
+fork again
+  :NotificationGateway → INSERT **system.notifications**
+  (user_id khách, type = payment);
+fork again
+  :Job reporting 5 phút → UPSERT **reporting.daily_sales**
+  (paid_count, revenue hôm nay);
+end fork
+:INSERT processed_events (event_id, handler) → outbox DONE;
+
+|Khách (web bán hàng)|
+:Thấy đơn "Đã thanh toán — chờ xác nhận";
+stop
+
+@enduml

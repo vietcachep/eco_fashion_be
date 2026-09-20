@@ -1,0 +1,233 @@
+// =====================================================================
+// Module product (PLAN-0004) — schema "product": sản phẩm, biến thể màu×size, ảnh, tồn kho, phiếu nhập, sổ kho.
+// - Tiền numeric(14,0) VND (Decimal ở Prisma → chuỗi → bigint ở code). Không float.
+// - Tham chiếu catalog bằng categoryId + categorySlug (snapshot) — không FK xuyên schema.
+// - Tồn kho: `stock` (có thể bán) và `reserved` (đã giữ cho đơn chưa thanh toán) — đọc-sửa-ghi trong transaction FOR UPDATE.
+// - search_vector tsvector (unaccent + simple) do trigger trong migration duy trì; pg_trgm cho gõ sai.
+// =====================================================================
+
+model Product {
+  id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug             String                    @db.VarChar(160)
+  name             String                    @db.VarChar(200)
+  categoryId       String                    @map("category_id") @db.Uuid
+  categorySlug     String                    @map("category_slug") @db.VarChar(120)
+  gender           String                    @default("unisex") @db.VarChar(10)
+  shortDescription String?                   @map("short_description") @db.VarChar(500)
+  description      String?
+  material         String?                   @db.VarChar(200)
+  /* Hướng dẫn bảo quản — mảng chuỗi. */
+  care             Json                      @default("[]")
+  /* Giá bán chung (biến thể có thể ghi đè), giá gốc (gạch) khi giảm. */
+  basePrice        Decimal                   @map("base_price") @db.Decimal(14, 0)
+  listPrice        Decimal?                  @map("list_price") @db.Decimal(14, 0)
+  status           String                    @default("draft") @db.VarChar(20)
+  isNew            Boolean                   @default(false) @map("is_new")
+  isFeatured       Boolean                   @default(false) @map("is_featured")
+  tags             Json                      @default("[]")
+  /* Thống kê — review/order cập nhật qua gateway; đọc list không JOIN. */
+  soldCount        Int                       @default(0) @map("sold_count")
+  reviewCount      Int                       @default(0) @map("review_count")
+  avgRating        Decimal                   @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  viewCount        Int                       @default(0) @map("view_count")
+  publishedAt      DateTime?                 @map("published_at") @db.Timestamptz
+  searchVector     Unsupported("tsvector")?  @map("search_vector")
+  version          Int                       @default(0)
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy        String?                   @map("created_by") @db.Uuid
+  updatedAt        DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy        String?                   @map("updated_by") @db.Uuid
+  isDeleted        Boolean                   @default(false) @map("is_deleted")
+
+  variants ProductVariant[]
+  images   ProductImage[]
+
+  @@index([categoryId])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([gender])
+  @@index([searchVector], map: "idx_products_search_vector", type: Gin)
+  @@map("products")
+  @@schema("product")
+}
+
+model ProductVariant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  sku       String   @db.VarChar(64)
+  colorCode String   @map("color_code") @db.VarChar(40)
+  colorName String   @map("color_name") @db.VarChar(120)
+  colorHex  String?  @map("color_hex") @db.VarChar(9)
+  sizeCode  String   @map("size_code") @db.VarChar(40)
+  /* NULL = dùng base_price của sản phẩm. */
+  price     Decimal? @db.Decimal(14, 0)
+  stock     Int      @default(0)
+  reserved  Int      @default(0)
+  isActive  Boolean  @default(true) @map("is_active")
+  version   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String?  @map("updated_by") @db.Uuid
+  isDeleted Boolean  @default(false) @map("is_deleted")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, colorCode, sizeCode])
+  @@index([sku])
+  @@map("product_variants")
+  @@schema("product")
+}
+
+model ProductImage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  url       String   @db.VarChar(500)
+  publicId  String?  @map("public_id") @db.VarChar(255)
+  /* Ảnh thuộc màu nào (null = ảnh chung); FE nhảy tới ảnh đúng màu đang chọn. */
+  colorCode String?  @map("color_code") @db.VarChar(40)
+  alt       String?  @db.VarChar(200)
+  sortOrder Int      @default(0) @map("sort_order")
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.Uuid
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+  @@schema("product")
+}
+
+/* Phiếu nhập kho — ghi (draft) rồi duyệt (posted) mới cộng tồn; duyệt có Idempotency-Key. */
+model StockReceipt {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String    @unique @db.VarChar(30)
+  supplierName String?   @map("supplier_name") @db.VarChar(200)
+  note         String?   @db.VarChar(500)
+  status       String    @default("draft") @db.VarChar(20)
+  totalCost    Decimal   @default(0) @map("total_cost") @db.Decimal(14, 0)
+  postedAt     DateTime? @map("posted_at") @db.Timestamptz
+  postedBy     String?   @map("posted_by") @db.Uuid
+  version      Int       @default(0)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy    String?   @map("updated_by") @db.Uuid
+  isDeleted    Boolean   @default(false) @map("is_deleted")
+
+  items StockReceiptItem[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("stock_receipts")
+  @@schema("product")
+}
+
+model StockReceiptItem {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  receiptId String  @map("receipt_id") @db.Uuid
+  variantId String  @map("variant_id") @db.Uuid
+  sku       String  @db.VarChar(64)
+  quantity  Int
+  unitCost  Decimal @default(0) @map("unit_cost") @db.Decimal(14, 0)
+
+  receipt StockReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@unique([receiptId, variantId])
+  @@map("stock_receipt_items")
+  @@schema("product")
+}
+
+/* Sổ kho append-only: mọi biến động tồn (nhập, điều chỉnh, giữ/nhả cho đơn, bán, trả) — truy vết được. */
+model StockMovement {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  variantId   String   @map("variant_id") @db.Uuid
+  type        String   @db.VarChar(20)
+  quantity    Int
+  stockAfter  Int      @map("stock_after")
+  refType     String?  @map("ref_type") @db.VarChar(40)
+  refId       String?  @map("ref_id") @db.VarChar(64)
+  note        String?  @db.VarChar(255)
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([variantId, createdAt(sort: Desc)])
+  @@index([refType, refId])
+  @@map("stock_movements")
+  @@schema("product")
+}
+
+model ProductAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("product")
+}
+
+model ProductOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  eventVersion  String    @default("v1") @map("event_version") @db.VarChar(10)
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  status        String    @default("PENDING") @db.VarChar(20)
+  retryCount    Int       @default(0) @map("retry_count")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  errorMessage  String?   @map("error_message")
+  requestId     String?   @map("request_id") @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+  @@schema("product")
+}
+
+model ProductProcessedEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(80)
+  handler     String   @db.VarChar(120)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@unique([eventId, handler])
+  @@map("processed_events")
+  @@schema("product")
+}
+
+model ProductIdempotencyKey {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope          String   @db.VarChar(60)
+  actorKey       String   @map("actor_key") @db.VarChar(64)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  requestHash    String   @map("request_hash") @db.VarChar(64)
+  status         String   @default("IN_PROGRESS") @db.VarChar(20)
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  resultRef      String?  @map("result_ref") @db.VarChar(64)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([scope, actorKey, idempotencyKey])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+  @@schema("product")
+}

@@ -1,0 +1,19 @@
+// =====================================================================
+// EcoFashion — schema Prisma dạng THƯ MỤC (prisma/schema/*.prisma):
+//   base.prisma          generator + datasource (danh sách schema PostgreSQL = danh sách module)
+//   <module>.prisma      model của module đó, mọi model có @@schema("<module>") — module sở hữu file của mình
+// Luật (docs/03_DATABASE_RULES.md): không quan hệ (@relation) xuyên schema; tham chiếu chéo bằng id + code + snapshot.
+// Migration = nguồn sự thật (prisma/migrations, SQL commit vào repo); `prisma migrate diff` gác lệch trong CI.
+// =====================================================================
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["identity", "catalog", "product", "cart", "order", "payment", "promotion", "review", "system", "reporting", "ai"]
+}

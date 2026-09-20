@@ -1,0 +1,140 @@
+@startuml 06-erd-cart-order
+title ERD — schema cart (giỏ, yêu thích) và order (đơn hàng, đổi trả)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide circle
+
+package "cart" {
+  entity "carts" as carts {
+    * id : uuid <<PK>>
+    --
+    * user_id : uuid <<U>>  một giỏ / khách
+  }
+  entity "cart_items" as cart_items {
+    * id : uuid <<PK>>
+    --
+    * cart_id : uuid <<FK>>
+    * variant_id : uuid  (unique theo cart)
+    * product_id : uuid
+    * quantity : int
+    * selected : boolean  tick thanh toán
+    (KHÔNG lưu giá — đọc tươi từ product)
+  }
+  entity "wishlists" as wishlists {
+    * id : uuid <<PK>>
+    --
+    * user_id : uuid
+    * product_id : uuid
+    (unique user_id, product_id)
+  }
+}
+
+package "order" {
+  entity "orders" as orders {
+    * id : uuid <<PK>>
+    --
+    * code : varchar(20) <<U>>  DHyymmddNNNN (= nội dung chuyển khoản)
+    * user_id : uuid
+    * status : varchar(20)  pending | confirmed | packing | shipping | delivered | completed | cancelled | returned
+    * payment_method_code : varchar(30)  cod | bank_transfer (SePay) | vnpay
+    * payment_status : varchar(30)  unpaid | processing | paid | refunded | partially_refunded
+    * recipient_name, recipient_phone
+    province_code : varchar(10)
+    * province_name, district_name, ward_name, street, shipping_address  snapshot địa chỉ
+    customer_note : varchar(500)
+    * subtotal, shipping_fee, discount, total : numeric(14,0)
+    promotion_code, promotion_name  snapshot
+    * item_count : int
+    cancel_reason, cancelled_by
+    tracking_url : varchar(500)
+    payment_expires_at : timestamptz  (job huỷ quá hạn CK)
+    confirmed_at, packed_at, shipped_at, delivered_at, completed_at, cancelled_at
+  }
+
+  entity "order_items" as order_items {
+    * id : uuid <<PK>>
+    --
+    * order_id : uuid <<FK>>
+    * variant_id, product_id : uuid  (không FK sang product)
+    * slug, name : snapshot
+    image_url
+    * color, size, sku : snapshot
+    * quantity : int
+    * unit_price, line_total : numeric(14,0)  snapshot giá
+    * reviewed : boolean
+  }
+
+  entity "order_status_histories" as order_status_histories {
+    * id : uuid <<PK>>
+    --
+    * order_id : uuid <<FK>>
+    from_status : varchar(20)
+    * to_status : varchar(20)
+    note : varchar(500)
+    actor_user_id : uuid  (null = job / hệ thống)
+    * created_at
+  }
+
+  entity "return_requests" as return_requests {
+    * id : uuid <<PK>>
+    --
+    * order_id : uuid <<FK>>
+    * order_code : varchar(20)
+    * user_id : uuid
+    * status : varchar(20)  requested | approved | rejected | refunded
+    * reason : varchar(200)
+    detail : text
+    reject_reason : varchar(300)
+    * refund_amount : numeric(14,0)
+    * evidence : jsonb  MediaItem[]
+    refund_bank_code : varchar(20)  <<mới>> TK khách nhận hoàn tiền
+    refund_account_no : varchar(30)  <<mới>>
+    refund_account_name : varchar(120)  <<mới>>
+    processed_by, processed_at, refunded_at
+  }
+
+  entity "return_request_items" as return_request_items {
+    * id : uuid <<PK>>
+    --
+    * return_id : uuid <<FK>>
+    * order_item_id : uuid  (unique theo return)
+    * variant_id : uuid
+    * name, color, size : snapshot
+    * quantity : int
+    image_url
+    * unit_price : numeric(14,0)
+  }
+
+  entity "order_sequences" as order_sequences {
+    * day : char(6) <<PK>>  yymmdd
+    --
+    * counter : int  (FOR UPDATE)
+  }
+
+  entity "idempotency_keys" as order_idem {
+    * scope, actor_key, idempotency_key  (unique)
+    --
+    request_hash, status, response_body, result_ref, expires_at
+  }
+}
+
+carts ||--o{ cart_items
+orders ||--o{ order_items
+orders ||--o{ order_status_histories
+orders ||--o{ return_requests
+return_requests ||--o{ return_request_items
+order_items ||..o{ return_request_items : order_item_id
+
+note bottom of return_requests
+  Khách gửi yêu cầu đổi trả kèm tài khoản ngân hàng nhận hoàn tiền.
+  Duyệt → payment.refunds được tạo với snapshot TK này
+  (kế toán chỉ việc quét QR chuyển khoản).
+end note
+
+@enduml

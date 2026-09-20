@@ -1,0 +1,84 @@
+@startuml 10-dbwf-schema-lifecycle
+title Database Workflow 1 — Vòng đời cấu trúc DB: thiết kế → migration → CI → triển khai → seed (Prisma 7, schema-per-module)
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|Lập trình viên (máy dev)|
+start
+:Nhận plan PLAN-xxxx: thiết kế Command/DTO,
+duyệt thiết kế DB trong plan + docs/database/eco_fashion.dbml;
+:Sửa **prisma/schema/<module>.prisma**
+(mỗi module một file, @@schema("<module>"), @@map(snake_case),
+cột chuẩn: id · version · created_at/by · updated_at/by · is_deleted);
+if (Có quan hệ sang module khác?) then (có)
+  #FFF4E5:KHÔNG @relation xuyên schema —
+  lưu id + code + snapshot (tên, giá, ảnh);
+else (không)
+endif
+:npm run migration:create -- --name <module>_<mo_ta>
+→ prisma/migrations/<ts>_<tên>/migration.sql;
+:**Sửa tay SQL** phần Prisma không tả được:
+extension (pgcrypto, unaccent, pg_trgm, vector),
+partial unique (WHERE is_deleted = false),
+tsvector + trigger, HNSW, CHECK ≥ 0;
+:npm run migration:check
+(migrate deploy trên DB trống → prisma migrate diff --exit-code);
+if (schema ↔ migration khớp?) then (không)
+  :Sửa .prisma hoặc SQL;
+  note right: Migration ĐÃ chạy trên DB\nchung là BẤT BIẾN — chỉ thêm\nmigration mới, không sửa cũ.
+  detach
+else (khớp)
+endif
+:Sửa scripts/seed/<module>.seed.ts (idempotent: upsert theo code/slug,
+chạy lần 2 không tạo trùng) + catalog quyền nếu thêm màn;
+:npm run verify (lint + ranh giới module + build + test);
+:git push;
+
+|CI (GitHub Actions)|
+:npm ci → lint → check-boundaries → build → test;
+:migration:check trên Postgres service trống;
+if (Xanh?) then (không)
+  #FFE5E5:CI đỏ — không merge;
+  stop
+else (có)
+endif
+
+|Docker Compose (máy mới / production)|
+:docker compose up -d --build;
+:service **db** (Postgres 16 + pgvector), **redis**, **mailpit** healthy;
+:service **migrate** (chạy 1 lần):
+prisma migrate deploy → áp mọi migration chưa chạy
+theo thứ tự thời gian;
+:sync-permissions: upsert identity.permissions từ catalog.ts,
+tạo 7 vai hệ thống, gán preset (chỉ THÊM mã thiếu),
+bump permission_version user bị đổi quyền;
+:service **seed** (chạy 1 lần, idempotent):
+create-admin (EF_ADMIN_EMAIL) → seed từng module
+(catalog → product → identity khách → order → payment
+→ promotion → review → system → ai);
+:service **api** + **worker** khởi động
+(cùng mã nguồn, khác entrypoint);
+
+|PostgreSQL|
+:_prisma_migrations ghi từng migration đã áp
+(checksum, finished_at) — không áp lại;
+:11 schema: identity · catalog · product · cart · order
+· payment · promotion · review · system · reporting · ai;
+:Dữ liệu seed sẵn: admin + nhân viên 5 vai + 5 khách,
+24 sản phẩm, đơn/đánh giá demo, tham số, 63 tỉnh;
+
+|Lập trình viên (máy dev)|
+:Vận hành: docs/05_SEED_AND_REPRODUCE.md;
+ranh giới module gác bằng dependency-cruiser
++ prisma-boundaries.spec (model của module A
+chỉ được gọi từ src/modules/A/**);
+stop
+
+@enduml

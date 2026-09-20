@@ -1,0 +1,59 @@
+import type { Tx } from '../prisma/types';
+
+export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');
+export const ORDER_PAYMENT_GATEWAY = Symbol('ORDER_PAYMENT_GATEWAY');
+
+export interface BankTransferIntent {
+  bankCode: string;
+  accountNumber: string;
+  accountName: string;
+  transferContent: string;
+  qrUrl: string | null;
+  amount: string;
+  expiresAt: string | null;
+}
+
+export interface PaymentInitiateInput {
+  orderId: string;
+  orderCode: string;
+  userId: string;
+  amount: bigint;
+  /* cod | bank_transfer | vnpay */
+  methodCode: string;
+  clientIp: string;
+  /* VNPay: mã ngân hàng/loại thẻ FE chọn (VNBANK · INTCARD · VNPAYQR), rỗng = để khách chọn trên cổng */
+  bankCode?: string | null;
+}
+
+export interface PaymentInitiateResult {
+  paymentId: string;
+  /* unpaid: chờ khách trả (COD/bank/vnpay) — order giữ hàng; paid chỉ khi cổng trả về ngay (không có) */
+  status: 'unpaid';
+  paymentIntent: BankTransferIntent | null;
+  paymentUrl: string | null;
+  expiresAt: Date | null;
+}
+
+/*
+ * Cổng thanh toán — payment cài; order gọi trong tx tạo đơn (initiate), huỷ đơn (cancel), duyệt đổi trả (refund),
+ * giao COD thành công (markCodCollected). KHÔNG BAO GIỜ nhận số thẻ.
+ */
+export interface PaymentGateway {
+  initiate(input: PaymentInitiateInput, tx: Tx): Promise<PaymentInitiateResult>;
+  cancel(orderCode: string, reason: string, tx: Tx): Promise<void>;
+  markCodCollected(orderCode: string, actorUserId: string | null, tx: Tx): Promise<void>;
+  requestRefund(input: { orderCode: string; amount: bigint; reason: string; returnRequestId: string | null; actorUserId: string | null }, tx: Tx): Promise<{ refundId: string | null }>;
+  isMethodActive(methodCode: string): Promise<boolean>;
+}
+
+/*
+ * Cổng ngược — order cài (@Global): payment báo tiền về / thất bại / hoàn xong trong CÙNG transaction xử lý IPN
+ * để trạng thái thanh toán trên đơn và giao dịch không bao giờ lệch nhau.
+ */
+export interface OrderPaymentGateway {
+  onPaid(orderCode: string, info: { paymentId: string; methodCode: string; transactionCode: string | null; bankCode: string | null; paidAt: Date }, tx: Tx): Promise<void>;
+  onPaymentFailed(orderCode: string, reason: string, tx: Tx): Promise<void>;
+  onRefunded(orderCode: string, amount: bigint, refundId: string, tx: Tx): Promise<void>;
+  /* Hoàn tiền của yêu cầu đổi trả đã xong → yêu cầu sang refunded */
+  markReturnRefunded(returnRequestId: string, tx: Tx): Promise<void>;
+}

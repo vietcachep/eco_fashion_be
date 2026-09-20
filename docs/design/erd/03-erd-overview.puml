@@ -1,0 +1,99 @@
+@startuml 03-erd-overview
+title ERD tổng quan — 11 schema PostgreSQL (schema-per-module, KHÔNG FK xuyên module)
+
+skinparam linetype polyline
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam package {
+  BackgroundColor #FAFAFA
+  BorderColor #888888
+}
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide circle
+hide empty members
+
+package "identity" as identity {
+  class users
+  class roles
+  class permissions
+  class addresses
+}
+package "catalog" as catalog {
+  class categories
+  class collections
+  class attribute_values
+}
+package "product" as product {
+  class products
+  class product_variants
+  class stock_receipts
+  class stock_movements
+}
+package "cart" as cart {
+  class carts
+  class cart_items
+  class wishlists
+}
+package "order" as order {
+  class orders
+  class order_items
+  class return_requests
+}
+package "payment" as payment {
+  class payments
+  class refunds
+  class sepay_transactions
+}
+package "promotion" as promotion {
+  class promotions
+  class promotion_usages
+}
+package "review" as review {
+  class reviews
+}
+package "system" as system {
+  class provinces
+  class notifications
+}
+package "reporting" as reporting {
+  class daily_sales
+}
+package "ai" as ai {
+  class chat_sessions
+  class support_requests
+  class product_embeddings
+}
+
+' Tham chiếu chéo module = id / code + snapshot (đường đứt), không FK.
+products ..> categories : category_id + category_slug
+product_variants ..> attribute_values : color_code, size_code
+cart_items ..> product_variants : variant_id
+carts ..> users : user_id
+wishlists ..> products : product_id
+orders ..> users : user_id
+orders ..> provinces : province_code (snapshot tên)
+order_items ..> product_variants : variant_id + snapshot giá/tên/ảnh
+stock_movements ..> orders : ref_type = order, ref_id
+payments ..> orders : order_id + order_code
+refunds ..> return_requests : return_request_id
+sepay_transactions ..> payments : matched_id (in)
+sepay_transactions ..> refunds : matched_id (out)
+promotion_usages ..> orders : order_code
+orders ..> promotions : promotion_code (snapshot)
+reviews ..> order_items : order_item_id
+reviews ..> products : product_id (ghi avg_rating qua gateway)
+notifications ..> users : user_id
+daily_sales ..> orders : tổng hợp theo ngày
+chat_sessions ..> users : user_id
+support_requests ..> chat_sessions : session_id
+product_embeddings ..> products : product_id
+
+note bottom of payment
+  Mới cho SePay: sepay_transactions (webhook tiền vào/ra),
+  refunds thêm mã hoàn HT…, TK ngân hàng khách, qr_url.
+end note
+
+@enduml

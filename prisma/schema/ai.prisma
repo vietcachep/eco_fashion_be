@@ -1,0 +1,286 @@
+// =====================================================================
+// Module ai (PLAN-0012/0013) — schema "ai": embedding sản phẩm (pgvector), kho tri thức chatbot, phiên chat, yêu cầu hỗ trợ,
+// nhật ký chi phí, thử đồ 2D (Replicate), phân tích ảnh người (OpenAI vision), tóm tắt/kiểm duyệt đánh giá, lượt xem.
+// Mọi tính năng có ĐƯỜNG LÙI không-AI; AI hỏng không làm gián đoạn mua bán.
+// =====================================================================
+
+model ProductEmbedding {
+  productId  String                    @id @map("product_id") @db.Uuid
+  productSlug String                   @map("product_slug") @db.VarChar(160)
+  /* text-embedding-3-small: 1536 chiều. Prisma chưa hỗ trợ index HNSW → quét tuần tự (đủ cho vài trăm sản phẩm); lớn hơn thì tạo index ngoài Prisma (docs/03). */
+  embedding  Unsupported("vector(1536)")?
+  sourceHash String                    @map("source_hash") @db.VarChar(64)
+  model      String                    @db.VarChar(60)
+  status     String                    @default("pending") @db.VarChar(20)
+  error      String?                   @db.VarChar(500)
+  updatedAt  DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status])
+  @@map("product_embeddings")
+  @@schema("ai")
+}
+
+/* Kho tri thức admin nhập (chính sách, FAQ, hướng dẫn size…) — cắt đoạn + nhúng nền → ngữ cảnh RAG cho chatbot. */
+model AiDocument {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title     String   @db.VarChar(200)
+  content   String
+  /* policy | faq | guide | product */
+  kind      String   @default("policy") @db.VarChar(20)
+  status    String   @default("pending") @db.VarChar(20)
+  error     String?  @db.VarChar(500)
+  isActive  Boolean  @default(true) @map("is_active")
+  version   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String?  @map("updated_by") @db.Uuid
+  isDeleted Boolean  @default(false) @map("is_deleted")
+
+  chunks AiDocumentChunk[]
+
+  @@map("documents")
+  @@schema("ai")
+}
+
+model AiDocumentChunk {
+  id         String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId String                    @map("document_id") @db.Uuid
+  chunkIndex Int                       @map("chunk_index")
+  content    String
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+
+  document AiDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@map("document_chunks")
+  @@schema("ai")
+}
+
+/* Phiên chat — khách đăng nhập (user_id) hoặc khách vãng lai (guest_key cookie). Dọn sau EF_CHAT_SESSION_RETENTION_DAYS. */
+model ChatSession {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String?   @map("user_id") @db.Uuid
+  guestKey      String?   @map("guest_key") @db.VarChar(64)
+  title         String?   @db.VarChar(200)
+  messageCount  Int       @default(0) @map("message_count")
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  messages ChatMessage[]
+
+  @@index([userId, lastMessageAt(sort: Desc)])
+  @@index([guestKey])
+  @@map("chat_sessions")
+  @@schema("ai")
+}
+
+model ChatMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String   @map("session_id") @db.Uuid
+  /* user | assistant | tool */
+  role      String   @db.VarChar(20)
+  content   String
+  /* id sản phẩm gợi ý kèm câu trả lời */
+  productIds Json    @default("[]") @map("product_ids")
+  /* Nguồn trả lời: llm | rule (đường lùi) */
+  source    String   @default("rule") @db.VarChar(10)
+  tokensIn  Int      @default(0) @map("tokens_in")
+  tokensOut Int      @default(0) @map("tokens_out")
+  /* {tools[], misses[], suggestions[], actions[], supportRequestId, guard, contextProductSlug, actionResult} */
+  meta      Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
+  @@schema("ai")
+}
+
+/* Chatbot không trả lời được / khách muốn gặp người → nhân viên (ai.support.read) xử lý. */
+model SupportRequest {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String?   @map("session_id") @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  email      String?   @db.VarChar(255)
+  summary    String    @db.VarChar(1000)
+  status     String    @default("open") @db.VarChar(20)
+  assignedTo String?   @map("assigned_to") @db.Uuid
+  resolvedBy String?   @map("resolved_by") @db.Uuid
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz
+  note       String?   @db.VarChar(1000)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("support_requests")
+  @@schema("ai")
+}
+
+/* Cổng chi phí: mọi lần gọi AI ghi một dòng; EF_AI_DAILY_TOKEN_BUDGET chặn khi vượt. */
+model AiUsageLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  feature      String   @db.VarChar(40)
+  provider     String   @db.VarChar(20)
+  model        String   @db.VarChar(80)
+  tokensIn     Int      @default(0) @map("tokens_in")
+  tokensOut    Int      @default(0) @map("tokens_out")
+  costEstimate Decimal  @default(0) @map("cost_estimate") @db.Decimal(12, 6)
+  durationMs   Int      @default(0) @map("duration_ms")
+  success      Boolean  @default(true)
+  userId       String?  @map("user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt(sort: Desc)])
+  @@index([feature, createdAt(sort: Desc)])
+  @@map("usage_logs")
+  @@schema("ai")
+}
+
+/* Thử đồ 2D: ảnh người (Cloudinary) + ảnh sản phẩm → Replicate IDM-VTON → ảnh kết quả. Job nền, FE poll. */
+model TryOnJob {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String?   @map("user_id") @db.Uuid
+  guestKey        String?   @map("guest_key") @db.VarChar(64)
+  productId       String    @map("product_id") @db.Uuid
+  productName     String    @map("product_name") @db.VarChar(200)
+  garmentImageUrl String    @map("garment_image_url") @db.VarChar(500)
+  personImageUrl  String    @map("person_image_url") @db.VarChar(500)
+  personPublicId  String?   @map("person_public_id") @db.VarChar(255)
+  /* top | bottom | dress — IDM-VTON category */
+  category        String    @default("upper_body") @db.VarChar(20)
+  /* queued | processing | done | failed */
+  status          String    @default("queued") @db.VarChar(20)
+  providerJobId   String?   @map("provider_job_id") @db.VarChar(120)
+  resultUrl       String?   @map("result_url") @db.VarChar(500)
+  resultPublicId  String?   @map("result_public_id") @db.VarChar(255)
+  error           String?   @db.VarChar(500)
+  attempts        Int       @default(0)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  startedAt       DateTime? @map("started_at") @db.Timestamptz
+  finishedAt      DateTime? @map("finished_at") @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("try_on_jobs")
+  @@schema("ai")
+}
+
+/* Phân tích ảnh người → dáng, màu hợp, phong cách, sản phẩm gợi ý (OpenAI vision; lùi = rule theo giới/ngành). */
+model StyleAnalysis {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  guestKey      String?  @map("guest_key") @db.VarChar(64)
+  imageUrl      String   @map("image_url") @db.VarChar(500)
+  imagePublicId String?  @map("image_public_id") @db.VarChar(255)
+  /* {dangNguoi, mauPhuHop[], phongCach, tuVan, gender, categories[]} */
+  result        Json
+  productIds    Json     @default("[]") @map("product_ids")
+  source        String   @default("rule") @db.VarChar(10)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("style_analyses")
+  @@schema("ai")
+}
+
+model ReviewSummary {
+  productId   String   @id @map("product_id") @db.Uuid
+  summary     String   @db.VarChar(2000)
+  pros        Json     @default("[]")
+  cons        Json     @default("[]")
+  reviewCount Int      @map("review_count")
+  model       String   @db.VarChar(80)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("review_summaries")
+  @@schema("ai")
+}
+
+/* Nhãn kiểm duyệt AI cho đánh giá — chỉ ĐỀ XUẤT, nhân viên quyết (review.review.moderate). */
+model ModerationFlag {
+  reviewId  String   @id @map("review_id") @db.Uuid
+  label     String   @db.VarChar(20)
+  score     Decimal  @db.Decimal(4, 3)
+  reason    String?  @db.VarChar(500)
+  model     String   @db.VarChar(80)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([label])
+  @@map("moderation_flags")
+  @@schema("ai")
+}
+
+/*
+ * Tín hiệu hành vi (khách xem/thêm giỏ) cho gợi ý + đo hiệu quả dải gợi ý (impression/click kèm `source`)
+ * — dọn sau EF_VIEW_EVENT_RETENTION_DAYS. `event_type` CHECK view|add_to_cart|click|impression (migration).
+ */
+model ProductViewEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  guestKey   String?  @map("guest_key") @db.VarChar(64)
+  productId  String   @map("product_id") @db.Uuid
+  eventType  String   @default("view") @map("event_type") @db.VarChar(15)
+  /* Nguồn dải gợi ý: for_you | similar | bought_together | cart | chat | collection | search | compare */
+  source     String?  @db.VarChar(30)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([productId, createdAt(sort: Desc)])
+  @@index([eventType, createdAt(sort: Desc)])
+  @@map("product_view_events")
+  @@schema("ai")
+}
+
+/* FAQ tự sinh cho sản phẩm (LLM viết 3–6 hỏi-đáp từ mô tả + đánh giá) — đọc lười: thiếu/lệch hash → job nền, trả bản cũ. */
+model ProductFaq {
+  productId  String   @id @map("product_id") @db.Uuid
+  /* [{question, answer}] */
+  items      Json     @default("[]")
+  sourceHash String   @map("source_hash") @db.VarChar(64)
+  /* ready | pending | failed | none */
+  status     String   @default("pending") @db.VarChar(20)
+  model      String?  @db.VarChar(80)
+  error      String?  @db.VarChar(500)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status])
+  @@map("product_faqs")
+  @@schema("ai")
+}
+
+model AiAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("ai")
+}
+
+model AiProcessedEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(80)
+  handler     String   @db.VarChar(120)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@unique([eventId, handler])
+  @@map("processed_events")
+  @@schema("ai")
+}

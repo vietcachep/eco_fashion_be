@@ -1,0 +1,147 @@
+// =====================================================================
+// Module catalog (PLAN-0003) — schema "catalog": ngành hàng, bộ sưu tập (= bộ lọc có sẵn), thuộc tính (màu/size/chất liệu).
+// Không @relation sang schema khác: product tham chiếu category bằng id + slug snapshot.
+// Ảnh lưu URL Cloudinary + public_id (xoá được). Seed: scripts/seed/catalog.seed.ts (kèm ảnh scripts/seed/assets/catalog).
+// =====================================================================
+
+model Category {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug          String   @db.VarChar(120)
+  name          String   @db.VarChar(120)
+  description   String?  @db.VarChar(500)
+  imageUrl      String?  @map("image_url") @db.VarChar(500)
+  imagePublicId String?  @map("image_public_id") @db.VarChar(255)
+  parentId      String?  @map("parent_id") @db.Uuid
+  sortOrder     Int      @default(0) @map("sort_order")
+  isActive      Boolean  @default(true) @map("is_active")
+  /* Đếm sản phẩm đang bán — product cập nhật qua gateway khi đăng/ẩn (tránh COUNT mỗi lần hiện menu). */
+  productCount  Int      @default(0) @map("product_count")
+  version       Int      @default(0)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy     String?  @map("created_by") @db.Uuid
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy     String?  @map("updated_by") @db.Uuid
+  isDeleted     Boolean  @default(false) @map("is_deleted")
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("categories")
+  @@schema("catalog")
+}
+
+/* Bộ sưu tập = bộ lọc có sẵn (theo FE: bấm vào ra danh sách với query category/gender/tag). */
+model Collection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug              String   @db.VarChar(120)
+  name              String   @db.VarChar(120)
+  tagline           String?  @db.VarChar(200)
+  imageUrl          String?  @map("image_url") @db.VarChar(500)
+  imagePublicId     String?  @map("image_public_id") @db.VarChar(255)
+  queryCategorySlug String?  @map("query_category_slug") @db.VarChar(120)
+  queryGender       String?  @map("query_gender") @db.VarChar(10)
+  queryTag          String?  @map("query_tag") @db.VarChar(40)
+  sortOrder         Int      @default(0) @map("sort_order")
+  isActive          Boolean  @default(true) @map("is_active")
+  version           Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy         String?  @map("created_by") @db.Uuid
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy         String?  @map("updated_by") @db.Uuid
+  isDeleted         Boolean  @default(false) @map("is_deleted")
+
+  @@index([isActive, sortOrder])
+  @@map("collections")
+  @@schema("catalog")
+}
+
+/* Thuộc tính dùng cho biến thể/bộ lọc: color (có hex), size (nhóm áo/quần), material. */
+model Attribute {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code         String   @unique @db.VarChar(40)
+  name         String   @db.VarChar(120)
+  kind         String   @default("text") @db.VarChar(20)
+  isFilterable Boolean  @default(true) @map("is_filterable")
+  sortOrder    Int      @default(0) @map("sort_order")
+  version      Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy    String?  @map("created_by") @db.Uuid
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy    String?  @map("updated_by") @db.Uuid
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+
+  values AttributeValue[]
+
+  @@map("attributes")
+  @@schema("catalog")
+}
+
+model AttributeValue {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attributeId String   @map("attribute_id") @db.Uuid
+  code        String   @db.VarChar(40)
+  name        String   @db.VarChar(120)
+  /* Màu: mã hex để FE vẽ chấm màu. Size: nhóm (ao | quan). */
+  hex         String?  @db.VarChar(9)
+  groupCode   String?  @map("group_code") @db.VarChar(20)
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  version     Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+
+  attribute Attribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@unique([attributeId, code])
+  @@map("attribute_values")
+  @@schema("catalog")
+}
+
+model CatalogAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("catalog")
+}
+
+model CatalogOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  eventVersion  String    @default("v1") @map("event_version") @db.VarChar(10)
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  status        String    @default("PENDING") @db.VarChar(20)
+  retryCount    Int       @default(0) @map("retry_count")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  errorMessage  String?   @map("error_message")
+  requestId     String?   @map("request_id") @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+  @@schema("catalog")
+}

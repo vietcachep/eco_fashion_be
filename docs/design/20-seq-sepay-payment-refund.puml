@@ -1,0 +1,110 @@
+@startuml 20-seq-sepay-payment-refund
+title Sơ đồ tuần tự — Tích hợp SePay: (A) thanh toán chuyển khoản VietQR khi đặt hàng · (B) hoàn tiền bằng mã QR do kế toán quét, SePay xác nhận tiền ra
+
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+skinparam SequenceGroupBorderColor #444444
+skinparam ParticipantBorderColor #444444
+skinparam ParticipantBackgroundColor #FFFFFF
+skinparam ActorBorderColor #444444
+skinparam DatabaseBorderColor #444444
+skinparam ArrowColor #444444
+skinparam LifeLineBorderColor #444444
+skinparam SequenceBoxBorderColor #999999
+
+actor "Khách" as C
+participant "Web bán hàng" as SF
+box "eco_backend"
+  participant "API order" as ORD
+  participant "API payment" as PAY
+  database "PostgreSQL" as DB
+  participant "Worker\n(outbox relay)" as WK
+end box
+participant "SePay" as SP
+participant "Ngân hàng\n(app của shop)" as BANK
+actor "Kế toán" as ACC
+participant "Web quản trị" as ADM
+
+== A. Đặt hàng — thanh toán chuyển khoản qua SePay ==
+C -> SF : Chọn "Chuyển khoản VietQR", bấm Đặt hàng
+SF -> ORD : POST /orders (Idempotency-Key)
+ORD -> DB : BEGIN; idempotency_keys; order_sequences FOR UPDATE\nINSERT orders (pending, unpaid, payment_expires_at = +30')\nINSERT order_items, histories; reserve tồn; consume mã
+ORD -> PAY : PaymentGateway.createForOrder(tx)
+PAY -> DB : INSERT payments (pending, method bank_transfer,\ntransfer_content = DH…, qr_url = VietQR(TK shop, amount, DH…))
+ORD -> DB : INSERT outbox ORDER_CREATED; COMMIT
+ORD --> SF : 201 { order, payment.qr_url, transfer_content, expiresAt }
+SF --> C : Hiện mã QR + số tiền + nội dung DH…
+C -> BANK : Quét QR bằng app ngân hàng, chuyển tiền
+BANK -> SP : Biến động số dư (tiền VÀO TK shop, nội dung "DH…")
+SP -> PAY : POST /payments/sepay/webhook\nAuthorization: Apikey <EF_SEPAY_API_KEY>\n{ id, transferType in, transferAmount, content, referenceCode… }
+PAY -> DB : INSERT sepay_transactions ON CONFLICT DO NOTHING
+alt Trùng id (SePay gửi lại)
+  PAY --> SP : 200 (bỏ qua)
+else Mới
+  PAY -> DB : SELECT payments WHERE order_code = DH… FOR UPDATE
+  alt Không tìm thấy / lệch tiền
+    PAY -> DB : UPDATE sepay_transactions unmatched | amount_mismatch\nINSERT outbox SEPAY_UNMATCHED
+  else Khớp
+    PAY -> DB : BEGIN; UPDATE payments paid, sepay_transaction_id\nINSERT payment_transactions (sepay_in)
+    PAY -> ORD : OrderPaymentGateway.markPaid(tx)
+    ORD -> DB : UPDATE orders payment_status = paid, payment_expires_at = NULL\nINSERT order_status_histories
+    PAY -> DB : UPDATE sepay_transactions matched; INSERT outbox PAYMENT_PAID; COMMIT
+  end
+  PAY --> SP : 200 { success: true }
+end
+WK -> DB : claim outbox PAYMENT_PAID (FOR UPDATE SKIP LOCKED)
+WK -> DB : INSERT processed_events; INSERT system.notifications (khách)
+WK --> C : Email "Đã nhận thanh toán"
+SF -> ORD : GET /orders/{code} (poll 5 s / sau khi quét)
+ORD --> SF : paymentStatus = paid
+SF --> C : "Thanh toán thành công"
+
+== B. Huỷ đơn đã thanh toán — hoàn tiền bằng QR, SePay xác nhận ==
+C -> SF : Huỷ đơn (pending) + nhập TK nhận hoàn
+SF -> ORD : POST /orders/{code}/cancel { reason, refundBankCode, refundAccountNo, refundAccountName }
+ORD -> DB : BEGIN; orders FOR UPDATE → cancelled; release tồn; release mã
+ORD -> PAY : PaymentGateway.requestRefund(tx)
+PAY -> DB : refund_sequences FOR UPDATE → HT…\nINSERT refunds (requested, qr_transfer, amount, bank_*)
+ORD -> DB : INSERT outbox ORDER_CANCELLED, REFUND_REQUESTED; COMMIT
+ORD --> SF : 200
+WK -> DB : claim outbox → notifications: khách ("sẽ hoàn tiền"),\nnhân viên có payment.refund.process ("HT… chờ xử lý")
+ACC -> ADM : Mở /payment/refunds → HT…
+ADM -> PAY : GET /admin/refunds/{id}
+opt Chưa có TK khách (huỷ bởi nhân viên)
+  ACC -> ADM : Nhập TK ngân hàng khách
+  ADM -> PAY : PATCH /admin/refunds/{id}/bank-account
+  PAY -> DB : UPDATE refunds bank_code, bank_account_no, bank_account_name; audit
+end
+PAY -> DB : UPDATE refunds qr_url = VietQR(bank_code, account_no, amount, addInfo = HT…)
+PAY --> ADM : { refund, qr_url }
+ADM --> ACC : Hiện **mã QR** hoàn tiền (TK khách · số tiền · HT…)
+ACC -> BANK : Quét QR bằng app ngân hàng của shop → chuyển tiền
+opt Kế toán bấm "Đã chuyển"
+  ADM -> PAY : POST /admin/refunds/{id}/mark-transferred
+  PAY -> DB : UPDATE refunds processing, transferred_at, processed_by
+end
+BANK -> SP : Biến động số dư (tiền RA, nội dung "HT…")
+SP -> PAY : POST /payments/sepay/webhook { transferType out, content "HT…", transferAmount, referenceCode }
+PAY -> DB : INSERT sepay_transactions ON CONFLICT DO NOTHING
+PAY -> DB : SELECT refunds WHERE code = HT… AND status IN (requested, processing) FOR UPDATE
+alt Không khớp code / lệch tiền
+  PAY -> DB : UPDATE sepay_transactions unmatched | amount_mismatch\nINSERT outbox SEPAY_UNMATCHED
+else Khớp
+  PAY -> DB : BEGIN; UPDATE refunds done, sepay_transaction_id, provider_ref\nINSERT payment_transactions (sepay_out)\nUPDATE payments refunded_amount, status refunded | partially_refunded
+  PAY -> ORD : OrderPaymentGateway.markRefunded(tx)
+  ORD -> DB : UPDATE orders payment_status = refunded | partially_refunded\nINSERT order_status_histories\nUPDATE return_requests refunded (nếu từ đổi trả)
+  PAY -> DB : UPDATE sepay_transactions matched; INSERT outbox PAYMENT_REFUNDED; COMMIT
+end
+PAY --> SP : 200
+WK -> DB : claim outbox PAYMENT_REFUNDED → processed_events;\nINSERT system.notifications (khách); daily_sales.refunded (job 5')
+WK --> C : Email "Đã hoàn tiền … về TK …"
+ADM -> PAY : GET /admin/refunds (refetch 15 s)
+PAY --> ADM : HT… status = done, provider_ref
+ADM --> ACC : "Đã hoàn" + mã tham chiếu ngân hàng
+opt Không nhận được webhook (SePay lỗi)
+  ACC -> ADM : "Hoàn tay" { providerRef }
+  ADM -> PAY : POST /admin/refunds/{id}/process
+  PAY -> DB : Cùng cập nhật như nhánh "Khớp", matched_by = kế toán
+end
+
+@enduml

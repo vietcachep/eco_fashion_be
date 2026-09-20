@@ -1,0 +1,119 @@
+@startuml 12-dbwf-sepay-webhook
+title Database Workflow 3 — Xử lý webhook SePay: idempotent, khớp tiền VÀO (thanh toán) và tiền RA (hoàn tiền), lệch/không khớp
+
+skinparam shadowing false
+skinparam ActivityBackgroundColor #FFFFFF
+skinparam ActivityBorderColor #444444
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #444444
+skinparam ArrowColor #444444
+skinparam ActivityBarColor #444444
+skinparam ConditionStyle diamond
+
+|SePay|
+start
+:POST /api/v1/payments/sepay/webhook
+{ id, gateway, accountNumber, transferType in|out,
+transferAmount, content, code, referenceCode, transactionDate };
+
+|API payment (NestJS)|
+if (Header Authorization = "Apikey <EF_SEPAY_API_KEY>"?) then (sai)
+  #FFE5E5:401 — ghi log cảnh báo, không đụng DB;
+  stop
+else (đúng)
+endif
+if (accountNumber = TK shop (EF_BANK_TRANSFER_ACCOUNT_NO)?) then (không)
+  :Ghi **sepay_transactions** match_status = ignored;
+  :200;
+  stop
+else (đúng)
+endif
+
+|PostgreSQL|
+:INSERT **payment.sepay_transactions** (PK = id SePay)
+ON CONFLICT (id) DO NOTHING;
+if (Đã tồn tại (SePay gửi lại)?) then (có)
+  |API payment (NestJS)|
+  :200 — không xử lý lần hai (idempotent);
+  stop
+else (chưa)
+endif
+
+|API payment (NestJS)|
+:Trích mã từ content: regex **DH\d{10}** (đơn) hoặc **HT\d{10}** (hoàn);
+switch (transferType + mã)
+case (in + DH…)
+  |PostgreSQL|
+  :SELECT **payment.payments** WHERE order_code = DH…
+  AND status IN (pending, processing) FOR UPDATE;
+  |API payment (NestJS)|
+  if (Tìm thấy?) then (không)
+    :UPDATE sepay_transactions match_status = unmatched;
+    :INSERT outbox SEPAY_UNMATCHED → thông báo kế toán;
+    stop
+  endif
+  if (transferAmount = payments.amount?) then (lệch)
+    :UPDATE sepay_transactions
+    match_status = amount_mismatch, matched_id = payment;
+    :INSERT outbox SEPAY_UNMATCHED (kế toán xử lý:
+    thu thêm / hoàn phần dư / khớp tay);
+    stop
+  else (bằng)
+  endif
+  #EEF6FF:BEGIN TX;
+  |PostgreSQL|
+  :UPDATE payments SET status = paid, paid_at, sepay_transaction_id,
+  transaction_code = referenceCode, gateway_response;
+  :INSERT payment_transactions (type = sepay_in, provider_ref = id);
+  :UPDATE sepay_transactions match_status = matched,
+  matched_type = payment, processed_at;
+  |Gateway (cùng transaction)|
+  :OrderPaymentGateway.markPaid → UPDATE order.orders
+  payment_status = paid, payment_expires_at = NULL
+  + order_status_histories;
+  :INSERT payment.outbox_events (PAYMENT_PAID);
+  |API payment (NestJS)|
+  #EEF6FF:COMMIT;
+case (out + HT…)
+  |PostgreSQL|
+  :SELECT **payment.refunds** WHERE code = HT…
+  AND status IN (requested, processing) FOR UPDATE;
+  |API payment (NestJS)|
+  if (Tìm thấy & số tiền bằng refunds.amount?) then (không)
+    :UPDATE sepay_transactions unmatched / amount_mismatch;
+    :INSERT outbox SEPAY_UNMATCHED → kế toán khớp tay;
+    stop
+  else (khớp)
+  endif
+  #EEF6FF:BEGIN TX;
+  |PostgreSQL|
+  :UPDATE refunds SET status = done, sepay_transaction_id,
+  provider_ref = referenceCode, processed_at;
+  :INSERT payment_transactions (type = sepay_out, provider_ref = id);
+  :UPDATE payments SET refunded_amount += amount,
+  status = refunded | partially_refunded;
+  :UPDATE sepay_transactions matched (refund);
+  |Gateway (cùng transaction)|
+  :OrderPaymentGateway.markRefunded → UPDATE order.orders
+  payment_status = refunded | partially_refunded
+  + order_status_histories;
+  :Return QueryApi: UPDATE order.return_requests
+  status = refunded, refunded_at (nếu hoàn từ đổi trả);
+  :INSERT payment.outbox_events (PAYMENT_REFUNDED);
+  |API payment (NestJS)|
+  #EEF6FF:COMMIT;
+case (không có mã)
+  :UPDATE sepay_transactions match_status = unmatched;
+  :INSERT outbox SEPAY_UNMATCHED;
+  stop
+endswitch
+:200 OK;
+
+|Worker (outbox relay)|
+:PAYMENT_PAID → email + notification khách;
+PAYMENT_REFUNDED → email + notification khách;
+SEPAY_UNMATCHED → notification nhân viên có
+payment.transfer.confirm (màn đối soát);
+stop
+
+@enduml

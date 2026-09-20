@@ -1,0 +1,25 @@
+# build
+dist/
+coverage/
+*.tsbuildinfo
+
+# deps
+node_modules/
+
+# env — commit .env.example, KHÔNG commit .env thật
+.env
+.env.*
+!.env.example
+
+# ide / os
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+
+# Prisma client sinh ra (prisma generate) — không commit
+src/generated/
