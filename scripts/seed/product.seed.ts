@@ -81,7 +81,44 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   const receiptItems: Array<{ variantId: string; sku: string; quantity: number; unitCost: bigint; productId: string }> = [];
   for (const [i, p] of PRODUCTS.entries()) {
     const exists = await prisma.product.findFirst({ where: { slug: p.slug, isDeleted: false }, select: { id: true } });
-    if (exists) continue;
+    if (exists) {
+      // Đồng bộ ảnh nếu đổi sang Cloudinary hoặc đổi sang key mới
+      const dir = path.join(ASSETS_DIR, 'product', p.slug);
+      const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.jpg')) : [];
+      const order = ['main.jpg', 'hover.jpg', ...files.filter((f) => f.startsWith('mau-')).sort()];
+      const existingImages = await prisma.productImage.findMany({
+        where: { productId: exists.id },
+        select: { id: true, url: true, publicId: true, sortOrder: true },
+      });
+      const existingMap = new Map(existingImages.map((img) => [img.sortOrder, img]));
+      const mainColor = p.mau[0];
+      for (const [k, f] of order.filter((f) => files.includes(f)).entries()) {
+        const img = await images.resolve(`product/${p.slug}/${f}`);
+        const current = existingMap.get(k);
+        if (current) {
+          if (current.url !== img.url || current.publicId !== img.publicId) {
+            await prisma.productImage.update({
+              where: { id: current.id },
+              data: { url: img.url, publicId: img.publicId },
+            });
+          }
+        } else {
+          const colorCode = f.startsWith('mau-') ? f.slice(4, -4) : f === 'main.jpg' ? mainColor : null;
+          await prisma.productImage.create({
+            data: {
+              productId: exists.id,
+              url: img.url,
+              publicId: img.publicId,
+              colorCode: colorCode && p.mau.includes(colorCode) ? colorCode : null,
+              alt: p.name,
+              sortOrder: k,
+              isPrimary: k === 0,
+            },
+          });
+        }
+      }
+      continue;
+    }
     const categoryId = categories.get(p.cat);
     if (!categoryId) throw new Error(`Thiếu ngành hàng ${p.cat} — chạy catalog.seed trước`);
 

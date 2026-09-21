@@ -16,6 +16,7 @@
     "perms:sync": "ts-node -T -r tsconfig-paths/register scripts/sync-permissions.ts",
     "seed": "ts-node -T -r tsconfig-paths/register scripts/seed/index.ts",
     "seed:admin": "ts-node -T -r tsconfig-paths/register scripts/seed/create-admin.ts",
+    "seed:images": "ts-node -T -r tsconfig-paths/register scripts/seed/sync-images.ts",
     "lint": "eslint \"{src,scripts,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,scripts,test}/**/*.ts\" --fix",
     "format": "prettier --write \"{src,scripts,test}/**/*.ts\"",

@@ -75,9 +75,14 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   const images = new SeedImages(loadEnv());
   let created = 0;
   for (const b of BANNERS) {
-    const exists = await prisma.banner.findFirst({ where: { title: b.title, isDeleted: false }, select: { id: true } });
-    if (exists) continue;
     const img = await images.resolve(b.image);
+    const exists = await prisma.banner.findFirst({ where: { title: b.title, isDeleted: false }, select: { id: true, imageUrl: true, imagePublicId: true } });
+    if (exists) {
+      if (exists.imageUrl !== img.url || exists.imagePublicId !== img.publicId) {
+        await prisma.banner.update({ where: { id: exists.id }, data: { imageUrl: img.url, imagePublicId: img.publicId } });
+      }
+      continue;
+    }
     await prisma.banner.create({ data: { title: b.title, subtitle: b.subtitle, imageUrl: img.url, imagePublicId: img.publicId, linkUrl: b.linkUrl, position: b.position, sortOrder: b.sortOrder, isActive: true } });
     created += 1;
   }
