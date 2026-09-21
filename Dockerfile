@@ -23,7 +23,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json prisma.config.ts tsconfig.json ./
 COPY prisma ./prisma
-COPY src ./src
+COPY --from=build /app/src ./src
 COPY scripts ./scripts
 # `prisma migrate deploy` cần prisma/ + prisma.config.ts; seed/perms chạy bằng ts-node -T (mã nguồn TS có sẵn).
 EXPOSE 4000

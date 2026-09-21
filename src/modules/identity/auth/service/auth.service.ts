@@ -36,6 +36,7 @@ import type {
   LogoutCommand,
   RefreshCommand,
   RegisterCommand,
+  RegisterOtpCommand,
   ResetPasswordCommand,
 } from '../command/auth.commands';
 import { TokenPair, TokenService } from './token.service';
@@ -110,10 +111,38 @@ export class AuthService {
     return argon2.verify(hash, password).catch(() => false);
   }
 
+  async sendRegisterOtp(cmd: RegisterOtpCommand): Promise<void> {
+    const email = cmd.email.trim().toLowerCase();
+    if (await this.users.emailExists(email)) {
+      throw new ConflictException(IDENTITY_ERR.EMAIL_EXISTS, 'Email đã được đăng ký tài khoản');
+    }
+    const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    await this.redis.set(REDIS_KEY.otp('register', email), otp, 'EX', OTP_TTL_SECONDS);
+    await this.redis.del(REDIS_KEY.otpAttempts('register', email)).catch(() => undefined);
+    await this.mail.enqueue({
+      to: email,
+      subject: `${this.env.EF_APP_NAME} — Mã xác nhận đăng ký tài khoản`,
+      html: `<p>Chào mừng bạn đến với <b>${this.env.EF_APP_NAME}</b>!</p><p>Mã xác nhận OTP đăng ký của bạn là: <b style="font-size:24px;letter-spacing:4px;color:#000;">${otp}</b></p><p>Mã có hiệu lực trong vòng 10 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>`,
+    });
+    this.logger.log({ email }, 'Đã gửi OTP đăng ký tài khoản');
+  }
+
   async register(cmd: RegisterCommand): Promise<AuthResult> {
     const email = cmd.email.trim().toLowerCase();
     if (await this.users.emailExists(email)) throw new ConflictException(IDENTITY_ERR.EMAIL_EXISTS, 'Email đã được đăng ký');
     if (cmd.phone && (await this.users.phoneExists(cmd.phone))) throw new ConflictException(IDENTITY_ERR.PHONE_EXISTS, 'Số điện thoại đã được đăng ký');
+
+    const attemptsKey = REDIS_KEY.otpAttempts('register', email);
+    const attempts = await this.redis.incr(attemptsKey);
+    if (attempts === 1) await this.redis.expire(attemptsKey, OTP_TTL_SECONDS);
+    if (attempts > OTP_MAX_ATTEMPTS) {
+      throw new BusinessException(IDENTITY_ERR.TOO_MANY_ATTEMPTS, 'Nhập sai mã OTP quá nhiều lần, hãy yêu cầu mã mới', 429);
+    }
+    const savedOtp = await this.redis.get(REDIS_KEY.otp('register', email));
+    if (!savedOtp || savedOtp !== cmd.otp) {
+      throw new BusinessException(IDENTITY_ERR.OTP_INVALID, 'Mã xác nhận OTP không đúng hoặc đã hết hạn');
+    }
+
     const role = await this.permissions.findRoleByCode(ROLE_CODES.CUSTOMER);
     if (!role) throw new BusinessException(IDENTITY_ERR.ROLE_NOT_FOUND, 'Chưa seed vai khách hàng — chạy perms:sync');
     const passwordHash = await AuthService.hashPassword(cmd.password);
@@ -141,6 +170,7 @@ export class AuthService {
       await this.loginHistory.record(tx, { userId: user.id, email: user.email, success: true, reason: 'REGISTER' });
       return { pair, user };
     });
+    await this.redis.del(REDIS_KEY.otp('register', email), attemptsKey).catch(() => undefined);
     this.logger.log({ userId: result.user.id }, 'Khách đăng ký tài khoản mới');
     return this.toResult(result.pair, { ...result.user, roleCode: role.code });
   }

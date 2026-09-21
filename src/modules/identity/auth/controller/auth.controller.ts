@@ -18,6 +18,7 @@ import {
   LoginRequest,
   LogoutRequest,
   RefreshRequest,
+  RegisterOtpRequest,
   RegisterRequest,
   ResetPasswordRequest,
 } from '../request/auth.requests';
@@ -37,12 +38,22 @@ export class AuthController {
   ) {}
 
   @Public()
+  @RateLimit({ name: 'register-otp', limit: 5, windowSeconds: 900, by: 'ip' })
+  @HttpCode(HttpStatus.OK)
+  @Post('register-otp')
+  @ApiOperation({ summary: 'Gửi mã OTP xác nhận đăng ký tài khoản qua email' })
+  async sendRegisterOtp(@Body() body: RegisterOtpRequest): Promise<ApiResponse<null>> {
+    await this.auth.sendRegisterOtp({ email: body.email });
+    return ApiResponse.ok(null, 'Mã xác nhận OTP đã được gửi đến email');
+  }
+
+  @Public()
   @RateLimit({ name: 'register', limit: 5, windowSeconds: 3600, by: 'ip' })
   @Post('register')
-  @ApiOperation({ summary: 'Khách đăng ký tài khoản (đăng nhập luôn sau khi tạo)' })
+  @ApiOperation({ summary: 'Khách đăng ký tài khoản bằng OTP (đăng nhập luôn sau khi tạo)' })
   @ApiOkResponse({ type: TokenPairResponse })
   async register(@Body() body: RegisterRequest): Promise<ApiResponse<TokenPairResponse>> {
-    const r = await this.auth.register({ email: body.email, password: body.password, fullName: body.fullName, phone: body.phone ?? null });
+    const r = await this.auth.register({ email: body.email, password: body.password, fullName: body.fullName, phone: body.phone ?? null, otp: body.otp });
     return ApiResponse.ok(r, 'Đăng ký thành công');
   }
 
