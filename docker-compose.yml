@@ -107,8 +107,8 @@ services:
       EF_PORT: 4000
       EF_DATABASE_URL: postgresql://ecofashion:ecofashion@db:5432/ecofashion
       EF_REDIS_URL: redis://redis:6379/0
-      EF_MAIL_HOST: mailpit
-      EF_MAIL_PORT: 1025
+      EF_MAIL_HOST: ${EF_MAIL_HOST:-mailpit}
+      EF_MAIL_PORT: ${EF_MAIL_PORT:-1025}
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -130,8 +130,8 @@ services:
       NODE_ENV: development
       EF_DATABASE_URL: postgresql://ecofashion:ecofashion@db:5432/ecofashion
       EF_REDIS_URL: redis://redis:6379/0
-      EF_MAIL_HOST: mailpit
-      EF_MAIL_PORT: 1025
+      EF_MAIL_HOST: ${EF_MAIL_HOST:-mailpit}
+      EF_MAIL_PORT: ${EF_MAIL_PORT:-1025}
     depends_on:
       seed:
         condition: service_completed_successfully
