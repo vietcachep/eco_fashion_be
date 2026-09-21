@@ -4,11 +4,16 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
  * Command của feature auth — controller map Request DTO → Command (+ actor/ip/ua lấy từ ngữ cảnh).
  * Service chỉ nhận Command, không nhận Request DTO của HTTP.
  */
+export interface RegisterOtpCommand {
+  email: string;
+}
+
 export interface RegisterCommand {
   email: string;
   password: string;
   fullName: string;
   phone: string | null;
+  otp: string;
 }
 
 export interface GoogleLoginCommand {

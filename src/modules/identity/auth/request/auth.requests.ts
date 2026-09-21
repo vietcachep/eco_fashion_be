@@ -7,6 +7,13 @@ export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/;
 export const PASSWORD_MSG = 'Mật khẩu 8–64 ký tự, gồm cả chữ và số';
 export const PHONE_VN = /^(0|\+84)(\d{9,10})$/;
 
+export class RegisterOtpRequest {
+  @ApiProperty({ example: 'khach@ecofashion.vn' })
+  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @NormalizeEmail()
+  email: string;
+}
+
 export class RegisterRequest {
   @ApiProperty({ example: 'khach@ecofashion.vn' })
   @IsEmail({}, { message: 'Email không hợp lệ' })
@@ -27,6 +34,11 @@ export class RegisterRequest {
   @IsOptional()
   @Matches(PHONE_VN, { message: 'Số điện thoại Việt Nam không hợp lệ' })
   phone?: string;
+
+  @ApiProperty({ example: '123456', description: 'Mã xác nhận OTP 6 số nhận từ email' })
+  @IsString()
+  @Length(6, 6, { message: 'Mã OTP gồm 6 chữ số' })
+  otp: string;
 }
 
 export class GoogleLoginRequest {
