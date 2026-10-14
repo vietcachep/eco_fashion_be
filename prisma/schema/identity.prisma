@@ -12,6 +12,12 @@ model Role {
   name        String   @db.VarChar(100)
   description String?  @db.VarChar(255)
   isSystem    Boolean  @default(true) @map("is_system")
+  /**
+   * platform | shop — vai áp dụng toàn hệ thống (nhân viên sàn) hay chỉ trong phạm vi MỘT gian hàng (PLAN-0014).
+   * Vai scope=shop KHÔNG BAO GIỜ gán vào User.roleId — chỉ dùng qua ShopMember.roleId (module shop, đọc qua
+   * identity.queryapi), nên preset quyền của vai đó tách biệt hoàn toàn khỏi quyền toàn cục của user.
+   */
+  scope       String   @default("platform") @map("scope") @db.VarChar(20)
   version     Int      @default(0)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   createdBy   String?  @map("created_by") @db.Uuid
@@ -77,7 +83,9 @@ model User {
   emailVerifiedAt   DateTime? @map("email_verified_at") @db.Timestamptz
   lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz
   lockedReason      String?   @map("locked_reason") @db.VarChar(255)
-  /* Đăng nhập Google: `sub` của Google id_token (unique); user Google có password_hash ngẫu nhiên không dùng được. */
+  /**
+   * Đăng nhập Google: `sub` của Google id_token (unique); user Google có password_hash ngẫu nhiên không dùng được.
+   */
   googleSub         String?   @unique @map("google_sub") @db.VarChar(64)
   version           Int       @default(0)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz

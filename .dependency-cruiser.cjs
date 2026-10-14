@@ -4,8 +4,12 @@
  * Một module nghiệp vụ ở src/modules/<m>/ chỉ được import:
  *   - src/common/**, src/config/**          (nền tảng dùng chung)
  *   - chính nó
- *   - phần CÔNG KHAI của module khác: <khac>/queryapi/**, <khac>/applicationapi/**, <khac>/enums/**
+ *   - phần CÔNG KHAI của module khác: <khac>/queryapi/**, <khac>/applicationapi/**, <khac>/enums/**, <khac>/security/**
  * Mọi thứ khác của module khác (repository, service, controller, dto, gateway impl…) là RUỘT — import là vi phạm.
+ *
+ * `security/` (PLAN-0014 bước 4+): guard/decorator dùng CHUNG cho MỌI controller `/shop/**` của các module
+ * khác (product/shop/products, review/shop/reviews, …) — ShopContextGuard tự resolve shopId từ JWT nên
+ * PHẢI được tái sử dụng y hệt ở module khác, không phải RUỘT của riêng shop module.
  *
  * common không được import module nghiệp vụ nào. PrismaClient chỉ khởi tạo ở common/prisma; nơi khác dùng
  * PrismaService qua DI (được import TYPE `Prisma` từ generated để khai kiểu input).
@@ -37,6 +41,7 @@ module.exports = {
           '^src/modules/[^/]+/applicationapi/',
           '^src/modules/[^/]+/enums/',
           '^src/modules/[^/]+/[^/]+/enums/',
+          '^src/modules/[^/]+/security/',
         ],
       },
     },
