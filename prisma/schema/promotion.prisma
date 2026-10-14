@@ -24,6 +24,10 @@ model Promotion {
   isActive          Boolean   @default(true) @map("is_active")
   /* Hiện trên web (phiếu voucher) hay chỉ nhập tay. */
   isPublic          Boolean   @default(true) @map("is_public")
+  /* platform = voucher SÀN (áp trên tổng OrderGroup) | shop = voucher GIAN HÀNG (chỉ áp cho đơn con của đúng
+     `shopId`) — PLAN-0017. CHECK ở migration: platform ⇒ shop_id NULL, shop ⇒ shop_id NOT NULL. */
+  scope             String    @default("platform") @db.VarChar(10)
+  shopId            String?   @map("shop_id") @db.Uuid
   version           Int       @default(0)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
   createdBy         String?   @map("created_by") @db.Uuid
@@ -35,6 +39,7 @@ model Promotion {
   usages  PromotionUsage[]
 
   @@index([isActive, startsAt, endsAt])
+  @@index([scope, shopId])
   @@map("promotions")
   @@schema("promotion")
 }
