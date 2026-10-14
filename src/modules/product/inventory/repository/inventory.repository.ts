@@ -10,7 +10,29 @@ export interface LockedVariant {
   stock: number;
   reserved: number;
   isActive: boolean;
+  /* true chỉ khi khoá với includeDeleted — biến thể xoá mềm vẫn được nhả/hoàn/trừ cho đơn cũ nhưng không báo STOCK_LOW. */
+  isDeleted: boolean;
+  /* Gian hàng chủ biến thể — phiếu nhập của shop kiểm trùng ngay trong transaction khoá dòng. */
+  shopId: string;
 }
+
+/* Cột của dòng bảng tồn; options = trục biến thể ngành dynamic (dựng nhãn color/size thay colorName/sizeCode đang null). */
+const STOCK_ROW_SELECT = {
+  id: true,
+  sku: true,
+  colorName: true,
+  sizeCode: true,
+  stock: true,
+  reserved: true,
+  isActive: true,
+  product: { select: { id: true, name: true, slug: true, status: true } },
+  options: { select: { attributeId: true, displayValue: true } },
+} satisfies Prisma.ProductVariantSelect;
+
+/* Khoá cố định cho pg_advisory_xact_lock khi cấp mã phiếu nhập (xem nextReceiptCode). */
+const RECEIPT_CODE_LOCK = 'product.stock_receipt.code';
+/* Mã phiếu runtime: PN + yyMM + số thứ tự toàn cục (≥ 5 chữ số). Mã seed (PN-SEED-…, PN-ACT-…) không khớp mẫu này nên bị bỏ qua khi tính số kế tiếp. */
+const RECEIPT_CODE_PATTERN = '^PN[0-9]{9,}$';
 
 /*
  * Tồn kho: mọi đọc-sửa-ghi qua `lockVariants` (SELECT ... FOR UPDATE, sắp theo id để hai transaction khoá cùng thứ tự
@@ -20,13 +42,18 @@ export interface LockedVariant {
 export class InventoryRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async lockVariants(variantIds: string[], tx: Tx): Promise<LockedVariant[]> {
+  /*
+   * Khoá dòng biến thể. Mặc định bỏ biến thể đã xoá mềm (nhập kho/điều chỉnh/giữ hàng chỉ đụng hàng còn bán).
+   * `includeDeleted`: nhả/trừ/hoàn kho cho đơn ĐÃ có từ trước PHẢI khoá được cả biến thể bị xoá mềm sau đó — nếu không, đơn mở
+   * không huỷ/xác nhận được và số `reserved` kẹt vĩnh viễn.
+   */
+  async lockVariants(variantIds: string[], tx: Tx, opts: { includeDeleted?: boolean } = {}): Promise<LockedVariant[]> {
     if (variantIds.length === 0) return [];
     const ids = [...new Set(variantIds)].sort();
     return tx.$queryRaw<LockedVariant[]>`
-      SELECT id, product_id AS "productId", sku, stock, reserved, is_active AS "isActive"
+      SELECT id, product_id AS "productId", sku, stock, reserved, is_active AS "isActive", is_deleted AS "isDeleted", shop_id AS "shopId"
       FROM "product"."product_variants"
-      WHERE id = ANY(${ids}::uuid[]) AND is_deleted = false
+      WHERE id = ANY(${ids}::uuid[]) ${opts.includeDeleted ? Prisma.empty : Prisma.sql`AND is_deleted = false`}
       ORDER BY id
       FOR UPDATE`;
   }
@@ -47,19 +74,31 @@ export class InventoryRepository {
 
   // ------------------------------------------------------------ receipts
 
+  /*
+   * Cấp mã phiếu kế tiếp — PHẢI gọi trong cùng transaction với createReceipt. `count(*) + 1` không khoá khiến hai vendor lập
+   * phiếu cùng lúc đọc cùng số → trùng mã (unique đỏ, 409). Ở đây advisory lock theo transaction tuần tự hoá việc cấp số:
+   * transaction sau đợi transaction trước COMMIT rồi mới đọc số lớn nhất (READ COMMITTED thấy dòng vừa commit) → không trùng.
+   * Số kế tiếp = MAX(số của mã đúng mẫu runtime) + 1, nên mã seed hay dòng bị xoá cứng không làm lệch dãy.
+   */
   async nextReceiptCode(tx: Tx): Promise<string> {
-    const [{ n }] = await tx.$queryRaw<Array<{ n: bigint }>>`SELECT count(*)::bigint AS n FROM "product"."stock_receipts"`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${RECEIPT_CODE_LOCK}))`;
+    const [{ n }] = await tx.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COALESCE(MAX(CAST(SUBSTRING(code FROM 7) AS bigint)), 0)::bigint AS n
+      FROM "product"."stock_receipts"
+      WHERE code ~ ${RECEIPT_CODE_PATTERN}`;
     const d = new Date();
     return `PN${d.getFullYear().toString().slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(n + 1n).padStart(5, '0')}`;
   }
 
-  async createReceipt(data: { code: string; supplierName: string | null; note: string | null; totalCost: bigint; createdBy: string | null; items: Array<{ variantId: string; sku: string; quantity: number; unitCost: bigint }> }, tx: Tx): Promise<{ id: string }> {
+  /* `shopId` = gian hàng lập phiếu (null = phiếu của sàn) — ghi CÙNG câu lệnh tạo phiếu, không còn bước update riêng làm phiếu mồ côi. */
+  async createReceipt(data: { code: string; supplierName: string | null; note: string | null; totalCost: bigint; createdBy: string | null; shopId: string | null; items: Array<{ variantId: string; sku: string; quantity: number; unitCost: bigint }> }, tx: Tx): Promise<{ id: string }> {
     return tx.stockReceipt.create({
       data: {
         code: data.code,
         supplierName: data.supplierName,
         note: data.note,
         totalCost: new Prisma.Decimal(data.totalCost.toString()),
+        shopId: data.shopId,
         createdBy: data.createdBy,
         updatedBy: data.createdBy,
         items: { create: data.items.map((i) => ({ variantId: i.variantId, sku: i.sku, quantity: i.quantity, unitCost: new Prisma.Decimal(i.unitCost.toString()) })) },
@@ -95,26 +134,29 @@ export class InventoryRepository {
   }
 
   async findStockRow(variantId: string) {
-    return this.prisma.productVariant.findFirst({
-      where: { id: variantId, isDeleted: false },
-      select: { id: true, sku: true, colorName: true, sizeCode: true, stock: true, reserved: true, isActive: true, product: { select: { id: true, name: true, slug: true, status: true } } },
-    });
+    return this.prisma.productVariant.findFirst({ where: { id: variantId, isDeleted: false }, select: STOCK_ROW_SELECT });
   }
 
-  /* Bảng tồn cho màn kho: mọi biến thể sống kèm tên sản phẩm; lọc sắp hết hàng. */
-  async listStock(params: { skip: number; take: number; q?: string; lowStockOnly?: boolean; threshold: number }) {
+  /*
+   * Bảng tồn cho màn kho: mọi biến thể sống kèm tên sản phẩm; lọc sắp hết hàng. `shopId` (vendor) lọc NGAY ở DB cùng truy vấn
+   * với tìm kiếm / lowStockOnly / phân trang / count — không lọc trong bộ nhớ sau khi cắt trang (làm trang 2+ rỗng, total sai).
+   */
+  async listStock(params: { skip: number; take: number; q?: string; lowStockOnly?: boolean; threshold: number; shopId?: string }) {
     const where: Prisma.ProductVariantWhereInput = {
       isDeleted: false,
-      product: { isDeleted: false, ...(params.q ? { OR: [{ name: { contains: params.q, mode: 'insensitive' } }, { variants: { some: { sku: { contains: params.q, mode: 'insensitive' } } } }] } : {}) },
+      ...(params.shopId ? { shopId: params.shopId } : {}),
+      product: { isDeleted: false },
+      ...(params.q ? { OR: [{ sku: { contains: params.q, mode: 'insensitive' } }, { product: { name: { contains: params.q, mode: 'insensitive' } } }] } : {}),
       ...(params.lowStockOnly ? { stock: { lte: params.threshold } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.productVariant.findMany({
         where,
-        orderBy: [{ stock: 'asc' }, { sku: 'asc' }],
+        // id là chốt cuối: SKU chỉ duy nhất theo shop nên hai dòng cùng tồn + cùng SKU vẫn phải có thứ tự ổn định khi phân trang.
+        orderBy: [{ stock: 'asc' }, { sku: 'asc' }, { id: 'asc' }],
         skip: params.skip,
         take: params.take,
-        select: { id: true, sku: true, colorName: true, sizeCode: true, stock: true, reserved: true, isActive: true, product: { select: { id: true, name: true, slug: true, status: true } } },
+        select: STOCK_ROW_SELECT,
       }),
       this.prisma.productVariant.count({ where }),
     ]);
