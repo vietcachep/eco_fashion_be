@@ -1,0 +1,98 @@
+import { SHOP_MODULE } from '../enums/shop-events';
+
+export { SHOP_MODULE };
+
+/* Gian hàng CHÍNH CHỦ của sàn (không phải vendor bên thứ 3) — tạo sẵn bởi migration product_shop_id để
+   backfill sản phẩm cũ (trước khi có module shop). Mã cố định, ổn định dù sau này có thêm bao nhiêu shop
+   vendor khác — dùng làm shopId mặc định khi NHÂN VIÊN SÀN (không phải vendor) tự tạo sản phẩm qua
+   /admin/products (PLAN-0014 bước 5). KHÔNG suy ra bằng cách query "shop approved đầu tiên": một vendor
+   được duyệt sớm hơn ngày seed lại DB sẽ vô tình trở thành shop mặc định — sai hoàn toàn. */
+export const FITLY_OFFICIAL_SHOP_CODE = 'SHOP-000001';
+
+/* Mã lỗi ổn định của module shop (AGENTS.md — common chỉ chuẩn hoá khuôn, module tự đặt mã). */
+export const SHOP_ERR = {
+  NOT_FOUND: 'SHOP_NOT_FOUND',
+  CODE_EXISTS: 'SHOP_CODE_EXISTS',
+  SLUG_EXISTS: 'SHOP_SLUG_EXISTS',
+  INVALID_TRANSITION: 'SHOP_INVALID_TRANSITION',
+  NOT_MEMBER: 'SHOP_NOT_MEMBER',
+  NOT_APPROVED: 'SHOP_NOT_APPROVED',
+  FORBIDDEN: 'SHOP_FORBIDDEN',
+  MEMBER_NOT_FOUND: 'SHOP_MEMBER_NOT_FOUND',
+  /* Chủ shop thêm nhân viên khi shop đã có SHOP_MEMBER_MAX_ACTIVE thành viên đang hoạt động — 409, "hãy gỡ bớt người không còn làm việc". */
+  MEMBER_LIMIT_REACHED: 'SHOP_MEMBER_LIMIT_REACHED',
+  /* Thêm lại một nhân viên cũ (đã bị gỡ khỏi CHÍNH shop này) nhưng tài khoản hiện không khôi phục được (đang là thành viên active của shop khác,
+     bị khoá…) — 409, thông điệp trung tính ("dùng email khác"), không nói lý do để không lộ trạng thái tài khoản. */
+  MEMBER_UNAVAILABLE: 'SHOP_MEMBER_UNAVAILABLE',
+  ROLE_INVALID: 'SHOP_ROLE_INVALID',
+  LAST_OWNER: 'SHOP_LAST_OWNER',
+  /* Tài khoản ngân hàng gửi thiếu trường: lần đầu khai phải đủ 3 trường; đổi số tài khoản/BIN phải gửi lại tên chủ TK. */
+  BANK_FIELD_INCOMPLETE: 'SHOP_BANK_FIELD_INCOMPLETE',
+} as const;
+
+/* Tên hành động audit của module — ổn định, dùng lọc trên màn audit. */
+export const SHOP_AUDIT = {
+  APPROVED: 'SHOP_APPROVED',
+  SUSPENDED: 'SHOP_SUSPENDED',
+  REJECTED: 'SHOP_REJECTED',
+  COMMISSION_UPDATED: 'SHOP_COMMISSION_UPDATED',
+  PROFILE_UPDATED: 'SHOP_PROFILE_UPDATED',
+  BANK_UPDATED: 'SHOP_BANK_UPDATED',
+  /* Chủ shop tạo tài khoản + thêm nhân viên vào shop (POST /shop/members). Dòng audit cũ của luồng lời mời (SHOP_INVITATION_*) vẫn còn trong DB. */
+  MEMBER_ADDED: 'SHOP_MEMBER_ADDED',
+  MEMBER_UPDATED: 'SHOP_MEMBER_UPDATED',
+  MEMBER_REMOVED: 'SHOP_MEMBER_REMOVED',
+  /* Thành viên tự rời gian hàng (POST /shop/members/leave). */
+  MEMBER_LEFT: 'SHOP_MEMBER_LEFT',
+} as const;
+
+/* Sự kiện outbox module shop phát — định nghĩa ở enums/shop-events.ts (phần công khai cho module khác nghe). */
+export { SHOP_EVENT } from '../enums/shop-events';
+
+export const SHOP_STATUS = { PENDING: 'pending', APPROVED: 'approved', SUSPENDED: 'suspended', REJECTED: 'rejected' } as const;
+export type ShopStatus = (typeof SHOP_STATUS)[keyof typeof SHOP_STATUS];
+
+export const SHOP_MEMBER_STATUS = { ACTIVE: 'active', REMOVED: 'removed' } as const;
+
+/*
+ * Trần số thành viên ĐANG HOẠT ĐỘNG của MỘT gian hàng. Chủ shop tự tạo tài khoản nhân viên nên cần chặn việc "đẻ" tài khoản hàng loạt
+ * (rate-limit 30 lần/giờ/người chỉ chặn tốc độ). Vượt trần ⇒ 409 SHOP_MEMBER_LIMIT_REACHED; gỡ nhân viên cũ thì thêm lại được.
+ */
+export const SHOP_MEMBER_MAX_ACTIVE = 50;
+
+/*
+ * Mã vai gán được cho ShopMember.roleId — PHẢI khớp `SHOP_ROLE_CODES` ở identity/permission/catalog.ts.
+ * Không import trực tiếp từ identity (dependency-cruiser chỉ cho phép cross-module qua queryapi/enums —
+ * catalog.ts nằm ngoài các thư mục đó) nên khai lặp danh sách ở đây CHỈ để validate format request DTO;
+ * nguồn sự thật cuối cùng vẫn là `identity.queryapi.findShopRoleByCode()` (đọc DB, chặn cả sai scope).
+ */
+export const SHOP_MEMBER_ROLE_CODES = ['shop_owner', 'shop_staff'] as const;
+
+/* Vai shop có quyền chủ — dùng chặn "gỡ/hạ/rời" người chủ cuối cùng (khớp identity ROLE_CODES.SHOP_OWNER; khai lặp vì không import catalog). */
+export const SHOP_OWNER_ROLE_CODE = 'shop_owner';
+
+/*
+ * Vai NỀN TẢNG duy nhất của tài khoản được phép thêm làm nhân viên gian hàng: khách thường ('customer', khớp identity
+ * ROLE_CODES.CUSTOMER — khai lặp vì không import catalog). Tài khoản mang vai nhân viên sàn (admin/manager/…) bị từ chối.
+ */
+export const SHOP_MEMBER_ELIGIBLE_PLATFORM_ROLE = 'customer';
+
+export const SHOP_STATUS_LABEL: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  suspended: 'Đã khoá',
+  rejected: 'Đã từ chối',
+};
+
+/*
+ * Lưới chuyển trạng thái do NHÂN VIÊN SÀN thao tác (AdminShopController — quyền `supplier.shop.*`), cùng kiểu
+ * với STAFF_TRANSITIONS của order: pending → approved|rejected (duyệt/từ chối lần đầu); approved → suspended
+ * (khoá vi phạm); suspended → approved (mở khoá lại); rejected là trạng thái cuối (đăng ký lại là luồng khác,
+ * ngoài phạm vi PLAN-0014 bước 1-4).
+ */
+export const SHOP_TRANSITIONS: Record<string, string[]> = {
+  pending: [SHOP_STATUS.APPROVED, SHOP_STATUS.REJECTED],
+  approved: [SHOP_STATUS.SUSPENDED],
+  suspended: [SHOP_STATUS.APPROVED],
+  rejected: [],
+};
