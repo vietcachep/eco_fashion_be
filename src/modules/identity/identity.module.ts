@@ -10,6 +10,7 @@ import { IdentityAuditQueryService } from './audit/identity-audit-query.service'
 import { AuthController } from './auth/controller/auth.controller';
 import { RefreshTokenRepository } from './auth/repository/refresh-token.repository';
 import { AuthService } from './auth/service/auth.service';
+import { IdentityApplicationApi } from './applicationapi/identity.applicationapi';
 import { TokenService } from './auth/service/token.service';
 import { PermissionAuthorizationGatewayImpl } from './gateway/permission-authorization.gateway.impl';
 import { TokenValidationGatewayImpl } from './gateway/token-validation.gateway.impl';
@@ -31,7 +32,8 @@ import { UserService } from './user/service/user.service';
 /*
  * Module identity (PLAN-0002): xác thực, người dùng, vai/quyền, địa chỉ, lịch sử đăng nhập, audit.
  * @Global vì cung cấp 3 cổng mà guard ở common cần (TOKEN_VALIDATION, PERMISSION_AUTHORIZATION) và cổng
- * USER_DIRECTORY cho module khác. Module khác chỉ được import IdentityQueryApi + các gateway; KHÔNG import
+ * USER_DIRECTORY cho module khác. Module khác chỉ được import IdentityQueryApi (đọc) + IdentityApplicationApi (ghi: chủ shop tạo
+ * tài khoản nhân viên) + các gateway; KHÔNG import
  * repository/service nội bộ (dependency-cruiser gác).
  */
 @Global()
@@ -69,7 +71,8 @@ import { UserService } from './user/service/user.service';
     { provide: PERMISSION_AUTHORIZATION_GATEWAY, useClass: PermissionAuthorizationGatewayImpl },
     { provide: USER_DIRECTORY_GATEWAY, useClass: UserDirectoryGatewayImpl },
     IdentityQueryApi,
+    IdentityApplicationApi,
   ],
-  exports: [TOKEN_VALIDATION_GATEWAY, PERMISSION_AUTHORIZATION_GATEWAY, USER_DIRECTORY_GATEWAY, IdentityQueryApi],
+  exports: [TOKEN_VALIDATION_GATEWAY, PERMISSION_AUTHORIZATION_GATEWAY, USER_DIRECTORY_GATEWAY, IdentityQueryApi, IdentityApplicationApi],
 })
 export class IdentityModule {}
