@@ -2,24 +2,28 @@
 
 ## Project Context
 
-EcoFashion là **MỘT cửa hàng thời trang** (quần áo, phụ kiện) bán online — KHÔNG phải sàn nhiều gian hàng.
-Hai giao diện dùng chung backend này:
+EcoFashion (FITLY) là **sàn thương mại điện tử đa gian hàng, đa ngành hàng** (PLAN-0014 marketplace
+shop/vendor, PLAN-0016 multi-category) — nhiều gian hàng (shop) cùng bán trên sàn, mỗi shop tự quản sản
+phẩm/đơn/khuyến mãi của mình; ngành hàng thời trang (quần áo) là ngành hàng ĐẦU TIÊN, không phải duy nhất —
+category mới (điện tử, gia dụng, mỹ phẩm...) tự định nghĩa bộ thuộc tính riêng (xem PLAN-0016), KHÔNG bắt
+buộc gender/color/size như thời trang. Hai giao diện dùng chung backend này:
 
-- **Web bán hàng** (khách): xem/tìm sản phẩm, giỏ hàng, đặt hàng, thanh toán thẻ/chuyển khoản thật,
-  theo dõi đơn, đánh giá, trợ lý AI.
-- **Web quản trị cửa hàng** (nhân viên): NHIỀU VAI TRÒ nhân viên (chủ shop/admin, quản lý, bán hàng &
-  CSKH, kho, kế toán, marketing) — mỗi vai một bộ quyền, quyền cấp/chặn riêng theo từng người.
+- **Web bán hàng** (khách): xem/tìm sản phẩm theo ngành hàng & gian hàng, giỏ hàng nhóm theo shop, đặt hàng nhiều shop trong một lần,
+  thanh toán PayOS/VNPay/chuyển khoản/COD, theo dõi đơn, đánh giá, trợ lý AI.
+- **Web quản trị** (hai cổng, một repo FE): **nhân viên SÀN** — NHIỀU VAI TRÒ (admin, quản lý, bán hàng & CSKH, kho, kế toán, marketing), mỗi vai
+  một bộ quyền `supplier.*`/`module.resource.action`, quyền cấp/chặn riêng theo từng người; **vendor** (chủ/nhân viên gian hàng — vai `shop_owner`/`shop_staff`)
+  tự vận hành CHÍNH shop mình qua `/shop/**` (quyền `shop.*`, kiểm bằng `ShopContextGuard`).
 
-Ba điểm khác dự án sàn EcoShop (`D:\Fullstack\eco_books`) — cố ý, không "sửa cho giống":
+Điểm khác dự án sàn EcoShop (`D:\Fullstack\eco_books`) — cố ý, không "sửa cho giống":
 
 | Khác biệt | Hệ quả trong code |
 |---|---|
-| Một cửa hàng, không marketplace | KHÔNG có module supplier/ví quỹ/đơn con; một đơn = một cửa hàng; hoa hồng không tồn tại |
+| Marketplace nhiều gian hàng (PLAN-0014/0017) | Module `shop`; một lần checkout = 1 `OrderGroup` + N đơn CON (mỗi shop 1 đơn, 1 Payment riêng); hoa hồng sàn ghi trên đơn con (`commissionRateSnapshot`); ví quỹ COD + đối soát chi trả shop (module payment); vendor chỉ thấy dữ liệu shop mình (`ShopContextGuard`, `shopId` CHỈ từ ngữ cảnh) |
 | Chỉ tiếng Việt | KHÔNG bảng dịch, không module translation/language, không `lang` param; chữ giao diện nằm ở FE; tiền tệ duy nhất VND |
-| Thanh toán thật ở Việt Nam | Cổng thanh toán VNPay (thẻ ATM nội địa / Visa-Master / QR) + chuyển khoản VietQR có đối soát + COD; IPN là nguồn sự thật, chữ ký HMAC bắt buộc |
+| Thanh toán thật ở Việt Nam | VNPay (thẻ ATM / Visa-Master / QR) + **PayOS** (QR/chuyển khoản tự động; khoá để TRỐNG thì method `payos` tự tắt) + chuyển khoản VietQR có đối soát + COD; IPN/webhook là nguồn sự thật, chữ ký HMAC bắt buộc |
 
-Phần còn lại giữ như EcoShop: danh mục · sản phẩm nhiều biến thể (size/màu) · tồn kho · giỏ · đơn ·
-khuyến mãi · đánh giá · thông báo · báo cáo · **trợ lý AI** (gợi ý, chatbot RAG, tóm tắt đánh giá,
+Phần còn lại giữ như EcoShop: danh mục · sản phẩm nhiều biến thể (trục thuộc tính theo ngành hàng) · tồn kho · giỏ · đơn ·
+khuyến mãi (voucher sàn + voucher từng shop) · đánh giá · thông báo · báo cáo · **trợ lý AI** (gợi ý, chatbot RAG, tóm tắt đánh giá,
 kiểm duyệt, FAQ…) với đường lùi không-AI.
 
 Bám sát format của `D:\project_ago_fruit\ago_erp\ago_backend` (AGENTS + PLANS + docs + explain), chuyển
@@ -35,8 +39,9 @@ eco_backend
 ├── src/common/          nền tảng dùng chung (mỏng, KHÔNG business logic)
 ├── src/modules/<m>/     một thư mục = một module nghiệp vụ = một schema PostgreSQL
 ├── src/app.module.ts    lắp ráp runtime (API)
-├── src/worker.ts        tiến trình worker BullMQ (queue) — cùng code, khác entrypoint
-└── scripts/             migrate, seed, sync quyền, kiểm ranh giới
+├── src/worker.ts        tiến trình worker BullMQ (queue) — cùng code, khác entrypoint (worker.module.ts)
+├── prisma/              schema/<module>.prisma + migrations/ (SQL commit vào repo)
+└── scripts/             sync-permissions.ts (catalog quyền → DB) + seed/ (15 bước, DSL data/, assets ảnh, tools/); ranh giới gác bằng `.dependency-cruiser.cjs` (`npm run check:boundaries`)
 ```
 
 Backend:
@@ -57,26 +62,29 @@ Frontend (repo riêng, không nằm đây): Next.js + React + TypeScript + Tailw
 |---|---|---|---|
 | 0 | common | — | ApiResponse/ApiError/PageResponse, BusinessException, filter lỗi, requestId, security context, guard quyền, **gateway liên module**, base audit/outbox/idempotency |
 | 1 | identity | `identity` | user (khách + nhân viên), role, permission catalog, quyền cấp/chặn riêng, auth (login/refresh/logout/đổi mật khẩu/quên mật khẩu), lịch sử đăng nhập, địa chỉ giao hàng, audit, outbox |
-| 2 | catalog | `catalog` | ngành hàng dạng cây, thương hiệu, bộ thuộc tính (size/màu/chất liệu), bộ sưu tập |
-| 3 | product | `product` | sản phẩm, biến thể (SKU size/màu), ảnh, thông số, giá, **tồn kho + phiếu nhập/điều chỉnh**, tìm kiếm (tsvector tiếng Việt + trigram), trạng thái |
-| 4 | cart | `cart` | giỏ hàng theo biến thể, wishlist |
-| 5 | order | `order` | đơn hàng (một cửa hàng), dòng hàng snapshot, vòng đời trạng thái, giữ/trừ/nhả kho qua gateway, phí ship theo tỉnh, mã đơn tuần tự, yêu cầu đổi trả |
-| 6 | payment | `payment` | phương thức (COD, VNPay, chuyển khoản), giao dịch, VNPay create-url/return/IPN, đối soát chuyển khoản, hoàn tiền |
-| 7 | promotion | `promotion` | mã giảm giá (%, số tiền, freeship), phạm vi sản phẩm/ngành, hạn mức dùng, lượt dùng theo đơn |
-| 8 | review | `review` | đánh giá đã mua, ảnh, trả lời của shop, kiểm duyệt, ghi điểm về product qua gateway |
-| 9 | system | `system` | tham số vận hành, banner, thông báo, tỉnh/thành + phí ship, hộp thư (mail) |
-| 10 | reporting | `reporting` | dashboard, doanh thu, bán chạy, tồn kho — read model, chỉ đọc qua queryapi |
-| 11 | ai | `ai` | embedding pgvector, kho tri thức, chatbot RAG tool-calling + SSE, gợi ý, tóm tắt đánh giá, kiểm duyệt đề xuất, FAQ, sổ chi phí & hạn mức (cổng AI), soạn mô tả cho nhân viên |
+| 2 | catalog | `catalog` | ngành hàng dạng cây (chỉ ngành LÁ nhận sản phẩm; KHÔNG có thương hiệu), `attributeMode` legacy_fashion \| dynamic, thuộc tính thời trang (size/màu/chất liệu) + thuộc tính động + mẫu thuộc tính theo ngành (≤ 2 trục biến thể), bộ sưu tập; vendor đọc mẫu ở `/shop/catalog/**` |
+| 3 | product | `product` | sản phẩm thuộc MỘT gian hàng (`shopId`), biến thể (màu×size hoặc trục động; SKU duy nhất TRONG shop), ảnh, giá, **tồn kho + phiếu nhập/điều chỉnh**, tìm kiếm (tsvector tiếng Việt + trigram), trạng thái; trang gian hàng công khai `GET /shops` (`product/storefront`); route vendor `/shop/products`, `/shop/inventory` |
+| 4 | cart | `cart` | giỏ hàng theo biến thể (dòng có `shopId`, FE nhóm theo shop), wishlist |
+| 5 | order | `order` | đơn cha (`OrderGroup`) + đơn CON theo shop, dòng hàng snapshot, vòng đời trạng thái, giữ/trừ/nhả kho qua gateway, phí ship theo tỉnh (tính riêng từng đơn con), mã đơn tuần tự, yêu cầu đổi trả, voucher sàn+shop (`applyVouchers`), `/shop/orders/**` cho vendor |
+| 6 | payment | `payment` | phương thức (COD, VNPay, **PayOS**, chuyển khoản), giao dịch, create-url/return/webhook, đối soát chuyển khoản, hoàn tiền (có khoá chiếm + idempotent); **ví quỹ COD** (`shop-wallet`: hoa hồng COD, nộp quỹ, khoá COD khi ví ≤ 0); **đối soát chi trả shop** (`shop-payout`, `PaymentSettlementModule`: escrow theo hạn đổi trả, hoa hồng, nợ mang sang, chi PayOS hoặc kế toán đánh dấu đã trả) |
+| 7 | promotion | `promotion` | mã giảm giá (%, số tiền, freeship) phạm vi `platform` (sàn chịu, cả giỏ) hoặc `shop` (shop chịu, chỉ đơn con của shop; vendor tự quản `/shop/promotions`), phạm vi sản phẩm/ngành, hạn mức dùng, lượt dùng theo đơn |
+| 8 | review | `review` | đánh giá đã mua, ảnh, trả lời của shop (hiển thị tên shop), kiểm duyệt, ghi điểm về product qua gateway; `/shop/reviews` cho vendor (chỉ đánh giá đã duyệt) |
+| 9 | system | `system` | tham số vận hành, banner, thông báo (kể cả cho thành viên shop: đơn mới, sắp hết hàng, đổi TK ngân hàng), tỉnh/thành + phí ship, hộp thư (mail), FAQ/trang, upload ảnh |
+| 10 | reporting | `reporting` | dashboard + doanh thu + bán chạy + tồn kho TOÀN SÀN (`daily_sales`, đọc chéo schema CHỈ SELECT) và `/shop/reports` tính riêng từng shop (SQL lọc `shop_id`) |
+| 11 | ai | `ai` | embedding pgvector, kho tri thức, chatbot RAG tool-calling, gợi ý, tóm tắt đánh giá, kiểm duyệt đề xuất, FAQ, **tìm sản phẩm bằng ảnh**, sổ chi phí & hạn mức (cổng AI), soạn mô tả cho nhân viên; thử đồ 2D + phân tích ảnh người (tính năng thời trang cũ) |
+| 12 | shop | `shop` | gian hàng, thành viên (vai `shop_owner`/`shop_staff`) do **chủ shop THÊM TRỰC TIẾP** — tạo tài khoản khách cho nhân viên, có hiệu lực ngay, không mời/không chờ chấp nhận (`POST /shop/members`; tài khoản tạo qua `identity/applicationapi`; mỗi người một shop active — unique DB `uq_shop_members_one_active_per_user`; trần 50 thành viên active/shop), `ShopContextGuard` + `@RequireShopPermission`, hồ sơ + tài khoản ngân hàng nhận tiền (che số), phiên vendor `GET /shop/session`, duyệt/khoá/hoa hồng do sàn (`/admin/shops/**`) |
 
 ## Ownership Rule (thay cho Department Ownership của ERP)
 
-Một cửa hàng nên KHÔNG có `owner_department_id`. Thay vào đó mọi bản ghi nghiệp vụ quan trọng có:
+Sàn TMĐT KHÔNG có `owner_department_id`. Thay vào đó mọi bản ghi nghiệp vụ quan trọng có:
 
 - `id` (uuid), `code`/`order_no` khi là chứng từ, `status`
 - `created_by`, `created_at`, `updated_by`, `updated_at`, `version`, `is_deleted` (soft delete)
 - Dữ liệu CỦA KHÁCH (địa chỉ, giỏ, đơn, đánh giá, phiên chat) luôn lọc theo `user_id` lấy từ JWT —
   KHÔNG BAO GIỜ nhận `user_id` từ body/query để đọc dữ liệu khách khác.
-- Phân quyền nhân viên theo **mã quyền** (`module.resource.action`), không theo tên vai; vai chỉ là preset.
+- Dữ liệu THUỘC GIAN HÀNG (sản phẩm, biến thể, phiếu nhập, đơn con, đánh giá, voucher shop, ví, đối soát) có cột `shop_id` (id trần trỏ `shop.shops.id`, không FK xuyên schema); với vendor `shop_id` CHỈ lấy từ ngữ cảnh phiên
+  (`ShopContextGuard`), không từ URL/body — xem Marketplace / Vendor Rule.
+- Phân quyền nhân viên theo **mã quyền** (`module.resource.action`; nhân viên sàn thêm `supplier.*`, vendor `shop.*`), không theo tên vai; vai chỉ là preset.
 
 ## Database Rules
 
@@ -111,7 +119,7 @@ Chi tiết: `docs/03_DATABASE_RULES.md`. Sơ đồ nguồn: `docs/database/eco_f
 ## Migration / Schema Rule (Prisma)
 
 Migration (`prisma/migrations/*/migration.sql`, commit vào repo) là nguồn sự thật của schema; `prisma/schema/*.prisma`
-phải khớp — `npm run migration:check` (CI) chạy `prisma migrate deploy` trên DB trống rồi `prisma migrate diff
+phải khớp — `npm run migration:check` (chạy trong job `migrations` của `.github/workflows/ci.yml` và chạy tay được khi cần) chạy `prisma migrate deploy` trên DB trống rồi `prisma migrate diff
 --exit-code` để gác lệch.
 
 - Schema là THƯ MỤC: `base.prisma` (generator + datasource `schemas = [...]`) + **một file cho mỗi module**
@@ -139,7 +147,10 @@ Module nói chuyện với nhau qua:
 - **Outbox event** sau commit (thông báo bất đồng bộ)
 
 Không truyền entity giữa module. Không import `repository/`, `entity/`, `service/impl` của module khác.
-`scripts/check-boundaries` (dependency-cruiser) gác bằng máy; vi phạm là CI đỏ.
+`.dependency-cruiser.cjs` (`npm run check:boundaries`) gác bằng máy: module chỉ được import `queryapi/`, `applicationapi/`, `enums/`, `security/` (guard dùng chung của `/shop/**`) và file `*.module.ts` của module khác;
+`common` không import module nghiệp vụ; **cấm import vòng** (vì vậy đối soát chi trả shop tách thành `PaymentSettlementModule` — cần `OrderQueryApi` mà `OrderModule` đã import `PaymentModule`; trang gian hàng công khai đặt ở
+`product/storefront` vì `product` đã phụ thuộc `shop`). Module chủ cần hỏi module khác "cái này còn được dùng không?" mà không import ngược thì module kia đăng ký provider vào registry
+(vd `CatalogUsageRegistry`). Bản đồ module, gateway, queryapi và sự kiện outbox: `docs/02_MODULE_MAP.md`.
 
 ## Cross-Module Read / Write Rule
 
@@ -190,8 +201,19 @@ JWT stateless. Không session/cookie phiên.
   rotation mỗi lần dùng, phát hiện dùng lại → thu hồi cả họ token.
 - Redis: blacklist `jti` tới hạn, cache `permission_version`/quyền hiệu lực (TTL ngắn, evict NGAY khi đổi).
   Redis mất dữ liệu thì PostgreSQL vẫn đủ để xác thực refresh token. Redis KHÔNG phải nguồn sự thật.
-- Khách và nhân viên dùng CÙNG bảng `users` + `role`; khu quản trị chặn bằng mã quyền, không bằng tên vai.
+- Khách và nhân viên dùng CÙNG bảng `users` + `role`; khu quản trị chặn bằng mã quyền, không bằng tên vai. Chủ/nhân viên gian hàng là user vai `customer` + một dòng `shop.shop_members` (xem Marketplace / Vendor Rule).
 - Mật khẩu: argon2id. Quên mật khẩu qua OTP email (Redis TTL). Chống dò: khoá tạm theo email+ip.
+
+## Marketplace / Vendor Rule (PLAN-0014 · 0017)
+
+- **Hai namespace quyền, KHÔNG dùng chung mã**: `supplier.*` (+ `module.resource.action`) = nhân viên SÀN thao tác trên MỌI shop, kiểm bằng `PermissionGuard` + `@RequirePermission`; `shop.*` = chủ/nhân viên gian hàng thao tác
+  trên CHÍNH shop mình, kiểm bằng `ShopContextGuard` + `@RequireShopPermission` (mã lấy từ `ShopMember.roleId`; vai `scope=shop` không bao giờ gán vào `User.roleId`, nên `shop.*` KHÔNG có trong `GET /auth/me` — FE đọc ở `GET /shop/session`).
+- **`shopId` của vendor CHỈ từ ngữ cảnh** (`@CurrentShop()` ← ShopMember active của JWT), không bao giờ từ URL/query/body; mọi repository/service vendor lọc thêm theo `shopId`; dữ liệu shop khác ⇒ **404** (không lộ tồn tại).
+  `ShopContextGuard` đọc THẲNG `Shop.status` (khác `approved` ⇒ 403 `SHOP_NOT_APPROVED`; chỉ route `@AllowAnyShopStatus` — `GET /shop/session`, `POST /shop/members/leave` — chạy được khi shop chờ duyệt/bị khoá).
+- **DTO vendor là whitelist riêng**: không lộ `userId`/email/PII khách, `paymentUrl`/`paymentIntent`/`transactionCode`, ghi chú kiểm duyệt; số tài khoản ngân hàng che (chỉ nhân viên sàn thấy đầy đủ); hoa hồng/ví/đối soát/TK ngân hàng KHÔNG ra web bán hàng.
+- **Đơn & tiền**: một lần checkout = 1 `OrderGroup` (đơn cha, không vòng đời) + N đơn CON (mỗi shop một đơn, một `Payment` riêng); hoa hồng đóng băng ở `commissionRateSnapshot`; voucher sàn do SÀN chịu, voucher shop do SHOP chịu.
+  Ví quỹ COD là sổ cái APPEND-ONLY (mọi đổi số dư = transaction + `FOR UPDATE` ví + dòng sổ + audit; ví ≤ 0 ⇒ tắt `Shop.codEnabled`); đối soát chi trả shop idempotent (UNIQUE kỳ + dòng đối soát, idempotency-key chi PayOS); gọi PayOS/VNPay NGOÀI transaction.
+- Khoá bên thứ ba (PayOS thu/chi, VNPay, OpenAI, Cloudinary…) để TRỐNG vẫn chạy được, tính năng tương ứng tự tắt/lùi — danh sách ở `docs/07_KEYS_CHECKLIST.md`.
 
 ## Rate Limit Rule
 
@@ -207,7 +229,7 @@ PostgreSQL là nguồn sự thật. Ghi DB trước, xoá key sau khi commit. M�
 sách công khai, chi tiết sản phẩm, cây ngành hàng, tham số, quyền hiệu lực) PHẢI đi qua `CacheService`
 (`common/cache`) và ghi rõ key/TTL/điểm xoá trong plan của module.
 
-- Được cache: ngành hàng, thương hiệu, thuộc tính, tham số vận hành, tỉnh/thành + phí ship, banner,
+- Được cache: ngành hàng, thuộc tính, danh sách/chi tiết sản phẩm công khai (60s/120s — xoá ngay khi shop được duyệt/khoá/từ chối qua listener outbox `ProductShopStatusListeners`), báo cáo (cả báo cáo từng shop, khoá có `shopId`), tham số vận hành, tỉnh/thành + phí ship, banner,
   quyền hiệu lực của user (evict ngay khi đổi), snapshot AI (gợi ý theo chữ ký dữ liệu).
 - KHÔNG cache: tồn kho để quyết định bán, số dư/thanh toán, trạng thái đơn, giỏ hàng, mã giảm giá đang đếm lượt.
 - Key: `ef:<module>:<mục đích>:<khoá>` có TTL; TTL thêm jitter cho key số lượng lớn; không cache
@@ -267,22 +289,28 @@ và `<schema>.processed_events` riêng — không có bảng outbox trung tâm.
 ## Seed Rule (bắt buộc — máy khác `docker compose up` là giống máy gốc)
 
 **Mỗi module PHẢI có seed dữ liệu mẫu** `scripts/seed/<module>.seed.ts` (export `seed(prisma)`), đăng ký vào
-`STEPS` của `scripts/seed/index.ts` đúng thứ tự phụ thuộc; service `seed` của compose chạy sau `migrate`.
+`STEPS` của `scripts/seed/index.ts` đúng thứ tự phụ thuộc (hiện 15 bước: identity → system → catalog → marketplace → payment → promotion → promotion-marketplace → product → order → activity → settlement → review → review-marketplace → content-marketplace → ai);
+service `seed` của compose chạy sau `migrate` (`seed:admin` rồi `seed`). Dữ liệu ngành hàng/gian hàng/sản phẩm mới viết bằng DSL thuần ở `scripts/seed/data/` (kiểm bằng `npm run seed:validate`), ảnh minh hoạ tự sinh bằng `npm run seed:gen-images`
+và nằm sẵn trong `scripts/seed/assets` (commit cùng repo).
 
 - Idempotent: chạy lần 2 không tạo trùng, không lỗi (upsert theo code/email/slug; kiểm "đã có" theo khoá tự nhiên).
 - Deterministic: dữ liệu ngẫu nhiên dùng seed cố định → máy nào cũng ra cùng bộ số.
 - Đủ HÌNH DẠNG để mọi màn có gì để vẽ: mỗi trạng thái nghiệp vụ ít nhất một bản ghi (đơn ở đủ trạng thái,
   đánh giá đủ 3 trạng thái, sản phẩm đủ trạng thái…), nhân viên mỗi vai một tài khoản, khách demo.
 - Dữ liệu tham chiếu (vai, quyền, tỉnh/thành, phương thức thanh toán, tham số vận hành) là seed BẮT BUỘC
-  (không có thì app không dùng được), dữ liệu demo là seed mặc định (tắt bằng `--no-demo` khi cần).
+  (không có thì app không dùng được), dữ liệu demo là seed mặc định. `npm run seed` từ chối chạy khi `NODE_ENV=production` trừ khi thêm `--force` (mật khẩu demo nằm trong mã nguồn); chưa có cờ `--no-demo`.
 - Cần dịch vụ ngoài (Cloudinary, OpenAI) → có key thì làm, không có thì báo một dòng rồi bỏ qua — seed không
   được chết vì thiếu key.
 - Không seed dữ liệu vận hành thật (sổ chi phí AI, phiên chat thật, token) — chỉ dữ liệu mẫu.
 - Xong module = plan tick "seed" + README §Tài khoản demo cập nhật + đã kiểm bằng clone mới `docker compose up`
   trên project riêng (xem `docs/05_SEED_AND_REPRODUCE.md`).
 
-## Payment Rule (VNPay / chuyển khoản)
+## Payment Rule (VNPay / PayOS / chuyển khoản / COD)
 
+- **PayOS** (thu): `POST /payments/payos/webhook` kiểm chữ ký HMAC-SHA256 bằng checksum key TRƯỚC khi đọc dữ liệu (khoá trống ⇒ từ chối 401, method `payos` tự ẩn), số tiền PayOS là VND (không nhân 100), idempotent theo (type, provider_ref = orderCode PayOS);
+  `GET /payments/payos/return` hỏi lại PayOS rồi settle cùng đường idempotent. **Chi** (Lệnh chi — hoàn tiền tự động + chi trả shop) dùng cặp khoá RIÊNG, idempotency-key ổn định (`refund.id` / mã kỳ đối soát); chữ ký `x-signature` của API chi CHƯA xác nhận
+  — xem `docs/plans/PLAN-0017-marketplace-completion.md` §12 trước khi bật chi tự động.
+- Hoàn tiền: CHIẾM yêu cầu (`requested|failed → processing`, compare-and-set) rồi mới gọi cổng; không gọi mạng trong transaction.
 - Không bao giờ lưu/nhận số thẻ, CVV, OTP thẻ — khách nhập trên trang VNPay; backend chỉ nhận mã giao dịch.
 - Mọi callback (`return`, `IPN`) phải kiểm chữ ký `HMAC-SHA512` với `vnp_HashSecret` TRƯỚC khi đọc dữ liệu.
 - **IPN là nguồn sự thật** đổi trạng thái thanh toán; `return` chỉ để hiện màn kết quả. IPN idempotent
@@ -347,7 +375,7 @@ snapshot vs reference). Bước viết test không cần sơ đồ.
 - Không FK xuyên module; không import repository/entity module khác.
 - API theo naming convention, có Swagger; Request DTO có validator.
 - Audit log cho API ghi; outbox nếu module khác cần biết.
-- Plan checklist + nhật ký tiến độ cập nhật; docs (README §Trạng thái, `02_MODULE_MAP`, DBML) khớp code.
+- Plan checklist + nhật ký tiến độ cập nhật; docs (README §Trạng thái, `02_MODULE_MAP`, `03_DATABASE_RULES`, DBML, `06_FE_CONTRACT` khi đổi route/quyền, `07_KEYS_CHECKLIST` khi thêm biến môi trường bên thứ ba) khớp code.
 
 ## Planning Rule
 
@@ -362,8 +390,8 @@ Bắt đầu module nào thì xong nền tảng module đó (thiết kế DB đ�
 → service → controller → audit → outbox/cache nếu cần → test → plan cập nhật) rồi mới sang module khác.
 Ngoại lệ: contract dùng chung ở `common` bắt buộc phải có trước; sửa nhỏ ở nền tảng; hoặc chủ dự án yêu cầu.
 
-Thứ tự phụ thuộc: common → identity → catalog → product → cart → order → payment → promotion → review
-→ system → reporting → ai.
+Thứ tự phụ thuộc: common → identity → shop → catalog → product → cart → order → payment → promotion → review
+→ system → reporting → ai (`shop` đứng ngay sau identity vì mọi route `/shop/**` của các module khác dùng guard của nó; chiều import thật xem ma trận ở `docs/02_MODULE_MAP.md`).
 
 ## Git Rule
 
