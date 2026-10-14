@@ -6,8 +6,9 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { StorageService } from '@common/storage/storage.service';
 import { slugify } from '@common/utils/slug';
 import { CatalogAuditLogService } from '../../audit/catalog-audit-log.service';
-import { CATALOG_AUDIT, CATALOG_CACHE, CATALOG_ERR, CATALOG_EVENT } from '../../foundation/catalog.constants';
+import { ATTRIBUTE_MODE, CATALOG_AUDIT, CATALOG_CACHE, CATALOG_ERR, CATALOG_EVENT } from '../../foundation/catalog.constants';
 import { CatalogOutboxService } from '../../outbox/catalog-outbox.service';
+import { CatalogUsageRegistry } from '../../queryapi/catalog-usage.registry';
 import { CategoryAdminResponse, CategoryResponse } from '../dto/category.responses';
 import { toCategory, toCategoryAdmin } from '../mapper/category.mapper';
 import { CategoryRepository } from '../repository/category.repository';
@@ -19,12 +20,17 @@ export interface CategoryInput {
   parentId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  /* 'dynamic' | 'legacy_fashion' (request đã @IsIn). Tạo: bỏ trống → 'dynamic'. Sửa: đổi mode bị khoá khi ngành đã có sản phẩm. */
+  attributeMode?: string;
 }
 
 /*
  * Ngành hàng: đọc công khai (cache Redis 10', chỉ ngành đang bán, có product_count) + quản trị (transaction + audit).
  * Đổi slug/tên → outbox CATEGORY_CHANGED để product cập nhật snapshot category_slug (worker). Xoá mềm chỉ khi không còn
  * sản phẩm đang bán (product_count = 0) — ngành hàng là trục lọc của web, không được "mồ côi" sản phẩm.
+ * attributeMode (PLAN-0016) nhận từ request: tạo ngành chọn được 'dynamic' | 'legacy_fashion'; đổi mode sau đó bị khoá (409
+ * CATALOG_CATEGORY_MODE_LOCKED) khi ngành đã có sản phẩm ở BẤT KỲ trạng thái nào (hỏi product qua CatalogUsageRegistry — catalog
+ * không được đọc bảng product), vì sản phẩm/biến thể cũ dùng bộ trường của mode cũ sẽ mồ côi.
  */
 @Injectable()
 export class CategoryService {
@@ -37,6 +43,7 @@ export class CategoryService {
     private readonly audit: CatalogAuditLogService,
     private readonly outbox: CatalogOutboxService,
     private readonly storage: StorageService,
+    private readonly usage: CatalogUsageRegistry,
   ) {}
 
   async listPublic(): Promise<CategoryResponse[]> {
@@ -59,10 +66,10 @@ export class CategoryService {
     if (input.parentId && !(await this.repo.findById(input.parentId))) throw new BusinessException(CATALOG_ERR.CATEGORY_PARENT_INVALID, 'Ngành hàng cha không tồn tại');
     const created = await this.prisma.$transaction(async (tx) => {
       const c = await this.repo.create(
-        { name: input.name.trim(), slug, description: input.description ?? null, parentId: input.parentId ?? null, sortOrder: input.sortOrder ?? 0, isActive: input.isActive ?? true, createdBy: actor.userId, updatedBy: actor.userId },
+        { name: input.name.trim(), slug, description: input.description ?? null, parentId: input.parentId ?? null, sortOrder: input.sortOrder ?? 0, isActive: input.isActive ?? true, attributeMode: input.attributeMode ?? ATTRIBUTE_MODE.DYNAMIC, createdBy: actor.userId, updatedBy: actor.userId },
         tx,
       );
-      await this.audit.write(tx, actor, { action: CATALOG_AUDIT.CATEGORY_CREATED, entityType: 'category', entityId: c.id, entityCode: c.slug, after: { name: c.name, slug: c.slug, isActive: c.isActive } });
+      await this.audit.write(tx, actor, { action: CATALOG_AUDIT.CATEGORY_CREATED, entityType: 'category', entityId: c.id, entityCode: c.slug, after: { name: c.name, slug: c.slug, isActive: c.isActive, attributeMode: c.attributeMode } });
       return c;
     });
     await this.invalidate();
@@ -77,6 +84,12 @@ export class CategoryService {
       if (patch.parentId === id) throw new BusinessException(CATALOG_ERR.CATEGORY_PARENT_INVALID, 'Ngành hàng không thể là cha của chính nó');
       if (!(await this.repo.findById(patch.parentId))) throw new BusinessException(CATALOG_ERR.CATEGORY_PARENT_INVALID, 'Ngành hàng cha không tồn tại');
     }
+    // Chỉ khi mode THẬT SỰ đổi mới kiểm khoá (gửi lại đúng mode hiện tại là no-op, không bị chặn).
+    const modeChanged = patch.attributeMode !== undefined && patch.attributeMode !== before.attributeMode;
+    if (modeChanged) {
+      const products = Math.max(before.productCount, await this.usage.countProductsInCategory(id));
+      if (products > 0) throw new ConflictException(CATALOG_ERR.CATEGORY_MODE_LOCKED, `Ngành hàng đã có ${products} sản phẩm — không đổi được chế độ thuộc tính (${before.attributeMode} → ${patch.attributeMode})`);
+    }
     const data = {
       ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
       ...(patch.slug !== undefined ? { slug: patch.slug } : {}),
@@ -84,11 +97,12 @@ export class CategoryService {
       ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}),
       ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
       ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+      ...(modeChanged ? { attributeMode: patch.attributeMode } : {}),
     };
     if (Object.keys(data).length === 0) return toCategoryAdmin(before);
     const after = await this.prisma.$transaction(async (tx) => {
       const c = await this.repo.update(id, { ...data, updatedBy: actor.userId }, tx);
-      await this.audit.write(tx, actor, { action: CATALOG_AUDIT.CATEGORY_UPDATED, entityType: 'category', entityId: id, entityCode: c.slug, before: { name: before.name, slug: before.slug, isActive: before.isActive }, after: { name: c.name, slug: c.slug, isActive: c.isActive } });
+      await this.audit.write(tx, actor, { action: CATALOG_AUDIT.CATEGORY_UPDATED, entityType: 'category', entityId: id, entityCode: c.slug, before: { name: before.name, slug: before.slug, isActive: before.isActive, attributeMode: before.attributeMode }, after: { name: c.name, slug: c.slug, isActive: c.isActive, attributeMode: c.attributeMode } });
       if (c.slug !== before.slug || c.name !== before.name || c.isActive !== before.isActive) {
         await this.outbox.publish(tx, { eventType: CATALOG_EVENT.CATEGORY_CHANGED, aggregateType: 'category', aggregateId: id, payload: { categoryId: id, slug: c.slug, name: c.name, isActive: c.isActive, previousSlug: before.slug } });
       }

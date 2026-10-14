@@ -14,6 +14,7 @@ export const CATEGORY_SELECT = {
   sortOrder: true,
   isActive: true,
   productCount: true,
+  attributeMode: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.CategorySelect;
@@ -43,6 +44,11 @@ export class CategoryRepository {
 
   async findBySlug(slug: string, tx?: Tx | null): Promise<CategoryRow | null> {
     return this.db(tx).category.findFirst({ where: { slug, isDeleted: false }, select: CATEGORY_SELECT });
+  }
+
+  /* Ngành có ngành con chưa xoá ⇒ không phải ngành lá. */
+  async hasChildren(id: string, tx?: Tx | null): Promise<boolean> {
+    return (await this.db(tx).category.count({ where: { parentId: id, isDeleted: false } })) > 0;
   }
 
   async slugExists(slug: string, exceptId?: string, tx?: Tx | null): Promise<boolean> {
