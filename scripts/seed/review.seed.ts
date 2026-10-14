@@ -51,14 +51,14 @@ export async function seed(prisma: PrismaClient): Promise<void> {
       const r = await prisma.$transaction(async (tx) => {
         const created = await tx.review.create({
           data: {
-            productId: item.productId, productSlug: item.slug, productName: item.name, userId: o.userId, authorName: u?.fullName ?? 'Khách hàng', avatarUrl: u?.avatarUrl ?? null,
+            productId: item.productId, productSlug: item.slug, productName: item.name, shopId: item.shopId, userId: o.userId, authorName: u?.fullName ?? 'Khách hàng', avatarUrl: u?.avatarUrl ?? null,
             orderCode: o.code, orderItemId: item.id, variantLabel: `${item.color} / ${item.size}`, rating, content, media: [], status: hidden ? 'hidden' : 'approved',
             moderationNote: hidden ? 'Đang xác minh phản ánh lỗi đường may với kho' : null, moderatedBy: hidden ? staff?.id ?? null : null, moderatedAt: hidden ? new Date(createdAt.getTime() + 3_600_000) : null,
             helpfulCount: rating >= 4 ? 3 + (i % 5) : 0, createdAt, updatedAt: createdAt,
           },
         });
         await tx.orderItem.update({ where: { id: item.id }, data: { reviewed: true } });
-        if (staff && (rating <= 3 || i % 3 === 0)) await tx.reviewReply.create({ data: { reviewId: created.id, staffUserId: staff.id, staffName: staff.fullName, content: rating <= 3 ? REPLIES[1] : REPLIES[0], createdAt: new Date(createdAt.getTime() + 5 * 3_600_000) } });
+        if (staff && (rating <= 3 || i % 3 === 0)) await tx.reviewReply.create({ data: { reviewId: created.id, staffUserId: staff.id, staffName: 'Sàn FITLY', authorKind: 'platform', content: rating <= 3 ? REPLIES[1] : REPLIES[0], createdAt: new Date(createdAt.getTime() + 5 * 3_600_000) } });
         if (hidden) await tx.moderationFlag.upsert({ where: { reviewId: created.id }, create: { reviewId: created.id, label: 'ok', score: '0.350', reason: 'Phản ánh chất lượng, không vi phạm — nhân viên tự ẩn để xác minh', model: 'rule' }, update: {} });
         return created;
       });
