@@ -92,7 +92,7 @@ describe('ai — gom cụm & chủ đề & kiểm listing (rule)', () => {
     expect(RecommendationService.ruleThemes(new Date('2026-12-01'))).toHaveLength(3);
   });
   it('precheck rule: thiếu ảnh/biến thể là block; phân loại rule đoán ngành/giới', () => {
-    const r = StaffInsightService.rulePrecheck({ name: 'Áo', hasImage: false, shortDescription: null, description: 'ngắn', material: null, care: [], variants: 0 });
+    const r = StaffInsightService.rulePrecheck({ name: 'Áo', hasImage: false, shortDescription: null, description: 'ngắn', material: null, care: [], variants: 0, isFashion: true });
     expect(r.ready).toBe(false);
     expect(r.issues.filter((i) => i.severity === 'block')).toHaveLength(2);
     const c = StaffInsightService.ruleClassify({ name: 'Đầm hoa nhí nữ' }, [{ slug: 'dam', name: 'Đầm' }, { slug: 'vay', name: 'Váy' }]);

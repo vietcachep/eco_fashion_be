@@ -12,6 +12,7 @@ import { ChatActionService } from './chat/chat-action.service';
 import { ChatService } from './chat/chat.service';
 import { EmbeddingService } from './embedding/embedding.service';
 import { ProductFaqService } from './faq/product-faq.service';
+import { ImageSearchService } from './image-search/image-search.service';
 import { AiInsightService } from './insight/ai-insight.service';
 import { ChatInsightsService } from './insight/chat-insights.service';
 import { MetricsAgentService } from './insight/metrics-agent.service';
@@ -34,7 +35,7 @@ import { AiUsageService } from './usage/ai-usage.service';
 @Module({
   imports: [ProductModule, CatalogModule, ReviewModule, SystemModule, CartModule, PromotionModule, PaymentModule, ReportingModule],
   controllers: [AiController, AdminAiController],
-  providers: [AiUsageService, OpenAiProvider, ReplicateProvider, EmbeddingService, KnowledgeService, ChatActionService, ChatService, StyleAnalysisService, TryOnService, ReviewAiService, AiInsightService, RecommendationService, SignalService, ProductFaqService, ChatInsightsService, MetricsAgentService, StaffInsightService],
-  exports: [EmbeddingService, KnowledgeService, TryOnService, ReviewAiService, AiInsightService, ProductFaqService],
+  providers: [AiUsageService, OpenAiProvider, ReplicateProvider, EmbeddingService, KnowledgeService, ChatActionService, ChatService, StyleAnalysisService, TryOnService, ImageSearchService, ReviewAiService, AiInsightService, RecommendationService, SignalService, ProductFaqService, ChatInsightsService, MetricsAgentService, StaffInsightService],
+  exports: [EmbeddingService, KnowledgeService, TryOnService, ImageSearchService, ReviewAiService, AiInsightService, ProductFaqService],
 })
 export class AiModule {}

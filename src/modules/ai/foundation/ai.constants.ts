@@ -33,6 +33,7 @@ export const AI_FEATURE = {
   REVIEW_SUMMARY: 'review-summary',
   MODERATION: 'moderation',
   COPY: 'copy',
+  IMAGE_SEARCH: 'image-search',
 } as const;
 
 export const AI_PROVIDER = { OPENAI: 'openai', REPLICATE: 'replicate', RULE: 'rule' } as const;

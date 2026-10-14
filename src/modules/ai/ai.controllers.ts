@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BusinessException } from '@common/exception/business.exception';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
@@ -16,6 +16,7 @@ import { AiInsightService, SupportRequestResponse } from './insight/ai-insight.s
 import { ChatInsightsResponse, ChatInsightsService } from './insight/chat-insights.service';
 import { MetricsAgentService } from './insight/metrics-agent.service';
 import { ClassifyProductResponse, ComboSuggestionsResponse, InventoryInsightsResponse, PrecheckResponse, RevenueInsightResponse, StaffInsightService } from './insight/staff-insight.service';
+import { ImageSearchResponse, ImageSearchService } from './image-search/image-search.service';
 import { AiDocumentResponse, KnowledgeService } from './knowledge/knowledge.service';
 import { OpenAiProvider } from './provider/openai.provider';
 import { CollectionsResponse, CompareResponse, RecommendationResponse, RecommendationService } from './recommendation/recommendation.service';
@@ -43,6 +44,7 @@ export class AiController {
     private readonly chat: ChatService,
     private readonly style: StyleAnalysisService,
     private readonly tryOn: TryOnService,
+    private readonly imageSearch: ImageSearchService,
     private readonly insight: AiInsightService,
     private readonly recommendation: RecommendationService,
     private readonly faq: ProductFaqService,
@@ -52,9 +54,9 @@ export class AiController {
   ) {}
 
   @Public() @Get('status') @ApiOperation({ summary: 'Tính năng AI nào đang bật (FE ẩn/hiện nút)' })
-  status(): ApiResponse<{ chat: boolean; chatLlm: boolean; chatActions: boolean; styleAnalysis: boolean; styleAnalysisLlm: boolean; tryOn: boolean; compare: boolean; collections: boolean; productFaq: boolean }> {
+  status(): ApiResponse<{ chat: boolean; chatLlm: boolean; chatActions: boolean; styleAnalysis: boolean; styleAnalysisLlm: boolean; tryOn: boolean; imageSearch: boolean; compare: boolean; collections: boolean; productFaq: boolean }> {
     const llm = this.openai.isConfigured;
-    return ApiResponse.ok({ chat: true, chatLlm: llm, chatActions: llm, styleAnalysis: true, styleAnalysisLlm: llm, tryOn: this.tryOn.isAvailable, compare: llm, collections: true, productFaq: llm });
+    return ApiResponse.ok({ chat: true, chatLlm: llm, chatActions: llm, styleAnalysis: true, styleAnalysisLlm: llm, tryOn: this.tryOn.isAvailable, imageSearch: llm, compare: llm, collections: true, productFaq: llm });
   }
 
   // ------------------------------------------------------------ chatbot
@@ -114,6 +116,28 @@ export class AiController {
   @OptionalAuth() @Get('style-analysis/:id') @ApiBearerAuth() @ApiHeader(GUEST_HEADER)
   async styleResult(@CurrentActor() actor: AuthenticatedActor | undefined, @Headers('x-guest-key') guestHeader: string | undefined, @Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<StyleAnalysisResponse>> {
     return ApiResponse.ok(await this.style.get({ actor, guestKey: ChatService.resolveGuestKey(guestHeader, actor) }, id));
+  }
+
+  // ------------------------------------------------------------ tìm kiếm ảnh
+
+  @OptionalAuth() @Post('image-search') @HttpCode(HttpStatus.OK) @ApiBearerAuth() @ApiHeader(GUEST_HEADER)
+  @RateLimit({ name: 'ai-image-search', limit: 10, windowSeconds: 3600, by: 'auto' })
+  @UseInterceptors(FileInterceptor('image', IMAGE_LIMIT))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { image: { type: 'string', format: 'binary' } }, required: ['image'] } })
+  @ApiOperation({ summary: 'Upload ảnh sản phẩm → phân tích bằng vision + tìm sản phẩm tương tự (không có khoá OpenAI → available=false; không thấy gì → items rỗng + message)' })
+  @ApiOkResponse({ type: ImageSearchResponse })
+  async search(@CurrentActor() actor: AuthenticatedActor | undefined, @Headers('x-guest-key') guestHeader: string | undefined, @UploadedFile() file?: Express.Multer.File): Promise<ApiResponse<ImageSearchResponse>> {
+    if (!file) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Thiếu ảnh (field `image`)');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      throw new BusinessException('COMMON_VALIDATION_ERROR', 'Chỉ nhận ảnh JPEG/PNG/WEBP');
+    }
+    if (!ImageSearchService.validateMagicBytes(file.buffer, file.mimetype)) {
+      throw new BusinessException('COMMON_VALIDATION_ERROR', 'Ảnh không hợp lệ (magic bytes không khớp)');
+    }
+    const guestKey = ChatService.resolveGuestKey(guestHeader, actor);
+    const r = await this.imageSearch.search({ actor, guestKey }, { buffer: file.buffer, mimetype: file.mimetype, size: file.size });
+    return ApiResponse.ok(r);
   }
 
   // ------------------------------------------------------------ thử đồ 2D
