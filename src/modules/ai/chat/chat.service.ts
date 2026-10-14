@@ -237,7 +237,7 @@ export class ChatService {
     );
     const mentioned = await this.products.cardsByIds([...new Set(history.flatMap((m) => ChatService.ids(m.productIds)))].slice(0, 8));
     const system = [
-      `Bạn là trợ lý chăm sóc khách hàng của cửa hàng thời trang ${shopName} (một cửa hàng, chỉ bán quần áo, chỉ tiếng Việt, tiền VND). Hôm nay ${new Date().toLocaleDateString('vi-VN')}. Khách: ${who.actor ? 'đã đăng nhập (tra được đơn, thêm giỏ, gợi ý cá nhân)' : 'khách vãng lai (chưa đăng nhập)'}.`,
+      `Bạn là trợ lý chăm sóc khách hàng của sàn thương mại điện tử ${shopName} (bán nhiều ngành hàng: thời trang, điện thoại & phụ kiện, đồ gia dụng, nội thất, sắc đẹp…, chỉ tiếng Việt, tiền VND). Hôm nay ${new Date().toLocaleDateString('vi-VN')}. Khách: ${who.actor ? 'đã đăng nhập (tra được đơn, thêm giỏ, gợi ý cá nhân)' : 'khách vãng lai (chưa đăng nhập)'}.`,
       'NGUYÊN TẮC (bắt buộc):',
       `1. CHỈ nói điều có bằng chứng từ tool. Giá, tồn, phí ship, khuyến mãi, trạng thái đơn — PHẢI gọi tool trước. Không bịa sản phẩm, không bịa số. Không có dữ liệu thì nói thẳng và gợi ý gặp nhân viên (hotline ${hotline}).`,
       '2. Câu hỏi về chính sách/cách làm (đổi trả, giao hàng, thanh toán, COD, size, bảo quản): gọi `search_knowledge` rồi trả lời DỰA TRÊN đoạn tìm được; trích ý, không chép nguyên văn dài.',
@@ -281,7 +281,7 @@ export class ChatService {
     try {
       const res = await this.openai.chatJson<{ questions?: string[] }>(
         [
-          { role: 'system', content: 'Từ đoạn hội thoại CSKH của cửa hàng thời trang, đề xuất 2-3 câu hỏi TIẾP THEO khách có thể muốn hỏi (ngôi khách, tiếng Việt, ≤ 60 ký tự, cụ thể, liên quan câu trả lời vừa rồi — vd hỏi phí ship, size, đổi trả, so sánh). Không lặp câu khách vừa hỏi, không dùng ngoặc kép. TRẢ JSON {"questions": string[]}.' },
+          { role: 'system', content: 'Từ đoạn hội thoại CSKH của sàn thương mại điện tử (nhiều ngành hàng), đề xuất 2-3 câu hỏi TIẾP THEO khách có thể muốn hỏi (ngôi khách, tiếng Việt, ≤ 60 ký tự, cụ thể, liên quan câu trả lời vừa rồi — vd hỏi phí ship, thông số, đổi trả, so sánh). Không lặp câu khách vừa hỏi, không dùng ngoặc kép. TRẢ JSON {"questions": string[]}.' },
           { role: 'user', content: `KHÁCH: ${question.slice(0, 500)}\n\nTRỢ LÝ: ${answer.slice(0, 1500)}` },
         ],
         { feature: AI_FEATURE.CHAT_FOLLOWUP, userId, maxTokens: 150, temperature: 0.6 },
@@ -408,7 +408,7 @@ export class ChatService {
     if (!this.openai.isConfigured) return { draft: `Chào bạn, ${shop} đã nhận yêu cầu của bạn về: "${r.summary.slice(0, 120)}". Nhân viên sẽ liên hệ lại sớm nhất để hỗ trợ. Cảm ơn bạn!`, source: 'rule' };
     const res = await this.openai.chatJson<{ draft?: string }>(
       [
-        { role: 'system', content: `Bạn là nhân viên CSKH của cửa hàng thời trang ${shop}. Soạn NHÁP trả lời khách (email/tin nhắn) cho yêu cầu hỗ trợ dưới đây: 3-6 câu, tiếng Việt, lịch sự, đi thẳng vào vấn đề, nêu bước xử lý cụ thể; KHÔNG hứa hoàn tiền/tặng quà nếu không có trong hội thoại; không bịa chính sách. TRẢ JSON {"draft": string}.` },
+        { role: 'system', content: `Bạn là nhân viên CSKH của sàn thương mại điện tử ${shop} (nhiều ngành hàng). Soạn NHÁP trả lời khách (email/tin nhắn) cho yêu cầu hỗ trợ dưới đây: 3-6 câu, tiếng Việt, lịch sự, đi thẳng vào vấn đề, nêu bước xử lý cụ thể; KHÔNG hứa hoàn tiền/tặng quà nếu không có trong hội thoại; không bịa chính sách. TRẢ JSON {"draft": string}.` },
         { role: 'user', content: `YÊU CẦU: ${r.summary}\n\nHỘI THOẠI:\n${transcript || '(không có)'}` },
       ],
       { feature: AI_FEATURE.COPY, userId: actor.userId, maxTokens: 400, temperature: 0.5 },

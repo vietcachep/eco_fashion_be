@@ -55,7 +55,7 @@ export class ReviewAiService {
       try {
         const res = await this.openai.chatJson<{ label?: string; score?: number; reason?: string }>(
           [
-            { role: 'system', content: 'Bạn kiểm duyệt đánh giá sản phẩm quần áo tiếng Việt. Phân loại: ok (bình thường), spam (quảng cáo/link/liên hệ ngoài), toxic (xúc phạm, tục tĩu, đe doạ), off_topic (không liên quan sản phẩm). TRẢ JSON {"label": "ok|spam|toxic|off_topic", "score": 0..1 (độ tin cậy), "reason": string ngắn tiếng Việt}.' },
+            { role: 'system', content: 'Bạn kiểm duyệt đánh giá sản phẩm trên sàn thương mại điện tử, tiếng Việt (sản phẩm có thể thuộc bất kỳ ngành hàng nào). Phân loại: ok (bình thường), spam (quảng cáo/link/liên hệ ngoài), toxic (xúc phạm, tục tĩu, đe doạ), off_topic (không liên quan sản phẩm). TRẢ JSON {"label": "ok|spam|toxic|off_topic", "score": 0..1 (độ tin cậy), "reason": string ngắn tiếng Việt}.' },
             { role: 'user', content: `Điểm: ${r.rating}/5\nNội dung: ${r.content.slice(0, 1500)}` },
           ],
           { feature: AI_FEATURE.MODERATION, maxTokens: 150, temperature: 0 },
@@ -93,7 +93,7 @@ export class ReviewAiService {
     if (!this.openai.isConfigured) return null;
     const res = await this.openai.chatJson<{ summary?: string; pros?: string[]; cons?: string[] }>(
       [
-        { role: 'system', content: 'Tóm tắt đánh giá của khách về một sản phẩm quần áo, tiếng Việt, khách quan, không bịa. TRẢ JSON {"summary": string (2-3 câu), "pros": string[] (≤ 4, ngắn), "cons": string[] (≤ 3, ngắn; rỗng nếu không có)}.' },
+        { role: 'system', content: 'Tóm tắt đánh giá của khách về một sản phẩm trên sàn thương mại điện tử, tiếng Việt, khách quan, không bịa. TRẢ JSON {"summary": string (2-3 câu), "pros": string[] (≤ 4, ngắn), "cons": string[] (≤ 3, ngắn; rỗng nếu không có)}.' },
         { role: 'user', content: list.map((r) => `- ${r.rating}/5: ${r.content.slice(0, 400)}`).join('\n') },
       ],
       { feature: AI_FEATURE.REVIEW_SUMMARY, maxTokens: 400, temperature: 0.2 },

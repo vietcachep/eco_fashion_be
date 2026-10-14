@@ -39,7 +39,23 @@ export class ProductFaqService {
     const p = await this.products.detailForAiById(productId);
     if (!p) return null;
     const reviews = await this.reviews.approvedForProduct(productId, 15);
-    const text = [`Tên: ${p.name}`, `Ngành: ${p.categorySlug} · ${p.gender}`, `Giá: ${p.price}`, p.shortDescription ? `Mô tả ngắn: ${p.shortDescription}` : '', p.description ? `Mô tả: ${p.description}` : '', p.material ? `Chất liệu: ${p.material}` : '', p.care.length ? `Bảo quản: ${p.care.join('; ')}` : '', `Màu: ${[...new Set(p.variants.map((v) => v.colorName))].join(', ')}`, `Size: ${[...new Set(p.variants.map((v) => v.sizeCode))].join(', ')}`, reviews.length ? `Đánh giá đã duyệt:\n${reviews.map((r) => `- ${r.rating}/5: ${r.content.slice(0, 300)}`).join('\n')}` : ''].filter(Boolean).join('\n');
+    const colors = [...new Set(p.variants.map((v) => v.colorName).filter(Boolean))];
+    const sizes = [...new Set(p.variants.map((v) => v.sizeCode).filter(Boolean))];
+    const optionsText = [...new Set(p.variants.flatMap((v) => (v.optionsText ? [v.optionsText] : [])))];
+    const text = [
+      `Tên: ${p.name}`,
+      `Ngành: ${p.categorySlug}${p.gender ? ` · ${p.gender}` : ''}`,
+      `Giá: ${p.price}`,
+      p.shortDescription ? `Mô tả ngắn: ${p.shortDescription}` : '',
+      p.description ? `Mô tả: ${p.description}` : '',
+      p.material ? `Chất liệu: ${p.material}` : '',
+      p.care.length ? `Bảo quản: ${p.care.join('; ')}` : '',
+      colors.length ? `Màu: ${colors.join(', ')}` : '',
+      sizes.length ? `Size: ${sizes.join(', ')}` : '',
+      p.attributesText ? `Thông số: ${p.attributesText}` : '',
+      optionsText.length ? `Biến thể: ${optionsText.join(' | ')}` : '',
+      reviews.length ? `Đánh giá đã duyệt:\n${reviews.map((r) => `- ${r.rating}/5: ${r.content.slice(0, 300)}`).join('\n')}` : '',
+    ].filter(Boolean).join('\n');
     return { text, hash: createHash('sha256').update(text).digest('hex') };
   }
 
@@ -70,7 +86,7 @@ export class ProductFaqService {
     try {
       const res = await this.openai.chatJson<{ items?: Array<{ question?: string; answer?: string }> }>(
         [
-          { role: 'system', content: 'Viết 3-6 cặp HỎI-ĐÁP khách hay hỏi trước khi mua một sản phẩm quần áo, tiếng Việt, ngắn gọn (đáp ≤ 2 câu). CHỈ dùng thông tin trong nguồn (mô tả, chất liệu, bảo quản, size, đánh giá). Thiếu thông tin thì trả lời "Cửa hàng chưa ghi rõ, bạn hỏi trợ lý hoặc nhân viên nhé" — KHÔNG bịa. Không dùng ngoặc kép. TRẢ JSON {"items":[{"question","answer"}]}.' },
+          { role: 'system', content: 'Viết 3-6 cặp HỎI-ĐÁP khách hay hỏi trước khi mua một sản phẩm trên sàn thương mại điện tử, tiếng Việt, ngắn gọn (đáp ≤ 2 câu). CHỈ dùng thông tin trong nguồn (mô tả, thông số/chất liệu, bảo quản, size, đánh giá — nếu có). Thiếu thông tin thì trả lời "Cửa hàng chưa ghi rõ, bạn hỏi trợ lý hoặc nhân viên nhé" — KHÔNG bịa. Không dùng ngoặc kép. TRẢ JSON {"items":[{"question","answer"}]}.' },
           { role: 'user', content: src.text.slice(0, 6000) },
         ],
         { feature: AI_FEATURE.PRODUCT_FAQ, maxTokens: 600, temperature: 0.3 },
