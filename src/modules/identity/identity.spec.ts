@@ -2,7 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { sanitizeSummary } from '@common/audit/audit';
 import { RegisterRequest } from './auth/request/auth.requests';
-import { ALL_PERMISSION_CODES, PERMISSION_CATALOG, ROLE_CODES, ROLE_PRESETS, STAFF_ROLE_CODES } from './permission/catalog';
+import { ALL_PERMISSION_CODES, PERMISSION_CATALOG, ROLE_CODES, ROLE_PRESETS, SHOP_ROLE_CODES, STAFF_ROLE_CODES } from './permission/catalog';
 import { SaveUserPermissionsRequest } from './permission/request/permission.requests';
 import { PermissionService } from './permission/service/permission.service';
 import { ListUsersQuery } from './user/request/user.requests';
@@ -13,7 +13,7 @@ import { ListUsersQuery } from './user/request/user.requests';
  */
 describe('identity — catalog quyền', () => {
   it('mã quyền dạng module.resource.action, không trùng, module hợp lệ', () => {
-    const modules = new Set(['identity', 'catalog', 'product', 'order', 'payment', 'promotion', 'review', 'system', 'reporting', 'ai']);
+    const modules = new Set(['identity', 'catalog', 'product', 'order', 'payment', 'promotion', 'review', 'system', 'reporting', 'ai', 'supplier', 'shop']);
     const seen = new Set<string>();
     for (const d of PERMISSION_CATALOG) {
       expect(d.code).toMatch(/^[a-z]+(\.[a-z_]+){2,3}$/);
@@ -31,6 +31,20 @@ describe('identity — catalog quyền', () => {
     expect([...ROLE_PRESETS.admin.codes].sort()).toEqual([...ALL_PERMISSION_CODES].sort());
     expect(ROLE_PRESETS.customer.codes).toHaveLength(0);
     expect(STAFF_ROLE_CODES).not.toContain(ROLE_CODES.CUSTOMER);
+  });
+
+  it('PLAN-0014 — vai scope=shop tách biệt hoàn toàn khỏi vai nhân viên nền tảng', () => {
+    // shop_owner/shop_staff không được lọt vào STAFF_ROLE_CODES (POST /admin/users) — chỉ gán qua ShopMember.
+    expect(STAFF_ROLE_CODES).not.toContain(ROLE_CODES.SHOP_OWNER);
+    expect(STAFF_ROLE_CODES).not.toContain(ROLE_CODES.SHOP_STAFF);
+    expect(SHOP_ROLE_CODES).toEqual([ROLE_CODES.SHOP_OWNER, ROLE_CODES.SHOP_STAFF]);
+    for (const code of STAFF_ROLE_CODES) expect(ROLE_PRESETS[code].scope).toBe('platform');
+    for (const code of SHOP_ROLE_CODES) expect(ROLE_PRESETS[code].scope).toBe('shop');
+    // Preset shop.* chỉ chứa mã namespace shop — không lẫn quyền toàn cục/nền tảng.
+    for (const code of SHOP_ROLE_CODES) for (const c of ROLE_PRESETS[code].codes) expect(c.startsWith('shop.')).toBe(true);
+    // shop_owner có quyền quản staff (mời/gỡ/đổi vai); shop_staff chỉ đọc.
+    expect(ROLE_PRESETS.shop_owner.codes).toContain('shop.staff.invite');
+    expect(ROLE_PRESETS.shop_staff.codes).not.toContain('shop.staff.invite');
   });
 });
 
@@ -50,10 +64,10 @@ describe('identity — quyền hiệu lực', () => {
 
 describe('identity — request chuẩn hoá', () => {
   it('email trim + lowercase, mật khẩu phải có chữ và số', () => {
-    const ok = plainToInstance(RegisterRequest, { email: '  An@EcoFashion.VN ', password: 'MatKhau123', fullName: 'Nguyễn Văn An' });
+    const ok = plainToInstance(RegisterRequest, { email: '  An@EcoFashion.VN ', password: 'MatKhau123', fullName: 'Nguyễn Văn An', otp: '123456' });
     expect(ok.email).toBe('an@ecofashion.vn');
     expect(validateSync(ok)).toHaveLength(0);
-    const bad = plainToInstance(RegisterRequest, { email: 'x@y.vn', password: 'chikhongso', fullName: 'A' });
+    const bad = plainToInstance(RegisterRequest, { email: 'x@y.vn', password: 'chikhongso', fullName: 'A', otp: '123456' });
     expect(validateSync(bad).map((e) => e.property).sort()).toEqual(['fullName', 'password']);
   });
 

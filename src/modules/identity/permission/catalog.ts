@@ -31,6 +31,8 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('catalog', 'category.manage', 'Tạo / sửa / ẩn ngành hàng'),
   { ...p('catalog', 'brand.manage', 'Tạo / sửa thương hiệu'), deprecated: true }, // đề tài một cửa hàng — không có thương hiệu
   p('catalog', 'attribute.manage', 'Tạo / sửa bộ thuộc tính (size, màu, chất liệu)'),
+  p('catalog', 'dynamic_attribute.read', 'Xem thuộc tính động cho ngành hàng (PLAN-0016)'),
+  p('catalog', 'dynamic_attribute.manage', 'Tạo / sửa thuộc tính động cho ngành hàng (PLAN-0016)'),
   p('catalog', 'collection.manage', 'Tạo / sửa bộ sưu tập'),
   // product
   p('product', 'product.read', 'Xem sản phẩm (khu quản trị)'),
@@ -79,6 +81,40 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('ai', 'copy.create', 'Dùng AI soạn mô tả / phản hồi'),
   p('ai', 'usage.read', 'Xem chi phí & hạn mức AI'),
   p('ai', 'moderation.read', 'Xem nhãn AI đề xuất kiểm duyệt'),
+  // supplier (PLAN-0014) — nhân viên SÀN (admin/manager hiện có) thao tác trên MỌI gian hàng
+  p('supplier', 'shop.read', 'Xem danh sách / chi tiết mọi gian hàng'),
+  p('supplier', 'shop.approve', 'Duyệt gian hàng mới đăng ký'),
+  p('supplier', 'shop.suspend', 'Khoá gian hàng vi phạm'),
+  p('supplier', 'shop.reject', 'Từ chối gian hàng đăng ký'),
+  p('supplier', 'shop.commission', 'Sửa % hoa hồng của một gian hàng'),
+  // shop (PLAN-0014) — chủ/nhân viên gian hàng tự quản CHÍNH gian hàng của mình. Kiểm bằng ShopContextGuard
+  // đọc ShopMember.roleId (KHÔNG qua PermissionGuard toàn cục — vai scope=shop không gán vào User.roleId).
+  p('shop', 'profile.read', 'Xem hồ sơ gian hàng của mình'),
+  p('shop', 'profile.update', 'Sửa hồ sơ gian hàng của mình'),
+  p('shop', 'product.read', 'Xem sản phẩm của gian hàng mình'),
+  p('shop', 'product.manage', 'Thêm / sửa sản phẩm của gian hàng mình'),
+  p('shop', 'review.read', 'Xem đánh giá sản phẩm của gian hàng mình'),
+  p('shop', 'review.reply', 'Trả lời đánh giá sản phẩm của gian hàng mình'),
+  p('shop', 'staff.read', 'Xem nhân viên gian hàng của mình'),
+  p('shop', 'staff.invite', 'Thêm nhân viên vào gian hàng của mình (tạo tài khoản nhân viên)'), // mã giữ tên cũ "invite" — đã gán cho vai/FE
+  p('shop', 'staff.update', 'Đổi vai nhân viên gian hàng của mình'),
+  p('shop', 'staff.remove', 'Gỡ nhân viên khỏi gian hàng của mình'),
+  // PLAN-0017 — vendor tự vận hành gian hàng: đơn · kho · khuyến mãi · báo cáo · ví · đối soát (chỉ dữ liệu CỦA shop mình)
+  p('shop', 'order.read', 'Xem đơn hàng của gian hàng mình'),
+  p('shop', 'order.update', 'Xác nhận / đóng gói / giao / huỷ đơn của gian hàng mình'),
+  p('shop', 'inventory.read', 'Xem tồn kho sản phẩm của gian hàng mình'),
+  p('shop', 'inventory.manage', 'Nhập kho / điều chỉnh tồn sản phẩm của gian hàng mình'),
+  p('shop', 'promotion.read', 'Xem mã giảm giá của gian hàng mình'),
+  p('shop', 'promotion.manage', 'Tạo / sửa / bật tắt mã giảm giá của gian hàng mình'),
+  p('shop', 'report.read', 'Xem báo cáo doanh thu / đơn / tồn của gian hàng mình'),
+  p('shop', 'wallet.read', 'Xem ví quỹ COD của gian hàng mình'),
+  p('shop', 'wallet.deposit_request', 'Gửi yêu cầu nộp thêm quỹ vào ví COD'),
+  p('shop', 'payout.read', 'Xem các kỳ đối soát / chi trả của gian hàng mình'),
+  // PLAN-0017 — nhân viên SÀN xem/chỉnh ví + chạy đối soát cho MỌI gian hàng (khác mã với shop.wallet.*/shop.payout.*)
+  p('supplier', 'wallet.read', 'Xem ví quỹ COD và yêu cầu nộp quỹ của mọi gian hàng'),
+  p('supplier', 'wallet.adjust', 'Điều chỉnh ví / duyệt nộp quỹ của gian hàng'),
+  p('supplier', 'payout.read', 'Xem các kỳ đối soát / chi trả của mọi gian hàng'),
+  p('supplier', 'payout.process', 'Chạy kỳ đối soát và chi trả cho gian hàng'),
 ];
 
 export const ALL_PERMISSION_CODES: readonly string[] = PERMISSION_CATALOG.map((d) => d.code);
@@ -107,9 +143,18 @@ export const ROLE_CODES = {
   ACCOUNTANT: 'accountant',
   MARKETING: 'marketing',
   CUSTOMER: 'customer',
+  /* PLAN-0014 — vai scope=shop, KHÔNG bao giờ gán vào User.roleId (chỉ dùng qua ShopMember.roleId). */
+  SHOP_OWNER: 'shop_owner',
+  SHOP_STAFF: 'shop_staff',
 } as const;
 export type RoleCode = (typeof ROLE_CODES)[keyof typeof ROLE_CODES];
 
+/* platform = vai áp dụng toàn hệ thống, gán vào User.roleId; shop = vai chỉ có nghĩa TRONG một gian hàng,
+   gán vào ShopMember.roleId (PLAN-0014) — identity.roles.scope lưu giá trị này. */
+export type RoleScope = 'platform' | 'shop';
+
+/* Vai NHÂN VIÊN NỀN TẢNG hợp lệ cho `POST /admin/users` (CreateStaffRequest.roleCode) — CHỦ Ý không có
+   shop_owner/shop_staff: vai đó gán qua ShopMember (module shop mời nhân viên bằng email), không qua đây. */
 export const STAFF_ROLE_CODES: readonly RoleCode[] = [
   ROLE_CODES.ADMIN,
   ROLE_CODES.MANAGER,
@@ -119,15 +164,35 @@ export const STAFF_ROLE_CODES: readonly RoleCode[] = [
   ROLE_CODES.MARKETING,
 ];
 
-export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string; codes: readonly string[] }> = {
-  admin: { name: 'Quản trị viên', description: 'Chủ cửa hàng — toàn quyền', codes: ALL_PERMISSION_CODES },
+/* Vai scope=shop hợp lệ cho ShopMember.roleId (module shop resolve từ roleCode trong request, không nhận roleId trần). */
+export const SHOP_ROLE_CODES: readonly RoleCode[] = [ROLE_CODES.SHOP_OWNER, ROLE_CODES.SHOP_STAFF];
+
+export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string; codes: readonly string[]; scope: RoleScope }> = {
+  admin: { name: 'Quản trị viên', description: 'Chủ cửa hàng — toàn quyền', codes: ALL_PERMISSION_CODES, scope: 'platform' },
   manager: {
     name: 'Quản lý cửa hàng',
-    description: 'Ngành hàng, sản phẩm, tồn kho, đơn, khuyến mãi, đánh giá, báo cáo',
+    description: 'Ngành hàng, sản phẩm, tồn kho, đơn, khuyến mãi, đánh giá, báo cáo, duyệt gian hàng',
     codes: [
       ...codesOfModules('catalog', 'product', 'order', 'promotion', 'review', 'reporting'),
-      ...codes('identity.user.read', 'payment.payment.read', 'system.setting.read', 'system.banner.manage', 'ai.insight.read', 'ai.copy.create', 'ai.moderation.read', 'ai.usage.read'),
+      ...codes(
+        'identity.user.read',
+        'payment.payment.read',
+        'system.setting.read',
+        'system.banner.manage',
+        'ai.insight.read',
+        'ai.copy.create',
+        'ai.moderation.read',
+        'ai.usage.read',
+        'supplier.shop.read',
+        'supplier.shop.approve',
+        'supplier.shop.suspend',
+        'supplier.shop.reject',
+        'supplier.shop.commission',
+        'supplier.wallet.read',
+        'supplier.payout.read',
+      ),
     ],
+    scope: 'platform',
   },
   sales: {
     name: 'Bán hàng & CSKH',
@@ -149,21 +214,39 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
       'ai.copy.create',
       'system.notification.send',
     ),
+    scope: 'platform',
   },
   warehouse: {
     name: 'Nhân viên kho',
     description: 'Tồn kho, nhập kho, đóng gói / giao đơn',
     codes: codes('product.product.read', 'product.inventory.read', 'product.inventory.receive', 'product.inventory.adjust', 'order.order.read', 'order.order.status.update', 'order.return.read', 'reporting.inventory.read'),
+    scope: 'platform',
   },
   accountant: {
     name: 'Kế toán',
     description: 'Thanh toán, đối soát chuyển khoản, hoàn tiền, doanh thu',
-    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read'),
+    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.wallet.read', 'supplier.wallet.adjust', 'supplier.payout.read', 'supplier.payout.process'),
+    scope: 'platform',
   },
   marketing: {
     name: 'Marketing',
     description: 'Banner, khuyến mãi, bộ sưu tập, nội dung AI, kho tri thức chatbot',
     codes: codes('catalog.category.read', 'catalog.collection.manage', 'product.product.read', 'promotion.promotion.read', 'promotion.promotion.manage', 'system.banner.manage', 'system.notification.send', 'ai.knowledge.manage', 'ai.copy.create', 'ai.insight.read', 'reporting.dashboard.read'),
+    scope: 'platform',
   },
-  customer: { name: 'Khách hàng', description: 'Mua sắm — không có quyền quản trị', codes: [] },
+  customer: { name: 'Khách hàng', description: 'Mua sắm — không có quyền quản trị', codes: [], scope: 'platform' },
+  // PLAN-0014 — vai scope=shop: gán qua ShopMember.roleId (module shop), KHÔNG hiện trong STAFF_ROLE_CODES,
+  // không cấp/chặn qua /admin/users. Quyền của vai này chỉ có hiệu lực TRONG gian hàng mà ShopMember trỏ tới.
+  shop_owner: {
+    name: 'Chủ gian hàng',
+    description: 'Toàn quyền trên gian hàng của mình: hồ sơ, nhân viên, sản phẩm, đơn, kho, khuyến mãi, đánh giá, báo cáo, ví, đối soát',
+    codes: codesOfModules('shop'),
+    scope: 'shop',
+  },
+  shop_staff: {
+    name: 'Nhân viên gian hàng',
+    description: 'Vận hành hằng ngày: xem hồ sơ/nhân viên, xem + sửa sản phẩm, xử lý đơn, xem kho, trả lời đánh giá — không đụng nhân sự, khuyến mãi, ví, đối soát',
+    codes: codes('shop.profile.read', 'shop.staff.read', 'shop.product.read', 'shop.product.manage', 'shop.order.read', 'shop.order.update', 'shop.inventory.read', 'shop.review.read', 'shop.review.reply'),
+    scope: 'shop',
+  },
 };

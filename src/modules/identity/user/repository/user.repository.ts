@@ -80,6 +80,11 @@ export class UserRepository {
     return n > 0;
   }
 
+  /* Tìm user theo email (PLAN-0014 — shop mời nhân viên bằng email, không phải id). */
+  async findByEmail(email: string, tx?: Tx | null): Promise<UserProfileRow | null> {
+    return this.db(tx).user.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, isDeleted: false }, select: USER_PROFILE_SELECT });
+  }
+
   async phoneExists(phone: string, exceptUserId?: string, tx?: Tx | null): Promise<boolean> {
     const n = await this.db(tx).user.count({ where: { phone, isDeleted: false, ...(exceptUserId ? { id: { not: exceptUserId } } : {}) } });
     return n > 0;
@@ -114,7 +119,7 @@ export class UserRepository {
     if (userIds.length === 0) return [];
     return this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, email: true, fullName: true, phone: true, status: true, role: { select: { code: true } } },
+      select: { id: true, email: true, fullName: true, phone: true, status: true, emailVerifiedAt: true, role: { select: { code: true } } },
     });
   }
 

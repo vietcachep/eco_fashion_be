@@ -33,8 +33,8 @@ export async function syncPermissions(prisma: PrismaClient): Promise<{ permissio
     const preset = ROLE_PRESETS[code];
     const role = await prisma.role.upsert({
       where: { code },
-      create: { code, name: preset.name, description: preset.description, isSystem: true },
-      update: { isSystem: true, isDeleted: false },
+      create: { code, name: preset.name, description: preset.description, isSystem: true, scope: preset.scope },
+      update: { isSystem: true, isDeleted: false, scope: preset.scope },
       select: { id: true },
     });
     roles += 1;

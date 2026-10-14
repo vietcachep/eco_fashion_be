@@ -148,8 +148,9 @@ export class AuthService {
     const passwordHash = await AuthService.hashPassword(cmd.password);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // OTP gửi tới đúng email này vừa được nhập đúng ⇒ email đã XÁC MINH (cờ `email_verified_at` phản ánh đúng việc đã chứng minh sở hữu email).
       const user = await this.users.create(
-        { email, phone: cmd.phone, passwordHash, fullName: cmd.fullName.trim(), roleId: role.id, status: USER_STATUS.ACTIVE },
+        { email, phone: cmd.phone, passwordHash, fullName: cmd.fullName.trim(), roleId: role.id, status: USER_STATUS.ACTIVE, emailVerifiedAt: new Date() },
         tx,
       );
       await this.audit.write(tx, { userId: user.id, email: user.email }, {

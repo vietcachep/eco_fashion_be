@@ -8,6 +8,8 @@ export interface RoleRow {
   name: string;
   description: string | null;
   isSystem: boolean;
+  /* platform | shop (PLAN-0014) — Role.scope. */
+  scope: string;
 }
 
 export interface PermissionRow {
@@ -40,7 +42,22 @@ export class PermissionRepository {
   async findRoleByCode(code: string, tx?: Tx | null): Promise<RoleRow | null> {
     return this.db(tx).role.findFirst({
       where: { code, isDeleted: false },
-      select: { id: true, code: true, name: true, description: true, isSystem: true },
+      select: { id: true, code: true, name: true, description: true, isSystem: true, scope: true },
+    });
+  }
+
+  async findRoleById(id: string, tx?: Tx | null): Promise<RoleRow | null> {
+    return this.db(tx).role.findFirst({
+      where: { id, isDeleted: false },
+      select: { id: true, code: true, name: true, description: true, isSystem: true, scope: true },
+    });
+  }
+
+  async findRolesByIds(ids: string[], tx?: Tx | null): Promise<RoleRow[]> {
+    if (ids.length === 0) return [];
+    return this.db(tx).role.findMany({
+      where: { id: { in: ids }, isDeleted: false },
+      select: { id: true, code: true, name: true, description: true, isSystem: true, scope: true },
     });
   }
 
@@ -48,7 +65,7 @@ export class PermissionRepository {
     return this.db(tx).role.findMany({
       where: { isDeleted: false },
       orderBy: { code: 'asc' },
-      select: { id: true, code: true, name: true, description: true, isSystem: true },
+      select: { id: true, code: true, name: true, description: true, isSystem: true, scope: true },
     });
   }
 
