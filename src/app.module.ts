@@ -12,10 +12,12 @@ import { CatalogModule } from '@modules/catalog/catalog.module';
 import { IdentityModule } from '@modules/identity/identity.module';
 import { OrderModule } from '@modules/order/order.module';
 import { PaymentModule } from '@modules/payment/payment.module';
+import { PaymentSettlementModule } from '@modules/payment/payment-settlement.module';
 import { ProductModule } from '@modules/product/product.module';
 import { PromotionModule } from '@modules/promotion/promotion.module';
 import { ReportingModule } from '@modules/reporting/reporting.module';
 import { ReviewModule } from '@modules/review/review.module';
+import { ShopModule } from '@modules/shop/shop.module';
 import { SystemModule } from '@modules/system/system.module';
 
 /*
@@ -33,11 +35,13 @@ import { SystemModule } from '@modules/system/system.module';
     ScheduleModule.forRoot(),
     SystemModule,
     IdentityModule,
+    ShopModule,
     CatalogModule,
     ProductModule,
     CartModule,
     PromotionModule,
     PaymentModule,
+    PaymentSettlementModule,
     OrderModule,
     ReviewModule,
     ReportingModule,

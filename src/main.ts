@@ -54,7 +54,7 @@ async function bootstrap(): Promise<void> {
     const doc = new DocumentBuilder()
       .setTitle('EcoFashion API')
       .setDescription(
-        'Backend cửa hàng thời trang — web bán hàng + web quản trị. Mọi response theo envelope ApiResponse.',
+        'Backend sàn thương mại điện tử đa ngành hàng — web bán hàng + web quản trị. Mọi response theo envelope ApiResponse.',
       )
       .setVersion(process.env.npm_package_version ?? '0.1.0')
       .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })

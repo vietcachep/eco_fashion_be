@@ -63,6 +63,19 @@ export const envSchema = z.object({
   EF_BANK_TRANSFER_ACCOUNT_NO: z.string().default(''),
   EF_BANK_TRANSFER_ACCOUNT_NAME: z.string().default(''),
 
+  /* PayOS (PLAN-0015/0017). Trống = phương thức `payos` tự tắt, đối soát chi trả lùi về "đánh dấu đã trả tay".
+     Thu tiền (payment link) và chi tiền (payout) là HAI cặp khoá khác nhau trong dashboard PayOS. */
+  EF_PAYOS_CLIENT_ID: z.string().default(''),
+  EF_PAYOS_API_KEY: z.string().default(''),
+  EF_PAYOS_CHECKSUM_KEY: z.string().default(''),
+  EF_PAYOS_API_URL: z.string().url().default('https://api-merchant.payos.vn'),
+  EF_PAYOS_PAYOUT_CLIENT_ID: z.string().default(''),
+  EF_PAYOS_PAYOUT_API_KEY: z.string().default(''),
+  EF_PAYOS_PAYOUT_CHECKSUM_KEY: z.string().default(''),
+
+  /* Ảnh thật cho dữ liệu mẫu (scripts/seed/tools) — trống thì dùng ảnh minh hoạ tự sinh. Chỉ dùng lúc seed. */
+  EF_PEXELS_API_KEY: z.string().default(''),
+
   EF_OPENAI_API_KEY: z.string().default(''),
   EF_OPENAI_CHAT_MODEL: z.string().default('gpt-5.4-mini'),
   EF_OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),

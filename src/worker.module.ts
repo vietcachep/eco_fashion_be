@@ -10,8 +10,12 @@ import { AiWorkerModule } from '@modules/ai/ai-worker.module';
 import { IdentityModule } from '@modules/identity/identity.module';
 import { IdentityWorkerModule } from '@modules/identity/identity-worker.module';
 import { OrderWorkerModule } from '@modules/order/order-worker.module';
+import { PaymentWorkerModule } from '@modules/payment/payment-worker.module';
 import { ProductWorkerModule } from '@modules/product/product-worker.module';
 import { ReportingWorkerModule } from '@modules/reporting/reporting-worker.module';
+import { ReviewWorkerModule } from '@modules/review/review-worker.module';
+import { ShopWorkerModule } from '@modules/shop/shop-worker.module';
+import { SystemWorkerModule } from '@modules/system/system-worker.module';
 
 /*
  * Lắp ráp WORKER: cùng code với API nhưng chỉ nạp processor BullMQ, relay outbox và job định kỳ.
@@ -30,8 +34,12 @@ import { ReportingWorkerModule } from '@modules/reporting/reporting-worker.modul
     IdentityWorkerModule,
     ProductWorkerModule,
     OrderWorkerModule,
+    PaymentWorkerModule,
     ReportingWorkerModule,
+    ReviewWorkerModule,
     AiWorkerModule,
+    ShopWorkerModule,
+    SystemWorkerModule,
   ],
   providers: [MailProcessor],
 })
