@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { ENV } from '@config/config.module';
 import type { Env } from '@config/env';
 
@@ -72,7 +72,9 @@ export class VnpayService {
     const params: Record<string, string> = {};
     for (const [k, v] of Object.entries(query)) if (k.startsWith('vnp_')) params[k] = v;
     const expected = this.sign(VnpayService.signingString(params));
-    return expected.toLowerCase() === hash.toLowerCase();
+    const a = Buffer.from(expected.toLowerCase(), 'utf8');
+    const b = Buffer.from(hash.toLowerCase(), 'utf8');
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   /*
