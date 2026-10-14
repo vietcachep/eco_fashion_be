@@ -6,8 +6,10 @@ import { OutboxRelay } from '@common/outbox/outbox-relay';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { CATALOG_EVENT, CATALOG_MODULE } from '../catalog/enums/catalog-events';
 import { CatalogModule } from '../catalog/catalog.module';
+import { SHOP_EVENT, SHOP_MODULE } from '../shop/enums/shop-events';
 import { PRODUCT_MODULE } from './foundation/product.constants';
 import { ProductModule } from './product.module';
+import { ProductQueryService } from './product/service/product-query.service';
 import { ProductService } from './product/service/product.service';
 
 /* Relay outbox của catalog VÀ product (hai schema, hai instance) — phát `outbox.<module>.<EVENT>`. */
@@ -55,6 +57,28 @@ export class ProductEventListeners {
   }
 }
 
+/*
+ * Listener: sàn duyệt / khoá / từ chối gian hàng (outbox SHOP_APPROVED | SHOP_SUSPENDED | SHOP_REJECTED) → xoá NGAY cache công khai của sản phẩm
+ * (list 60s · chi tiết 120s · liên quan 300s · bộ lọc 600s). Không xoá thì hàng của shop vừa bị khoá còn hiện tới hết TTL, và ngược lại sản phẩm
+ * của shop vừa được duyệt lại vẫn bị 404 vì chi tiết cache cả kết quả "không có". Độ trễ = chu kỳ relay outbox (3s) thay vì TTL.
+ * Idempotent theo bản chất (chỉ xoá key, chạy bao nhiêu lần cũng cùng kết quả) nên không cần processed_events. Lỗi KHÔNG được nuốt:
+ * `suppressErrors: false` để relay đánh FAILED + retry có backoff. Không phụ thuộc ngược shop — chỉ dùng tên sự kiện công khai ở shop/enums.
+ */
+@Injectable()
+export class ProductShopStatusListeners {
+  private readonly logger = new Logger(ProductShopStatusListeners.name);
+
+  constructor(private readonly query: ProductQueryService) {}
+
+  @OnEvent(`outbox.${SHOP_MODULE}.${SHOP_EVENT.APPROVED}`, { suppressErrors: false })
+  @OnEvent(`outbox.${SHOP_MODULE}.${SHOP_EVENT.SUSPENDED}`, { suppressErrors: false })
+  @OnEvent(`outbox.${SHOP_MODULE}.${SHOP_EVENT.REJECTED}`, { suppressErrors: false })
+  async onShopStatusChanged(msg: OutboxEventMessage): Promise<void> {
+    await this.query.invalidateAll();
+    this.logger.log({ shopId: (msg.payload as { shopId?: string }).shopId, eventType: msg.eventType }, 'Đã xoá cache công khai sản phẩm do gian hàng đổi trạng thái');
+  }
+}
+
 /* Dọn idempotency key hết hạn (bảng product.idempotency_keys) — 03:30 mỗi ngày. */
 @Injectable()
 export class ProductHousekeepingJob {
@@ -71,6 +95,6 @@ export class ProductHousekeepingJob {
 
 @Module({
   imports: [CatalogModule, ProductModule],
-  providers: [CatalogProductOutboxRelayJob, ProductEventListeners, ProductHousekeepingJob],
+  providers: [CatalogProductOutboxRelayJob, ProductEventListeners, ProductShopStatusListeners, ProductHousekeepingJob],
 })
 export class ProductWorkerModule {}

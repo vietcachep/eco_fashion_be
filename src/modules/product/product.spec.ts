@@ -11,6 +11,7 @@ import { ProductListQuery } from './product/request/product.requests';
 function row(over: Partial<ProductCardRow> = {}): ProductCardRow {
   return {
     id: 'p1',
+    shopId: 'shop-1',
     slug: 'ao-thun-cotton-nam-basic',
     name: 'Áo thun cotton nam basic',
     categoryId: 'c1',
@@ -29,10 +30,10 @@ function row(over: Partial<ProductCardRow> = {}): ProductCardRow {
     createdAt: new Date(),
     updatedAt: new Date(),
     variants: [
-      { id: 'v1', sku: 'A-TRANG-M', colorCode: 'trang', colorName: 'Trắng', colorHex: '#fff', sizeCode: 'M', price: null, stock: 5, reserved: 5, isActive: true },
-      { id: 'v2', sku: 'A-TRANG-S', colorCode: 'trang', colorName: 'Trắng', colorHex: '#fff', sizeCode: 'S', price: null, stock: 0, reserved: 0, isActive: true },
-      { id: 'v3', sku: 'A-DEN-XL', colorCode: 'den', colorName: 'Đen', colorHex: '#000', sizeCode: 'XL', price: null, stock: 3, reserved: 0, isActive: true },
-      { id: 'v4', sku: 'A-XAM-M', colorCode: 'xam', colorName: 'Xám', colorHex: '#999', sizeCode: 'M', price: null, stock: 9, reserved: 0, isActive: false },
+      { id: 'v1', sku: 'A-TRANG-M', colorCode: 'trang', colorName: 'Trắng', colorHex: '#fff', sizeCode: 'M', price: null, stock: 5, reserved: 5, isActive: true, options: [] },
+      { id: 'v2', sku: 'A-TRANG-S', colorCode: 'trang', colorName: 'Trắng', colorHex: '#fff', sizeCode: 'S', price: null, stock: 0, reserved: 0, isActive: true, options: [] },
+      { id: 'v3', sku: 'A-DEN-XL', colorCode: 'den', colorName: 'Đen', colorHex: '#000', sizeCode: 'XL', price: null, stock: 3, reserved: 0, isActive: true, options: [] },
+      { id: 'v4', sku: 'A-XAM-M', colorCode: 'xam', colorName: 'Xám', colorHex: '#999', sizeCode: 'M', price: null, stock: 9, reserved: 0, isActive: false, options: [] },
     ],
     images: [
       { id: 'i1', url: 'u-main', publicId: null, colorCode: 'trang', alt: null, sortOrder: 0, isPrimary: true },
