@@ -5,7 +5,7 @@
 > Related Phase: Phase X — Tên
 > Related Roadmap: `docs/04_ROADMAP.md`
 
-> Luật ownership: một cửa hàng — dữ liệu của khách lọc theo `user_id` từ JWT; nhân viên phân quyền theo mã quyền.
+> Luật ownership: sàn đa gian hàng — dữ liệu của khách lọc theo `user_id` từ JWT; dữ liệu thuộc gian hàng lọc thêm theo `shop_id` (vendor: chỉ từ ngữ cảnh phiên, không từ URL/body); nhân viên sàn phân quyền theo mã `supplier.*`/`module.resource.action`, vendor theo `shop.*`.
 
 ---
 
@@ -17,7 +17,7 @@
 
 ## 2. Bối cảnh
 
-EcoFashion: một cửa hàng thời trang, hai giao diện (web bán hàng + web quản trị nhiều vai nhân viên),
+EcoFashion (FITLY): sàn thương mại điện tử đa gian hàng, đa ngành hàng (thời trang là ngành đầu tiên), hai giao diện (web bán hàng + web quản trị gồm cổng nhân viên sàn nhiều vai và cổng vendor),
 chỉ tiếng Việt, thanh toán thật tại Việt Nam. Modular Monolith, schema-per-module, không FK xuyên module.
 
 Tài liệu tham chiếu: `AGENTS.md`, `README.md`, `docs/04_ROADMAP.md`, `docs/03_DATABASE_RULES.md`.
