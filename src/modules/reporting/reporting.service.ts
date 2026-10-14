@@ -4,6 +4,7 @@ import { BusinessException } from '@common/exception/business.exception';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma } from '@common/prisma/types';
 import { money, MoneyResponse } from '@common/response/money-response';
+import { assertReportRange, isRealDay } from './reporting-range';
 
 export const REPORTING_MODULE = 'reporting';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
@@ -98,8 +99,8 @@ export interface InventorySummary {
 const dec = (v: Prisma.Decimal | null | undefined): bigint => BigInt((v ?? new Prisma.Decimal(0)).toFixed(0));
 
 /*
- * Báo cáo (PLAN-0011). Số liệu theo ngày lấy từ `reporting.daily_sales` — worker tính lại hôm nay mỗi 5 phút và chốt
- * ngày hôm qua lúc 00:05 (giờ VN). Các bảng "đang chờ" và top sản phẩm là SELECT chỉ đọc xuyên schema (ngoại lệ có
+ * Báo cáo (PLAN-0011). Số liệu theo ngày lấy từ `reporting.daily_sales` (TOÀN SÀN — báo cáo shop KHÔNG dùng bảng này, xem
+ * ShopReportingService) — worker tính lại hôm nay mỗi 5 phút và lúc 00:05 (giờ VN) tính lại 14 ngày gần nhất. Các bảng "đang chờ" và top sản phẩm là SELECT chỉ đọc xuyên schema (ngoại lệ có
  * chủ đích, docs/03) — không bao giờ ghi vào bảng của module khác. Kết quả cache Redis ngắn (60–300s).
  */
 @Injectable()
@@ -168,7 +169,7 @@ export class ReportingService {
   // ------------------------------------------------------------ doanh thu theo kỳ
 
   revenue(from: string, to: string, granularity: 'day' | 'month'): Promise<RevenueResponse> {
-    ReportingService.assertRange(from, to);
+    assertReportRange(from, to, granularity);
     return this.cache.getOrSet(CACHE.revenue, `${from}_${to}_${granularity}`, async () => {
       const rows = await this.prisma.dailySales.findMany({ where: { day: { gte: from, lte: to } }, orderBy: { day: 'asc' } });
       type Bucket = { revenue: bigint; orderCount: number; paidCount: number; cancelledCount: number; itemsSold: number; discount: bigint; refunded: bigint };
@@ -204,7 +205,7 @@ export class ReportingService {
   // ------------------------------------------------------------ bán chạy / tồn thấp
 
   topProducts(from: string, to: string, limit = 10): Promise<TopProductRow[]> {
-    ReportingService.assertRange(from, to);
+    assertReportRange(from, to, 'day');
     return this.cache.getOrSet(CACHE.top, `${from}_${to}_${limit}`, async () => {
       const rows = await this.prisma.$queryRaw<Array<{ product_id: string; slug: string; name: string; image_url: string | null; quantity: bigint; revenue: Prisma.Decimal; order_count: bigint }>>`
         SELECT oi.product_id, max(oi.slug) AS slug, max(oi.name) AS name, max(oi.image_url) AS image_url,
@@ -260,7 +261,7 @@ export class ReportingService {
       WHERE r.code = 'customer' AND u.created_at >= (${day}::date::timestamp AT TIME ZONE ${VN_TZ}) AND u.created_at < ((${day}::date + 1)::timestamp AT TIME ZONE ${VN_TZ})`;
     const [rf] = await this.prisma.$queryRaw<Array<{ amount: Prisma.Decimal | null }>>`
       SELECT coalesce(sum(amount), 0) AS amount FROM "payment"."refunds"
-      WHERE status = 'done' AND processed_at >= (${day}::date::timestamp AT TIME ZONE ${VN_TZ}) AND processed_at < ((${day}::date + 1)::timestamp AT TIME ZONE ${VN_TZ})`;
+      WHERE status = 'done' AND kind = 'order' AND processed_at >= (${day}::date::timestamp AT TIME ZONE ${VN_TZ}) AND processed_at < ((${day}::date + 1)::timestamp AT TIME ZONE ${VN_TZ})`;
     const data = {
       orderCount: Number(o?.order_count ?? 0),
       paidCount: Number(o?.paid_count ?? 0),
@@ -311,7 +312,7 @@ export class ReportingService {
   }
 
   private static assertDay(day: string): void {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00Z`))) throw new BusinessException('COMMON_VALIDATION_ERROR', `Ngày không hợp lệ: ${day} (yyyy-mm-dd)`);
+    if (!isRealDay(day)) throw new BusinessException('COMMON_VALIDATION_ERROR', `Ngày không hợp lệ: ${day} (yyyy-mm-dd)`);
   }
 
   private static assertRange(from: string, to: string): void {
