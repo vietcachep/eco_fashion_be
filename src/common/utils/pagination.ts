@@ -12,6 +12,7 @@ export class PageQuery {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100_000)
   page: number = 1;
 
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })

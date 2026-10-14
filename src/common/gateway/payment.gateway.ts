@@ -31,6 +31,7 @@ export interface PaymentInitiateResult {
   status: 'unpaid';
   paymentIntent: BankTransferIntent | null;
   paymentUrl: string | null;
+  qrCode?: string | null;
   expiresAt: Date | null;
 }
 
@@ -42,7 +43,8 @@ export interface PaymentGateway {
   initiate(input: PaymentInitiateInput, tx: Tx): Promise<PaymentInitiateResult>;
   cancel(orderCode: string, reason: string, tx: Tx): Promise<void>;
   markCodCollected(orderCode: string, actorUserId: string | null, tx: Tx): Promise<void>;
-  requestRefund(input: { orderCode: string; amount: bigint; reason: string; returnRequestId: string | null; actorUserId: string | null }, tx: Tx): Promise<{ refundId: string | null }>;
+  /* `paymentId` (tuỳ chọn): hoàn đúng khoản thanh toán đó (vd khoản trả TRÙNG/ĐẾN MUỘN); bỏ trống = khoản đã thu mới nhất của đơn. */
+  requestRefund(input: { orderCode: string; shopId: string | null; amount: bigint; reason: string; returnRequestId: string | null; actorUserId: string | null; paymentId?: string }, tx: Tx): Promise<{ refundId: string | null }>;
   isMethodActive(methodCode: string): Promise<boolean>;
 }
 
@@ -53,7 +55,10 @@ export interface PaymentGateway {
 export interface OrderPaymentGateway {
   onPaid(orderCode: string, info: { paymentId: string; methodCode: string; transactionCode: string | null; bankCode: string | null; paidAt: Date }, tx: Tx): Promise<void>;
   onPaymentFailed(orderCode: string, reason: string, tx: Tx): Promise<void>;
-  onRefunded(orderCode: string, amount: bigint, refundId: string, tx: Tx): Promise<void>;
+  /* `fullyRefunded`: payment cho biết ĐÃ hoàn đủ (luỹ kế) — order không tự đoán từ một khoản hoàn lẻ. */
+  onRefunded(orderCode: string, amount: bigint, refundId: string, tx: Tx, fullyRefunded?: boolean): Promise<void>;
+  /* Khách còn thanh toán/thử lại được không: đơn còn `pending` và chưa thu tiền (payment dùng chặn retry link cho đơn đã huỷ). */
+  canRetryPayment(orderCode: string): Promise<boolean>;
   /* Hoàn tiền của yêu cầu đổi trả đã xong → yêu cầu sang refunded */
   markReturnRefunded(returnRequestId: string, tx: Tx): Promise<void>;
 }

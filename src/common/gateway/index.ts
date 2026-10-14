@@ -6,3 +6,4 @@ export * from './category-stats.gateway';
 export * from './cart.gateway';
 export * from './promotion.gateway';
 export * from './payment.gateway';
+export * from './shop-cod.gateway';
