@@ -17,7 +17,7 @@ export class ProductController {
   @ApiOperation({ summary: 'Danh sách sản phẩm đang bán — lọc q/category/gender/size/color/minPrice/maxPrice/sale/tag, sort, phân trang' })
   @ApiOkResponse({ type: PageResponse })
   async list(@Query() q: ProductListQuery): Promise<ApiResponse<PageResponse<ProductCardResponse>>> {
-    return ApiResponse.ok(await this.products.list({ page: q.page, size: q.pageSize, q: q.q, category: q.category, gender: q.gender, sizeCode: q.size, color: q.color, minPrice: q.minPrice, maxPrice: q.maxPrice, sale: q.sale, tag: q.tag, sort: q.sort }));
+    return ApiResponse.ok(await this.products.list({ page: q.page, size: q.pageSize, q: q.q, category: q.category, shop: q.shop, gender: q.gender, sizeCode: q.size, color: q.color, minPrice: q.minPrice, maxPrice: q.maxPrice, sale: q.sale, tag: q.tag, sort: q.sort }));
   }
 
   @Public()

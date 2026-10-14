@@ -10,6 +10,7 @@ model Product {
   id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug             String                    @db.VarChar(160)
   name             String                    @db.VarChar(200)
+  shopId           String                    @map("shop_id") @db.Uuid                     // PLAN-0014 bước 5: gian hàng sở hữu sản phẩm
   categoryId       String                    @map("category_id") @db.Uuid
   categorySlug     String                    @map("category_slug") @db.VarChar(120)
   gender           String                    @default("unisex") @db.VarChar(10)
@@ -39,9 +40,13 @@ model Product {
   updatedBy        String?                   @map("updated_by") @db.Uuid
   isDeleted        Boolean                   @default(false) @map("is_deleted")
 
-  variants ProductVariant[]
-  images   ProductImage[]
+  variants        ProductVariant[]
+  images          ProductImage[]
+  /* PLAN-0016 — thuộc tính cấp sản phẩm cho ngành hàng MỚI (category.attributeMode="dynamic"); rỗng với
+     sản phẩm thời trang (attributeMode="legacy_fashion" vẫn dùng gender/material/care như cũ). */
+  attributeValues ProductAttributeValue[]
 
+  @@index([shopId])
   @@index([categoryId])
   @@index([status, publishedAt(sort: Desc)])
   @@index([gender])
@@ -53,11 +58,15 @@ model Product {
 model ProductVariant {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId String   @map("product_id") @db.Uuid
+  shopId    String   @map("shop_id") @db.Uuid                     // PLAN-0014 bước 5: SKU unique theo shop (index partial — xem cuối model)
   sku       String   @db.VarChar(64)
-  colorCode String   @map("color_code") @db.VarChar(40)
-  colorName String   @map("color_name") @db.VarChar(120)
+  /* PLAN-0016: NULL cho sản phẩm ngành hàng MỚI (category.attributeMode="dynamic") — dùng `options` (dưới)
+     thay thế. Sản phẩm thời trang (attributeMode="legacy_fashion") giữ NGUYÊN bắt buộc như trước, không đổi
+     hành vi/dữ liệu hiện có. */
+  colorCode String?  @map("color_code") @db.VarChar(40)
+  colorName String?  @map("color_name") @db.VarChar(120)
   colorHex  String?  @map("color_hex") @db.VarChar(9)
-  sizeCode  String   @map("size_code") @db.VarChar(40)
+  sizeCode  String?  @map("size_code") @db.VarChar(40)
   /* NULL = dùng base_price của sản phẩm. */
   price     Decimal? @db.Decimal(14, 0)
   stock     Int      @default(0)
@@ -70,11 +79,54 @@ model ProductVariant {
   updatedBy String?  @map("updated_by") @db.Uuid
   isDeleted Boolean  @default(false) @map("is_deleted")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /* PLAN-0016 — trục biến thể cho ngành hàng MỚI, tối đa 2 dòng/variant (validate ở service), thay thế
+     colorCode/sizeCode ở trên. Rỗng với sản phẩm thời trang. */
+  options ProductVariantOption[]
 
   @@unique([productId, colorCode, sizeCode])
+  /* SKU unique THEO GIAN HÀNG, CHỈ biến thể còn sống: index partial `uq_product_variants_shop_sku_active`
+     (shop_id, sku) WHERE is_deleted = false trong migration 20261003140000 — Prisma không biểu diễn được index partial nên
+     KHÔNG khai @@unique([shopId, sku]) ở đây (khai sẽ tính cả bản xoá mềm và làm migrate diff lệch). Service kiểm trước. */
   @@index([sku])
+  @@index([shopId])
   @@map("product_variants")
+  @@schema("product")
+}
+
+/* PLAN-0016 — thuộc tính KHÔNG tạo biến thể, gắn cấp sản phẩm (vd "Xuất xứ: Việt Nam", "Bảo hành: 12 tháng").
+   Chỉ dùng cho category.attributeMode="dynamic". attributeId/attributeValueId trỏ sang schema catalog
+   (DynamicAttribute/DynamicAttributeValue) — KHÔNG @relation xuyên schema, chỉ lưu id theo đúng quy ước. */
+model ProductAttributeValue {
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
+  attributeId      String  @map("attribute_id") @db.Uuid
+  attributeValueId String? @map("attribute_value_id") @db.Uuid
+  /* Nhập tay khi DynamicAttribute.inputType = text | number (không chọn từ AttributeValue có sẵn). */
+  customValue      String? @map("custom_value") @db.VarChar(255)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, attributeId])
+  @@map("product_attribute_values")
+  @@schema("product")
+}
+
+/* PLAN-0016 — MỘT trục biến thể của MỘT variant (vd {attribute: "Dung lượng", value: "128GB"}). Tối đa 2
+   dòng/variant (validate ở service — khớp quyết định "tối đa 2 trục"). Thay thế colorCode/sizeCode cho
+   category.attributeMode="dynamic". */
+model ProductVariantOption {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variantId        String @map("variant_id") @db.Uuid
+  attributeId      String @map("attribute_id") @db.Uuid
+  attributeValueId String @map("attribute_value_id") @db.Uuid
+  /* Snapshot tên hiển thị LÚC TẠO (vd "128GB") — đổi tên value gốc sau này không làm sai lệch đơn cũ. */
+  displayValue     String @map("display_value") @db.VarChar(100)
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, attributeId])
+  @@map("product_variant_options")
   @@schema("product")
 }
 
@@ -106,6 +158,9 @@ model StockReceipt {
   note         String?   @db.VarChar(500)
   status       String    @default("draft") @db.VarChar(20)
   totalCost    Decimal   @default(0) @map("total_cost") @db.Decimal(14, 0)
+  /* PLAN-0017 — phiếu của gian hàng nào (vendor tự nhập kho). NULL = phiếu của sàn/FITLY Official (nhân viên sàn lập).
+     Mọi dòng của phiếu shop phải là biến thể có shopId trùng — service kiểm lúc ghi. */
+  shopId       String?   @map("shop_id") @db.Uuid
   postedAt     DateTime? @map("posted_at") @db.Timestamptz
   postedBy     String?   @map("posted_by") @db.Uuid
   version      Int       @default(0)
@@ -118,6 +173,7 @@ model StockReceipt {
   items StockReceiptItem[]
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([shopId, createdAt(sort: Desc)])
   @@map("stock_receipts")
   @@schema("product")
 }

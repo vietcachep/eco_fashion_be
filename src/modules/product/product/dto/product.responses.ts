@@ -8,12 +8,24 @@ export class ColorOptionResponse {
   @ApiPropertyOptional({ nullable: true, description: 'Ảnh của màu này — thẻ đổi ảnh khi rê chấm màu' }) imageUrl: string | null;
 }
 
+/* Gian hàng bán sản phẩm — tóm tắt gắn kèm thẻ/chi tiết sản phẩm (PLAN-0014). Khớp `ShopSummary` FE đã
+   thiết kế sẵn từ trước khi module shop merge (đọc field CHÍNH XÁC tên này, không phải shopId/shopSlug rời). */
+export class ProductShopSummaryResponse {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: 'fitly-official' }) slug: string;
+  @ApiProperty({ example: 'FITLY Official' }) name: string;
+  @ApiPropertyOptional({ nullable: true }) logoUrl: string | null;
+  @ApiPropertyOptional({ nullable: true, example: 4.7 }) ratingAvg: number | null;
+}
+
 /* Thẻ sản phẩm cho list/trang chủ/gợi ý (FE `ProductCardResponse`). */
 export class ProductCardResponse {
   @ApiProperty() id: string;
   @ApiProperty({ example: 'ao-thun-cotton-nam-basic' }) slug: string;
   @ApiProperty({ example: 'Áo thun cotton nam basic' }) name: string;
   @ApiProperty({ example: 'ao-thun' }) categorySlug: string;
+  /* PLAN-0014 bước 5+ — gian hàng sở hữu sản phẩm này. null CHỈ khi shop bị xoá dữ liệu (không nên xảy ra). */
+  @ApiPropertyOptional({ type: ProductShopSummaryResponse, nullable: true }) shop: ProductShopSummaryResponse | null;
   @ApiProperty({ example: 'nam', description: 'nam | nu | unisex' }) gender: string;
   @ApiProperty({ type: MoneyResponse }) price: MoneyResponse;
   @ApiPropertyOptional({ type: MoneyResponse, nullable: true, description: 'Giá gốc (gạch) khi đang giảm' }) listPrice: MoneyResponse | null;
@@ -38,14 +50,30 @@ export class ProductImageResponse {
   @ApiProperty() isPrimary: boolean;
 }
 
+export class VariantOptionResponse {
+  @ApiProperty() attributeId: string;
+  @ApiProperty() attributeValueId: string;
+  @ApiProperty({ description: 'Tên hiển thị snapshot' }) displayValue: string;
+  @ApiPropertyOptional({ example: 'Dung lượng', description: 'Tên trục biến thể (vd "Màu sắc"); thiếu khi thuộc tính đã bị xoá khỏi danh mục' }) attributeName?: string;
+}
+
 export class ProductVariantResponse {
   @ApiProperty() id: string;
-  @ApiProperty({ example: 'Đen' }) color: string;
-  @ApiProperty({ example: 'den' }) colorCode: string;
-  @ApiProperty({ example: 'M' }) size: string;
+  @ApiPropertyOptional({ example: 'Đen', nullable: true, description: 'null cho category dynamic' }) color: string | null;
+  @ApiPropertyOptional({ example: 'den', nullable: true, description: 'null cho category dynamic' }) colorCode: string | null;
+  @ApiPropertyOptional({ example: 'M', nullable: true, description: 'null cho category dynamic' }) size: string | null;
   @ApiProperty({ example: 'AOTHUN-DE-M' }) sku: string;
   @ApiProperty({ description: 'Tồn có thể bán (stock − reserved)' }) stock: number;
   @ApiProperty({ type: MoneyResponse }) price: MoneyResponse;
+  @ApiPropertyOptional({ type: [VariantOptionResponse], description: 'Trục biến thể (category dynamic)' }) options?: VariantOptionResponse[];
+  @ApiPropertyOptional({ description: 'Chỉ có ở API quản trị/vendor (công khai chỉ trả biến thể đang bán): false = đang tắt, không bán' }) isActive?: boolean;
+}
+
+export class ProductAttributeValueResponse {
+  @ApiProperty() attributeId: string;
+  @ApiProperty({ description: 'Tên thuộc tính' }) attributeName: string;
+  @ApiPropertyOptional({ nullable: true, description: 'ID giá trị (null nếu nhập tay)' }) attributeValueId: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Tên giá trị hoặc giá trị nhập tay' }) value: string | null;
 }
 
 /* Chi tiết sản phẩm (FE `ProductDetailResponse`). */
@@ -56,6 +84,7 @@ export class ProductDetailResponse extends ProductCardResponse {
   @ApiProperty({ type: [ProductVariantResponse] }) variants: ProductVariantResponse[];
   @ApiPropertyOptional({ nullable: true, example: '100% cotton' }) material: string | null;
   @ApiProperty({ type: [String] }) care: string[];
+  @ApiPropertyOptional({ type: [ProductAttributeValueResponse], description: 'Thuộc tính cấp sản phẩm (category dynamic)' }) attributeValues?: ProductAttributeValueResponse[];
 }
 
 /* Quản trị: thêm trạng thái, tồn thô, thống kê. */
