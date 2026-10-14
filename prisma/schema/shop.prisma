@@ -1,0 +1,143 @@
+// =====================================================================
+// Module shop (PLAN-0014, Bước 1) — schema "shop": gian hàng (Shop) + nhân viên/chủ gian hàng (ShopMember).
+// Pivot sàn TMĐT đa gian hàng: mỗi Shop là một người bán độc lập; ShopMember gắn user (identity) vào Shop
+// với một vai CÓ SCOPE=shop (identity.roles.scope='shop', vd shop_owner/shop_staff) — vai này KHÔNG BAO GIỜ
+// gán vào User.roleId toàn cục, chỉ dùng để tính quyền `shop.*` CHO RIÊNG gian hàng đó (module shop tự đọc
+// permission codes của roleId qua identity.queryapi, không qua PermissionGuard toàn cục).
+// Không FK xuyên schema tới identity (ownerUserId/userId/roleId là id trần — docs/03_DATABASE_RULES.md).
+// =====================================================================
+
+/// Gian hàng. status/commissionRate/codEnabled do sàn quản (AdminShopController); profile do chính vendor
+/// sửa (ShopController, quyền shop.profile.update, shopId luôn suy từ ShopMember — không nhận qua param).
+model Shop {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String   @unique @db.VarChar(20)
+  slug           String   @unique @db.VarChar(160)
+  name           String   @db.VarChar(200)
+  logoUrl        String?  @map("logo_url") @db.VarChar(500)
+  bannerUrl      String?  @map("banner_url") @db.VarChar(500)
+  description    String?  @db.VarChar(2000)
+  /**
+   * pending | approved | suspended | rejected — SHOP_STATUS (foundation/shop.constants.ts), lưới chuyển ở SHOP_TRANSITIONS.
+   */
+  status         String   @default("pending") @db.VarChar(20)
+  /**
+   * % hoa hồng sàn thu — đóng băng vào Order.commissionRateSnapshot lúc đặt hàng (PLAN-0014 bước 7, chưa làm ở đây).
+   */
+  commissionRate Decimal  @default(10.00) @map("commission_rate") @db.Decimal(5, 2)
+  codEnabled     Boolean  @default(true) @map("cod_enabled")
+  /**
+   * PLAN-0017 — tài khoản ngân hàng nhận tiền đối soát (payout). Vendor tự khai ở hồ sơ shop; sàn xác minh ngoài hệ thống.
+   * bankCode = BIN ngân hàng chuẩn Napas/PayOS (6 số) — dùng làm `toBin` khi chi tiền.
+   */
+  bankCode          String? @map("bank_code") @db.VarChar(20)
+  bankAccountNumber String? @map("bank_account_number") @db.VarChar(30)
+  bankAccountName   String? @map("bank_account_name") @db.VarChar(120)
+  ratingAvg      Decimal? @map("rating_avg") @db.Decimal(3, 2)
+  /**
+   * Denormalized — cập nhật qua outbox listener từ product khi module product làm xong (bước 5), chưa dùng ở đây.
+   */
+  totalProducts  Int      @default(0) @map("total_products")
+  /**
+   * id User (identity schema) đứng tên đăng ký gian hàng — không FK xuyên schema.
+   */
+  ownerUserId    String   @map("owner_user_id") @db.Uuid
+  version        Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy      String?  @map("created_by") @db.Uuid
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy      String?  @map("updated_by") @db.Uuid
+  isDeleted      Boolean  @default(false) @map("is_deleted")
+
+  members ShopMember[]
+
+  @@index([status])
+  @@index([ownerUserId])
+  @@map("shops")
+  @@schema("shop")
+}
+
+/// Thành viên (chủ/nhân viên) của một gian hàng — bảng n-n Shop↔User (identity). `userId`/`roleId` là id trần
+/// (identity schema, không FK xuyên schema); roleId trỏ Role có scope='shop' (shop_owner|shop_staff).
+/// Miễn cột base đầy đủ (giống role_permissions — AGENTS.md Base Columns Rule): "gỡ" nhân viên đặt status=removed
+/// để giữ lịch sử ai từng thuộc gian hàng, không xoá cứng; không cần version (không có sửa nhiều trường tranh chấp).
+model ShopMember {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId    String   @map("shop_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  /**
+   * active | removed
+   */
+  status    String   @default("active") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, userId])
+  @@index([userId, status])
+  @@map("shop_members")
+  @@schema("shop")
+}
+
+model ShopAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("shop")
+}
+
+/// Outbox (SHOP_APPROVED/SUSPENDED/REJECTED…) — relay ở ShopWorkerModule; bước 5+ (product/order) sẽ thêm listener
+/// khi cần phản ứng theo trạng thái gian hàng (vd ẩn sản phẩm khi shop bị khoá). Chưa có listener nào ở bước này.
+model ShopOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  eventVersion  String    @default("v1") @map("event_version") @db.VarChar(10)
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  status        String    @default("PENDING") @db.VarChar(20)
+  retryCount    Int       @default(0) @map("retry_count")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  errorMessage  String?   @map("error_message")
+  requestId     String?   @map("request_id") @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+  @@schema("shop")
+}
+
+model ShopProcessedEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(80)
+  handler     String   @db.VarChar(120)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@unique([eventId, handler])
+  @@map("processed_events")
+  @@schema("shop")
+}
