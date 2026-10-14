@@ -21,6 +21,7 @@ model CartItem {
   cartId    String   @map("cart_id") @db.Uuid
   variantId String   @map("variant_id") @db.Uuid
   productId String   @map("product_id") @db.Uuid
+  shopId    String   @map("shop_id") @db.Uuid                     // PLAN-0014 bước 6: denormalize từ Product lúc thêm giỏ
   quantity  Int
   /* Dòng được tick để thanh toán (FE cho chọn từng dòng). */
   selected  Boolean  @default(true)
@@ -31,6 +32,7 @@ model CartItem {
 
   @@unique([cartId, variantId])
   @@index([variantId])
+  @@index([shopId])
   @@map("cart_items")
   @@schema("cart")
 }

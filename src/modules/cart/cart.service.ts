@@ -6,6 +6,7 @@ import type { Tx } from '@common/prisma/types';
 import { money, MoneyResponse } from '@common/response/money-response';
 import { vnd } from '@common/utils/money';
 import { ProductQueryApi, VariantSnapshot } from '../product/queryapi/product.queryapi';
+import { ShopQueryApi } from '../shop/queryapi/shop.queryapi';
 import { SETTING_KEY } from '../system/enums/setting-keys';
 import { SystemQueryApi } from '../system/queryapi/system.queryapi';
 
@@ -23,6 +24,10 @@ export interface CartLineResponse {
   productId: string;
   slug: string;
   name: string;
+  /* PLAN-0014 bước 6+ — gian hàng của dòng này, FE nhóm giỏ theo shop (shopId khớp `shopGroups[].shopId` của /checkout/summary). */
+  shopId: string;
+  shopSlug: string;
+  shopName: string;
   imageUrl: string | null;
   color: string;
   size: string;
@@ -49,7 +54,7 @@ export interface CartResponse {
 /* Giỏ tối giản cho promotion/order (tiền bigint) — CartQueryApi trả. */
 export interface Basket {
   userId: string;
-  lines: Array<{ variantId: string; productId: string; slug: string; name: string; categorySlug: string; imageUrl: string | null; color: string; size: string; sku: string; quantity: number; unitPrice: bigint; lineTotal: bigint; available: number; isSellable: boolean }>;
+  lines: Array<{ variantId: string; productId: string; slug: string; name: string; categorySlug: string; imageUrl: string | null; color: string; size: string; sku: string; quantity: number; unitPrice: bigint; lineTotal: bigint; available: number; isSellable: boolean; shopId: string }>;
   subtotal: bigint;
   itemCount: number;
 }
@@ -64,6 +69,7 @@ export class CartService {
     private readonly prisma: PrismaService,
     private readonly products: ProductQueryApi,
     private readonly system: SystemQueryApi,
+    private readonly shops: ShopQueryApi,
     @Inject(INVENTORY_GATEWAY) private readonly inventory: InventoryGateway,
   ) {}
 
@@ -85,7 +91,7 @@ export class CartService {
       const s = snaps.get(i.variantId);
       if (!s) return [];
       const unitPrice = vnd(s.unitPrice);
-      return [{ variantId: i.variantId, productId: s.productId, slug: s.slug, name: s.name, categorySlug: s.categorySlug, imageUrl: s.imageUrl, color: s.color, size: s.size, sku: s.sku, quantity: i.quantity, unitPrice, lineTotal: unitPrice * BigInt(i.quantity), available: s.available, isSellable: s.isSellable }];
+      return [{ variantId: i.variantId, productId: s.productId, slug: s.slug, name: s.name, categorySlug: s.categorySlug, imageUrl: s.imageUrl, color: s.color, size: s.size, sku: s.sku, quantity: i.quantity, unitPrice, lineTotal: unitPrice * BigInt(i.quantity), available: s.available, isSellable: s.isSellable, shopId: i.shopId }];
     });
     const sellable = lines.filter((l) => l.isSellable);
     return { userId, lines, subtotal: sellable.reduce((s, l) => s + l.lineTotal, 0n), itemCount: sellable.reduce((n, l) => n + l.quantity, 0) };
@@ -94,11 +100,15 @@ export class CartService {
   async getCart(userId: string): Promise<CartResponse> {
     const [b, max, threshold, cart] = await Promise.all([this.basket(userId, false), this.maxPerLine(), this.system.settingNumber(SETTING_KEY.SHIPPING_FREE_THRESHOLD), this.prisma.cart.findUnique({ where: { userId }, select: { items: { select: { variantId: true, selected: true } } } })]);
     const selected = new Map((cart?.items ?? []).map((i) => [i.variantId, i.selected]));
+    const shopBriefs = await this.shops.findManyBrief(b.lines.map((l) => l.shopId));
     const lines: CartLineResponse[] = b.lines.map((l) => ({
       variantId: l.variantId,
       productId: l.productId,
       slug: l.slug,
       name: l.name,
+      shopId: l.shopId,
+      shopSlug: shopBriefs.get(l.shopId)?.slug ?? '',
+      shopName: shopBriefs.get(l.shopId)?.name ?? '',
       imageUrl: l.imageUrl,
       color: l.color,
       size: l.size,
@@ -123,13 +133,19 @@ export class CartService {
   async addItem(userId: string, variantId: string, quantity: number): Promise<CartResponse> {
     const [snap, max] = await Promise.all([this.products.variantSnapshots([variantId]).then((m) => m.get(variantId)), this.maxPerLine()]);
     this.assertSellable(snap);
+    const shopId = await this.products.getShopId(snap.productId);
+    const shopIdVal = shopId ?? '';
     await this.prisma.$transaction(async (tx) => {
       const cartId = await this.cartId(userId, tx);
       const existing = await tx.cartItem.findUnique({ where: { cartId_variantId: { cartId, variantId } } });
       const total = (existing?.quantity ?? 0) + quantity;
       if (total > max) throw new BusinessException(CART_ERR.QTY_LIMIT, `Mỗi sản phẩm tối đa ${max} cái`);
       if (total > snap.available) throw new BusinessException(CART_ERR.OUT_OF_STOCK, snap.available > 0 ? `Chỉ còn ${snap.available} sản phẩm` : 'Sản phẩm đã hết hàng', 409);
-      await tx.cartItem.upsert({ where: { cartId_variantId: { cartId, variantId } }, create: { cartId, variantId, productId: snap.productId, quantity, selected: true }, update: { quantity: total, selected: true } });
+      await tx.cartItem.upsert({
+        where: { cartId_variantId: { cartId, variantId } },
+        create: { cartId, variantId, productId: snap.productId, shopId: shopIdVal, quantity, selected: true },
+        update: { quantity: total, selected: true, shopId: shopIdVal },
+      });
     });
     return this.getCart(userId);
   }
@@ -176,7 +192,7 @@ export class CartService {
         if (!s || !s.isSellable || s.available <= 0) continue;
         const existing = await tx.cartItem.findUnique({ where: { cartId_variantId: { cartId, variantId: g.variantId } } });
         const qty = Math.min((existing?.quantity ?? 0) + g.quantity, max, s.available);
-        await tx.cartItem.upsert({ where: { cartId_variantId: { cartId, variantId: g.variantId } }, create: { cartId, variantId: g.variantId, productId: s.productId, quantity: qty, selected: true }, update: { quantity: qty } });
+        await tx.cartItem.upsert({ where: { cartId_variantId: { cartId, variantId: g.variantId } }, create: { cartId, variantId: g.variantId, productId: s.productId, shopId: s.shopId, quantity: qty, selected: true }, update: { quantity: qty } });
       }
     });
     return this.getCart(userId);
