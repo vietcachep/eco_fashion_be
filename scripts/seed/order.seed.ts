@@ -5,6 +5,7 @@
  * Mã đơn seed `DHDEMO0001..` (khác dãy DHyymmdd của API). Cần identity/system/product/promotion.seed chạy trước.
  */
 import type { PrismaClient } from '../../src/generated/prisma/client';
+import { FITLY_OFFICIAL_SHOP_ID } from './lib/seed-shop';
 
 type Status = 'pending' | 'confirmed' | 'packing' | 'shipping' | 'delivered' | 'completed' | 'cancelled';
 type Method = 'cod' | 'bank_transfer' | 'vnpay';
@@ -56,6 +57,9 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   const provinces = new Map((await prisma.province.findMany()).map((p) => [p.code, p]));
   const thresholdSetting = await prisma.setting.findUnique({ where: { key: 'shipping.free_threshold' } });
   const freeThreshold = BigInt(typeof thresholdSetting?.value === 'number' || typeof thresholdSetting?.value === 'string' ? thresholdSetting.value : 500000);
+  /* PLAN-0014 bước 7: mọi Order thuộc đúng 1 shop + 1 OrderGroup (đơn seed đều single-shop, gói OrderGroup 1-đơn). */
+  const shop = await prisma.shop.findUniqueOrThrow({ where: { id: FITLY_OFFICIAL_SHOP_ID }, select: { commissionRate: true } });
+  const commissionRateSnapshot = shop.commissionRate.toString();
   if (customers.length < 5 || products.length < 24) throw new Error('Thiếu khách demo hoặc sản phẩm — chạy identity/product.seed trước');
 
   // Giỏ + wishlist demo (khách 1, 2) — idempotent theo unique.
@@ -70,7 +74,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     for (const [slug, qty] of lines) {
       const p = bySlug(slug);
       const v = p.variants.find((x) => x.stock - x.reserved > 0) ?? p.variants[0];
-      await prisma.cartItem.upsert({ where: { cartId_variantId: { cartId: cart.id, variantId: v.id } }, create: { cartId: cart.id, variantId: v.id, productId: p.id, quantity: qty }, update: {} });
+      await prisma.cartItem.upsert({ where: { cartId_variantId: { cartId: cart.id, variantId: v.id } }, create: { cartId: cart.id, variantId: v.id, productId: p.id, shopId: p.shopId, quantity: qty }, update: {} });
     }
     for (const slug of ['ao-khoac-blazer-nu', 'chan-vay-jean-ngan']) await prisma.wishlist.upsert({ where: { userId_productId: { userId: u.id, productId: bySlug(slug).id } }, create: { userId: u.id, productId: bySlug(slug).id }, update: {} });
   }
@@ -89,7 +93,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     const lines = s.items.map((it) => {
       const p = products.find((x) => x.slug === it.slug);
       if (!p) throw new Error(`Thiếu sản phẩm ${it.slug} — chạy product.seed trước`);
-      const v = p.variants.find((x) => ['M', 'L', '30', '31'].includes(x.sizeCode) && x.stock - x.reserved >= it.qty) ?? p.variants.find((x) => x.stock - x.reserved >= it.qty) ?? p.variants[0];
+      const v = p.variants.find((x) => !!x.sizeCode && ['M', 'L', '30', '31'].includes(x.sizeCode) && x.stock - x.reserved >= it.qty) ?? p.variants.find((x) => x.stock - x.reserved >= it.qty) ?? p.variants[0];
       const img = p.images.find((i) => i.colorCode === v.colorCode) ?? p.images.find((i) => i.isPrimary) ?? p.images[0];
       const unit = BigInt((v.price ?? p.basePrice).toFixed(0));
       return { p, v, imageUrl: img?.url ?? null, unitPrice: unit, quantity: it.qty, lineTotal: unit * BigInt(it.qty) };
@@ -118,10 +122,29 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     const paymentStatus = s.returned === 'refunded' ? 'partially_refunded' : s.paid ? 'paid' : 'unpaid';
 
     const order = await prisma.$transaction(async (tx) => {
+      const shippingAddressStr = [addr.street, addr.wardName, addr.districtName, addr.provinceName].filter(Boolean).join(', ');
+      const group = await tx.orderGroup.create({
+        data: {
+          code: `DHN${s.code.slice(2)}`,
+          userId: u.id,
+          recipientName: addr.recipientName,
+          recipientPhone: addr.phone,
+          shippingAddress: shippingAddressStr,
+          subtotal: subtotal.toString(),
+          shippingFee: shippingFee.toString(),
+          discount: discount.toString(),
+          total: total.toString(),
+          createdAt,
+          createdBy: u.id,
+        },
+      });
       const o = await tx.order.create({
         data: {
           code: s.code,
           userId: u.id,
+          shopId: FITLY_OFFICIAL_SHOP_ID,
+          orderGroupId: group.id,
+          commissionRateSnapshot,
           status: s.status,
           paymentMethodCode: s.method,
           paymentStatus,
@@ -132,7 +155,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
           districtName: addr.districtName,
           wardName: addr.wardName,
           street: addr.street,
-          shippingAddress: [addr.street, addr.wardName, addr.districtName, addr.provinceName].filter(Boolean).join(', '),
+          shippingAddress: shippingAddressStr,
           customerNote: s.note ?? null,
           subtotal: subtotal.toString(),
           shippingFee: shippingFee.toString(),
@@ -152,7 +175,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
           createdAt,
           updatedAt: createdAt,
           createdBy: u.id,
-          items: { create: lines.map((l) => ({ variantId: l.v.id, productId: l.p.id, slug: l.p.slug, name: l.p.name, imageUrl: l.imageUrl, color: l.v.colorName, size: l.v.sizeCode, sku: l.v.sku, quantity: l.quantity, unitPrice: l.unitPrice.toString(), lineTotal: l.lineTotal.toString() })) },
+          items: { create: lines.map((l) => ({ variantId: l.v.id, productId: l.p.id, shopId: l.p.shopId, slug: l.p.slug, name: l.p.name, imageUrl: l.imageUrl, color: l.v.colorName ?? "", size: l.v.sizeCode ?? "", sku: l.v.sku, quantity: l.quantity, unitPrice: l.unitPrice.toString(), lineTotal: l.lineTotal.toString() })) },
         },
         include: { items: true },
       });
