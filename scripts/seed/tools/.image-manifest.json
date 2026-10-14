@@ -1,0 +1,8079 @@
+{
+ "items": [
+  {
+   "out": "catalog/categories/dien-thoai-phu-kien.jpg",
+   "kind": "category",
+   "emoji": "📱",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "catalog/collections/dien-thoai-phu-kien.jpg",
+   "kind": "collection",
+   "emoji": "📱",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ],
+   "label": "Điện thoại & Phụ kiện"
+  },
+  {
+   "out": "catalog/categories/dien-thoai.jpg",
+   "kind": "category",
+   "emoji": "📱",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "catalog/categories/phu-kien-dien-thoai.jpg",
+   "kind": "category",
+   "emoji": "🔌",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "catalog/categories/may-tinh-bang.jpg",
+   "kind": "category",
+   "emoji": "📲",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-thong-minh-galaxy-x10/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "🔋",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-thong-minh-galaxy-x10/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "🔋",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-thong-minh-note-pro-5g/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "✏️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-thong-minh-note-pro-5g/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "✏️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-pho-thong-smart-lite/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "⚡",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-pho-thong-smart-lite/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "⚡",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/op-lung-silicon-chong-soc/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "🛡️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/op-lung-silicon-chong-soc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "🛡️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/cap-sac-nhanh-type-c-20w/a.jpg",
+   "kind": "product",
+   "emoji": "🔌",
+   "emoji2": "⚡",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/cap-sac-nhanh-type-c-20w/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔌",
+   "emoji2": "⚡",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-bluetooth-khong-day/a.jpg",
+   "kind": "product",
+   "emoji": "🎧",
+   "emoji2": "🎵",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-bluetooth-khong-day/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎧",
+   "emoji2": "🎵",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-aurora-a7-pro/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "📸",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-aurora-a7-pro/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "📸",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-zenith-z-lite/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "💰",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-zenith-z-lite/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "💰",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-gap-vertex-flip/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-gap-vertex-flip/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-lumio-tab-10/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "✏️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-lumio-tab-10/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "✏️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/sac-du-phong-nimbus-20000mah/a.jpg",
+   "kind": "product",
+   "emoji": "🔋",
+   "emoji2": "⚡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/sac-du-phong-nimbus-20000mah/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔋",
+   "emoji2": "⚡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-pixelon-p40-max/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "📸",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-pixelon-p40-max/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "📸",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-lumio-l8-plus/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "🎮",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-lumio-l8-plus/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "🎮",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-orbit-ultra/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "💪",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-orbit-ultra/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "💪",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-nimbus-n9-lite/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "💰",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/dien-thoai-nimbus-n9-lite/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "💰",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/mieng-dan-kinh-cuong-luc-9h/a.jpg",
+   "kind": "product",
+   "emoji": "🔒",
+   "emoji2": "💎",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/mieng-dan-kinh-cuong-luc-9h/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔒",
+   "emoji2": "💎",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/gia-do-dien-thoai-nam-tham/a.jpg",
+   "kind": "product",
+   "emoji": "🧲",
+   "emoji2": "🚗",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/gia-do-dien-thoai-nam-tham/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧲",
+   "emoji2": "🚗",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/bo-day-sac-3-trong-1-nylon/a.jpg",
+   "kind": "product",
+   "emoji": "🔌",
+   "emoji2": "🔀",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/bo-day-sac-3-trong-1-nylon/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔌",
+   "emoji2": "🔀",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/tui-chong-nuoc-dien-thoai/a.jpg",
+   "kind": "product",
+   "emoji": "💧",
+   "emoji2": "🏊",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/tui-chong-nuoc-dien-thoai/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💧",
+   "emoji2": "🏊",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dan-lung-dien-thoai-carbon/a.jpg",
+   "kind": "product",
+   "emoji": "🛡️",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dan-lung-dien-thoai-carbon/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛡️",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-zenith-z-pad-lite-7/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "🎓",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-zenith-z-pad-lite-7/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "🎓",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-smartlife-tab-s-8-4/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "💼",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-smartlife-tab-s-8-4/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "💼",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-pixelon-p-pad-pro-11/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "✏️",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-pixelon-p-pad-pro-11/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "✏️",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-orbit-tab-flex-10-5/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "📺",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-orbit-tab-flex-10-5/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "📺",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-nimbus-nt-12-9/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "📺",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-nimbus-nt-12-9/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "📺",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-vertex-v-tab-max-13/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-vertex-v-tab-max-13/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-lumio-l-pad-lite-8-8/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "💰",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-lumio-l-pad-lite-8-8/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "💰",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-galaxy-gt-pad-11-5/a.jpg",
+   "kind": "product",
+   "emoji": "📲",
+   "emoji2": "💼",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/may-tinh-bang-galaxy-gt-pad-11-5/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📲",
+   "emoji2": "💼",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "catalog/categories/may-tinh-thiet-bi-dien-tu.jpg",
+   "kind": "category",
+   "emoji": "💻",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "catalog/collections/may-tinh-thiet-bi-dien-tu.jpg",
+   "kind": "collection",
+   "emoji": "💻",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Máy tính & Thiết bị điện tử"
+  },
+  {
+   "out": "catalog/categories/laptop.jpg",
+   "kind": "category",
+   "emoji": "💻",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "catalog/categories/chuot-ban-phim.jpg",
+   "kind": "category",
+   "emoji": "⌨️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "catalog/categories/tai-nghe-loa.jpg",
+   "kind": "category",
+   "emoji": "🎧",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "catalog/categories/man-hinh-linh-kien.jpg",
+   "kind": "category",
+   "emoji": "🖥️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/laptop-probook-elite-13/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "⚡",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/laptop-probook-elite-13/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "⚡",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/laptop-cloudmax-pro-15/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "🎮",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/laptop-cloudmax-pro-15/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "🎮",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/laptop-techvision-standard-14/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "📚",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/laptop-techvision-standard-14/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "📚",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/laptop-dualcore-ryzen-pro-16/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "🔧",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/laptop-dualcore-ryzen-pro-16/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "🔧",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/laptop-elitewire-compact-11/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "💼",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/laptop-elitewire-compact-11/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "💼",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/laptop-powerlink-apple-m2-13/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/laptop-powerlink-apple-m2-13/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/laptop-techmaster-ryzen-budget-15/a.jpg",
+   "kind": "product",
+   "emoji": "💻",
+   "emoji2": "💰",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/laptop-techmaster-ryzen-budget-15/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💻",
+   "emoji2": "💰",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/chuot-gaming-elitekey-dpi-16000/a.jpg",
+   "kind": "product",
+   "emoji": "🖱️",
+   "emoji2": "⚡",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/chuot-gaming-elitekey-dpi-16000/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖱️",
+   "emoji2": "⚡",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/chuot-khong-day-techvision-2-4ghz/a.jpg",
+   "kind": "product",
+   "emoji": "🖱️",
+   "emoji2": "🔋",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/chuot-khong-day-techvision-2-4ghz/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖱️",
+   "emoji2": "🔋",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/ban-phim-co-elitekey-rgb/a.jpg",
+   "kind": "product",
+   "emoji": "⌨️",
+   "emoji2": "🎮",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/ban-phim-co-elitekey-rgb/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌨️",
+   "emoji2": "🎮",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/ban-phim-office-powerlink-im-sac/a.jpg",
+   "kind": "product",
+   "emoji": "⌨️",
+   "emoji2": "💼",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ban-phim-office-powerlink-im-sac/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌨️",
+   "emoji2": "💼",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/bo-chuot-ban-phim-probook-combo/a.jpg",
+   "kind": "product",
+   "emoji": "⌨️",
+   "emoji2": "🖱️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/bo-chuot-ban-phim-probook-combo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌨️",
+   "emoji2": "🖱️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/chuot-trackball-dualcore-ergonomic/a.jpg",
+   "kind": "product",
+   "emoji": "🖱️",
+   "emoji2": "👋",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/chuot-trackball-dualcore-ergonomic/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖱️",
+   "emoji2": "👋",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/ban-phim-gaming-techmster-linear/a.jpg",
+   "kind": "product",
+   "emoji": "⌨️",
+   "emoji2": "⚡",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/ban-phim-gaming-techmster-linear/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌨️",
+   "emoji2": "⚡",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-gaming-soundwave-7-1/a.jpg",
+   "kind": "product",
+   "emoji": "🎧",
+   "emoji2": "🎮",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-gaming-soundwave-7-1/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎧",
+   "emoji2": "🎮",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-bluetooth-visionpro-anh/a.jpg",
+   "kind": "product",
+   "emoji": "🎧",
+   "emoji2": "🔊",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-bluetooth-visionpro-anh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎧",
+   "emoji2": "🔊",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-tron-ba-khong-day-cloudmax/a.jpg",
+   "kind": "product",
+   "emoji": "🎧",
+   "emoji2": "👂",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-tron-ba-khong-day-cloudmax/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎧",
+   "emoji2": "👂",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-gaming-co-day-elitewire/a.jpg",
+   "kind": "product",
+   "emoji": "🎧",
+   "emoji2": "🎤",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-gaming-co-day-elitewire/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎧",
+   "emoji2": "🎤",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/loa-tivi-techvision-2-1/a.jpg",
+   "kind": "product",
+   "emoji": "🔊",
+   "emoji2": "📺",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/loa-tivi-techvision-2-1/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔊",
+   "emoji2": "📺",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/loa-xach-tay-powerlink-portable/a.jpg",
+   "kind": "product",
+   "emoji": "🔊",
+   "emoji2": "💧",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/loa-xach-tay-powerlink-portable/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔊",
+   "emoji2": "💧",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-khong-day-dualcore-true-wireless/a.jpg",
+   "kind": "product",
+   "emoji": "🎧",
+   "emoji2": "📱",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tai-nghe-khong-day-dualcore-true-wireless/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎧",
+   "emoji2": "📱",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/man-hinh-gaming-144hz-cloudmax-27/a.jpg",
+   "kind": "product",
+   "emoji": "🖥️",
+   "emoji2": "🎮",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/man-hinh-gaming-144hz-cloudmax-27/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖥️",
+   "emoji2": "🎮",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/man-hinh-2k-ips-probook-24/a.jpg",
+   "kind": "product",
+   "emoji": "🖥️",
+   "emoji2": "🎨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/man-hinh-2k-ips-probook-24/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖥️",
+   "emoji2": "🎨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/man-hinh-4k-va-visionpro-32/a.jpg",
+   "kind": "product",
+   "emoji": "🖥️",
+   "emoji2": "📹",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/man-hinh-4k-va-visionpro-32/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖥️",
+   "emoji2": "📹",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/man-hinh-ultrawide-dell-49/a.jpg",
+   "kind": "product",
+   "emoji": "🖥️",
+   "emoji2": "🏢",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/man-hinh-ultrawide-dell-49/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖥️",
+   "emoji2": "🏢",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/o-ssd-nvme-powerlink-1tb/a.jpg",
+   "kind": "product",
+   "emoji": "💾",
+   "emoji2": "⚡",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/o-ssd-nvme-powerlink-1tb/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💾",
+   "emoji2": "⚡",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/ram-ddr4-dualcore-32gb/a.jpg",
+   "kind": "product",
+   "emoji": "💾",
+   "emoji2": "🔧",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/ram-ddr4-dualcore-32gb/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💾",
+   "emoji2": "🔧",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/man-hinh-oled-gaming-techvision-28/a.jpg",
+   "kind": "product",
+   "emoji": "🖥️",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/man-hinh-oled-gaming-techvision-28/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖥️",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "catalog/categories/nha-cua-doi-song.jpg",
+   "kind": "category",
+   "emoji": "🏠",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "catalog/collections/nha-cua-doi-song.jpg",
+   "kind": "collection",
+   "emoji": "🏠",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ],
+   "label": "Nhà cửa & Đời sống"
+  },
+  {
+   "out": "catalog/categories/do-dung-nha-bep.jpg",
+   "kind": "category",
+   "emoji": "🍳",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "catalog/categories/noi-that.jpg",
+   "kind": "category",
+   "emoji": "🪑",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "catalog/categories/do-dien-gia-dung.jpg",
+   "kind": "category",
+   "emoji": "⚡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "catalog/categories/trang-tri-nha-cua.jpg",
+   "kind": "category",
+   "emoji": "🖼️",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "catalog/categories/chan-ga-goi-nem.jpg",
+   "kind": "category",
+   "emoji": "🛏️",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/noi-chien-khong-dau-5l/a.jpg",
+   "kind": "product",
+   "emoji": "🍟",
+   "emoji2": "🔥",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/noi-chien-khong-dau-5l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍟",
+   "emoji2": "🔥",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/bo-dao-inox-6-mon/a.jpg",
+   "kind": "product",
+   "emoji": "🔪",
+   "emoji2": "🍽️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/bo-dao-inox-6-mon/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔪",
+   "emoji2": "🍽️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/binh-giu-nhiet-500ml/a.jpg",
+   "kind": "product",
+   "emoji": "🧋",
+   "emoji2": "❄️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/binh-giu-nhiet-500ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧋",
+   "emoji2": "❄️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/ban-lam-viec-go-cong-nghiep/a.jpg",
+   "kind": "product",
+   "emoji": "🪑",
+   "emoji2": "💻",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/ban-lam-viec-go-cong-nghiep/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪑",
+   "emoji2": "💻",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/ghe-van-phong-luoi-thoang-khi/a.jpg",
+   "kind": "product",
+   "emoji": "💺",
+   "emoji2": "🖥️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ghe-van-phong-luoi-thoang-khi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💺",
+   "emoji2": "🖥️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/noi-ap-suat-inox-7l/a.jpg",
+   "kind": "product",
+   "emoji": "🍲",
+   "emoji2": "⏱️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/noi-ap-suat-inox-7l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍲",
+   "emoji2": "⏱️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/bo-pho-va-bua-con-18-mon/a.jpg",
+   "kind": "product",
+   "emoji": "🍴",
+   "emoji2": "👨‍🍳",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/bo-pho-va-bua-con-18-mon/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍴",
+   "emoji2": "👨‍🍳",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/may-xay-sinh-to-2-in-1/a.jpg",
+   "kind": "product",
+   "emoji": "🥤",
+   "emoji2": "⚡",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/may-xay-sinh-to-2-in-1/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🥤",
+   "emoji2": "⚡",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/van-dung-thuc-pham-3-mat-500ml/a.jpg",
+   "kind": "product",
+   "emoji": "🥄",
+   "emoji2": "🍜",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/van-dung-thuc-pham-3-mat-500ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🥄",
+   "emoji2": "🍜",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/may-hut-bui-robot-2000pa/a.jpg",
+   "kind": "product",
+   "emoji": "🤖",
+   "emoji2": "🧹",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/may-hut-bui-robot-2000pa/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🤖",
+   "emoji2": "🧹",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/be-tu-dien-600w-3-bac/a.jpg",
+   "kind": "product",
+   "emoji": "🔥",
+   "emoji2": "⚡",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/be-tu-dien-600w-3-bac/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔥",
+   "emoji2": "⚡",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/tui-nuoc-nong-dien-2l/a.jpg",
+   "kind": "product",
+   "emoji": "💧",
+   "emoji2": "🔥",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/tui-nuoc-nong-dien-2l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💧",
+   "emoji2": "🔥",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/lo-nuong-dien-10l-tich-hop/a.jpg",
+   "kind": "product",
+   "emoji": "🍗",
+   "emoji2": "🔥",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/lo-nuong-dien-10l-tich-hop/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍗",
+   "emoji2": "🔥",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/may-say-toc-ion-1800w/a.jpg",
+   "kind": "product",
+   "emoji": "💨",
+   "emoji2": "💇",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/may-say-toc-ion-1800w/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💨",
+   "emoji2": "💇",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tranh-khung-go-thiet-ke-truu-tuong/a.jpg",
+   "kind": "product",
+   "emoji": "🖼️",
+   "emoji2": "🎨",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/tranh-khung-go-thiet-ke-truu-tuong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖼️",
+   "emoji2": "🎨",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/guong-treo-tuong-tron-50cm/a.jpg",
+   "kind": "product",
+   "emoji": "🪞",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/guong-treo-tuong-tron-50cm/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪞",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tham-trang-tri-60x90cm-hoa-tiet/a.jpg",
+   "kind": "product",
+   "emoji": "🏠",
+   "emoji2": "🧵",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/tham-trang-tri-60x90cm-hoa-tiet/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏠",
+   "emoji2": "🧵",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/den-treo-dan-trang-tri-toi-gian/a.jpg",
+   "kind": "product",
+   "emoji": "💡",
+   "emoji2": "🔌",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/den-treo-dan-trang-tri-toi-gian/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💡",
+   "emoji2": "🔌",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/canh-cua-rem-toi-trang-200x100cm/a.jpg",
+   "kind": "product",
+   "emoji": "🪟",
+   "emoji2": "🌙",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/canh-cua-rem-toi-trang-200x100cm/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪟",
+   "emoji2": "🌙",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/cay-trang-tri-nhan-tao-phu-hop-chan-dung/a.jpg",
+   "kind": "product",
+   "emoji": "🌿",
+   "emoji2": "🏠",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/cay-trang-tri-nhan-tao-phu-hop-chan-dung/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌿",
+   "emoji2": "🏠",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/ke-treo-tuong-go-tre-3-tang/a.jpg",
+   "kind": "product",
+   "emoji": "📚",
+   "emoji2": "🪴",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/ke-treo-tuong-go-tre-3-tang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📚",
+   "emoji2": "🪴",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/ban-tra-sofa-go-son-trang-60x40cm/a.jpg",
+   "kind": "product",
+   "emoji": "🛋️",
+   "emoji2": "☕",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/ban-tra-sofa-go-son-trang-60x40cm/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛋️",
+   "emoji2": "☕",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/bo-chan-ga-goi-cotton-100-4-mon/a.jpg",
+   "kind": "product",
+   "emoji": "🛏️",
+   "emoji2": "🤍",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/bo-chan-ga-goi-cotton-100-4-mon/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛏️",
+   "emoji2": "🤍",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/goi-om-lung-silicone-40x60cm/a.jpg",
+   "kind": "product",
+   "emoji": "🫀",
+   "emoji2": "💤",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/goi-om-lung-silicone-40x60cm/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🫀",
+   "emoji2": "💤",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/vo-goi-cotton-nuoc-ngoai-2-chiec/a.jpg",
+   "kind": "product",
+   "emoji": "🛏️",
+   "emoji2": "⭐",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/vo-goi-cotton-nuoc-ngoai-2-chiec/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛏️",
+   "emoji2": "⭐",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/nem-foam-9cm-chong-chen-chiu-tai-cao/a.jpg",
+   "kind": "product",
+   "emoji": "😴",
+   "emoji2": "🛏️",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/nem-foam-9cm-chong-chen-chiu-tai-cao/b.jpg",
+   "kind": "product-hover",
+   "emoji": "😴",
+   "emoji2": "🛏️",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/tham-trai-giuong-microfiber-200x200cm/a.jpg",
+   "kind": "product",
+   "emoji": "🛏️",
+   "emoji2": "☁️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tham-trai-giuong-microfiber-200x200cm/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛏️",
+   "emoji2": "☁️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/goi-gao-thieu-nhat-toan-trai/a.jpg",
+   "kind": "product",
+   "emoji": "❄️",
+   "emoji2": "💤",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/goi-gao-thieu-nhat-toan-trai/b.jpg",
+   "kind": "product-hover",
+   "emoji": "❄️",
+   "emoji2": "💤",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/chieu-tre-trai-giuong-he-100-tu-nhien/a.jpg",
+   "kind": "product",
+   "emoji": "🌾",
+   "emoji2": "☀️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/chieu-tre-trai-giuong-he-100-tu-nhien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌾",
+   "emoji2": "☀️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "catalog/categories/sac-dep-suc-khoe.jpg",
+   "kind": "category",
+   "emoji": "💄",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/collections/sac-dep-suc-khoe.jpg",
+   "kind": "collection",
+   "emoji": "💄",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ],
+   "label": "Sắc đẹp & Sức khoẻ"
+  },
+  {
+   "out": "catalog/categories/cham-soc-da.jpg",
+   "kind": "category",
+   "emoji": "🧴",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "catalog/categories/trang-diem.jpg",
+   "kind": "category",
+   "emoji": "💄",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/categories/cham-soc-toc.jpg",
+   "kind": "category",
+   "emoji": "🪮",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "catalog/categories/nuoc-hoa.jpg",
+   "kind": "category",
+   "emoji": "💐",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "catalog/categories/thuc-pham-chuc-nang.jpg",
+   "kind": "category",
+   "emoji": "💊",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/sua-rua-mat-tra-xanh/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "🍃",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/sua-rua-mat-tra-xanh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "🍃",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/kem-duong-am-ban-dem/a.jpg",
+   "kind": "product",
+   "emoji": "🫙",
+   "emoji2": "🌙",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/kem-duong-am-ban-dem/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🫙",
+   "emoji2": "🌙",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-hong-can-bang-da/a.jpg",
+   "kind": "product",
+   "emoji": "💧",
+   "emoji2": "🌸",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-hong-can-bang-da/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💧",
+   "emoji2": "🌸",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/son-li-lau-troi/a.jpg",
+   "kind": "product",
+   "emoji": "💄",
+   "emoji2": "💋",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/son-li-lau-troi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💄",
+   "emoji2": "💋",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/phan-phu-kiem-dau/a.jpg",
+   "kind": "product",
+   "emoji": "🪞",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/phan-phu-kiem-dau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪞",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/serum-vitamin-c-nam-lam-sang-da/a.jpg",
+   "kind": "product",
+   "emoji": "✨",
+   "emoji2": "🧴",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/serum-vitamin-c-nam-lam-sang-da/b.jpg",
+   "kind": "product-hover",
+   "emoji": "✨",
+   "emoji2": "🧴",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/mat-na-gao-suon-trang-sang-da/a.jpg",
+   "kind": "product",
+   "emoji": "🎭",
+   "emoji2": "🍚",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/mat-na-gao-suon-trang-sang-da/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎭",
+   "emoji2": "🍚",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/kem-chong-nang-spf-50-day-du-uv/a.jpg",
+   "kind": "product",
+   "emoji": "☀️",
+   "emoji2": "🧴",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/kem-chong-nang-spf-50-day-du-uv/b.jpg",
+   "kind": "product-hover",
+   "emoji": "☀️",
+   "emoji2": "🧴",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/nuoc-nen-cushion-che-phuc-khong-lo/a.jpg",
+   "kind": "product",
+   "emoji": "💠",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/nuoc-nen-cushion-che-phuc-khong-lo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💠",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/mascara-may-dai-day-dam-den/a.jpg",
+   "kind": "product",
+   "emoji": "👁️",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/mascara-may-dai-day-dam-den/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👁️",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/chi-ke-mat-huong-dan-dao-4d/a.jpg",
+   "kind": "product",
+   "emoji": "🫒",
+   "emoji2": "👁️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/chi-ke-mat-huong-dan-dao-4d/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🫒",
+   "emoji2": "👁️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dau-goi-chon-dau-tranh-gau/a.jpg",
+   "kind": "product",
+   "emoji": "🪴",
+   "emoji2": "💧",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dau-goi-chon-dau-tranh-gau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪴",
+   "emoji2": "💧",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dau-xa-duong-am-cho-toc-kho-xo/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "💆",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/dau-xa-duong-am-cho-toc-kho-xo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "💆",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/serum-toc-tam-huyen-dai-khoe-bong/a.jpg",
+   "kind": "product",
+   "emoji": "✨",
+   "emoji2": "💆",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/serum-toc-tam-huyen-dai-khoe-bong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "✨",
+   "emoji2": "💆",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/mat-na-toc-collagen-phuc-hoi-sau/a.jpg",
+   "kind": "product",
+   "emoji": "🎭",
+   "emoji2": "💆",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/mat-na-toc-collagen-phuc-hoi-sau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎭",
+   "emoji2": "💆",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/keo-tao-kieu-toc-mat-giu-cuon-20h/a.jpg",
+   "kind": "product",
+   "emoji": "💆",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/keo-tao-kieu-toc-mat-giu-cuon-20h/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💆",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tonic-kich-thich-moc-toc-dat-toc/a.jpg",
+   "kind": "product",
+   "emoji": "💪",
+   "emoji2": "💆",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tonic-kich-thich-moc-toc-dat-toc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💪",
+   "emoji2": "💆",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/xi-muoi-va-bun-tao-phong-cach-moi/a.jpg",
+   "kind": "product",
+   "emoji": "🌊",
+   "emoji2": "🏖️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/xi-muoi-va-bun-tao-phong-cach-moi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌊",
+   "emoji2": "🏖️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-nu-rose-enchant-100ml/a.jpg",
+   "kind": "product",
+   "emoji": "🌹",
+   "emoji2": "💐",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-nu-rose-enchant-100ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌹",
+   "emoji2": "💐",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-nam-ocean-vigor-100ml/a.jpg",
+   "kind": "product",
+   "emoji": "🌊",
+   "emoji2": "🧴",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-nam-ocean-vigor-100ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌊",
+   "emoji2": "🧴",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-unisex-citrus-breeze-75ml/a.jpg",
+   "kind": "product",
+   "emoji": "🍊",
+   "emoji2": "💨",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-unisex-citrus-breeze-75ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍊",
+   "emoji2": "💨",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-cam-nhat-vanilla-dream-50ml/a.jpg",
+   "kind": "product",
+   "emoji": "🍦",
+   "emoji2": "✨",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-cam-nhat-vanilla-dream-50ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍦",
+   "emoji2": "✨",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/xong-phun-khong-khi-floral-musk-150ml/a.jpg",
+   "kind": "product",
+   "emoji": "💨",
+   "emoji2": "🌸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/xong-phun-khong-khi-floral-musk-150ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💨",
+   "emoji2": "🌸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-om-tram-chuyen-biet-10ml/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "✨",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/nuoc-hoa-om-tram-chuyen-biet-10ml/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "✨",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/set-nuoc-hoa-mini-5-chai-travel/a.jpg",
+   "kind": "product",
+   "emoji": "✈️",
+   "emoji2": "💐",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/set-nuoc-hoa-mini-5-chai-travel/b.jpg",
+   "kind": "product-hover",
+   "emoji": "✈️",
+   "emoji2": "💐",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/vitamin-c-chong-oxy-hoa-hop-chung-30-vien/a.jpg",
+   "kind": "product",
+   "emoji": "💊",
+   "emoji2": "✨",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/vitamin-c-chong-oxy-hoa-hop-chung-30-vien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💊",
+   "emoji2": "✨",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/collagen-uong-hop-chung-30-goi/a.jpg",
+   "kind": "product",
+   "emoji": "💧",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/collagen-uong-hop-chung-30-goi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💧",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/probiotics-san-khoa-da-me-90-vien/a.jpg",
+   "kind": "product",
+   "emoji": "🦠",
+   "emoji2": "👩‍👧",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/probiotics-san-khoa-da-me-90-vien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🦠",
+   "emoji2": "👩‍👧",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/sat-suy-mo-nu-anh-tron-60-vien/a.jpg",
+   "kind": "product",
+   "emoji": "⭐",
+   "emoji2": "💪",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sat-suy-mo-nu-anh-tron-60-vien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⭐",
+   "emoji2": "💪",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/ginseng-tram-nam-hop-chung-30-vien/a.jpg",
+   "kind": "product",
+   "emoji": "💪",
+   "emoji2": "🌿",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/ginseng-tram-nam-hop-chung-30-vien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💪",
+   "emoji2": "🌿",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/omega-3-ca-trich-1000mg-60-vien/a.jpg",
+   "kind": "product",
+   "emoji": "🐟",
+   "emoji2": "❤️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/omega-3-ca-trich-1000mg-60-vien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐟",
+   "emoji2": "❤️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "catalog/categories/giay-dep-tui-xach.jpg",
+   "kind": "category",
+   "emoji": "👟",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "catalog/collections/giay-dep-tui-xach.jpg",
+   "kind": "collection",
+   "emoji": "👟",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ],
+   "label": "Giày dép & Túi xách"
+  },
+  {
+   "out": "catalog/categories/giay-the-thao.jpg",
+   "kind": "category",
+   "emoji": "👟",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "catalog/categories/sandal-dep.jpg",
+   "kind": "category",
+   "emoji": "🩴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "catalog/categories/tui-xach.jpg",
+   "kind": "category",
+   "emoji": "👜",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "catalog/categories/balo-vali.jpg",
+   "kind": "category",
+   "emoji": "🎒",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/giay-the-thao-solestride-runner/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "⚡",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/giay-the-thao-solestride-runner/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "⚡",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/giay-sneaker-veloce-classic/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/giay-sneaker-veloce-classic/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/giay-cloudfoot-pro-comfort/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "☁️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/giay-cloudfoot-pro-comfort/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "☁️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/giay-tap-gym-speedmark/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "🏋️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/giay-tap-gym-speedmark/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "🏋️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/giay-chay-tren-dia-form-stride/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "🏔️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/giay-chay-tren-dia-form-stride/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "🏔️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/giay-apex-basketball/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "🏀",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/giay-apex-basketball/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "🏀",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/giay-nova-steps-walking/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "🚶",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/giay-nova-steps-walking/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "🚶",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/giay-kickzone-futsal/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "⚽",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/giay-kickzone-futsal/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "⚽",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/giay-cloudfoot-air-max/a.jpg",
+   "kind": "product",
+   "emoji": "👟",
+   "emoji2": "💨",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/giay-cloudfoot-air-max/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👟",
+   "emoji2": "💨",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/sandal-da-nam-veloce/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "👨",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/sandal-da-nam-veloce/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "👨",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/dep-quai-ngang-cloudfoot/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "💧",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/dep-quai-ngang-cloudfoot/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "💧",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sandal-nu-speedmark-fashion/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "👠",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sandal-nu-speedmark-fashion/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "👠",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dep-the-thao-apex-unisex/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "🏃",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dep-the-thao-apex-unisex/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "🏃",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/sandal-da-nu-sieu-mem/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "🧘",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/sandal-da-nu-sieu-mem/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "🧘",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/dep-quai-cheo-kickzone/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/dep-quai-cheo-kickzone/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/dep-tre-con-nova-steps/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "👶",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dep-tre-con-nova-steps/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "👶",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sandal-theo-da-bit-got/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "🏔️",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/sandal-theo-da-bit-got/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "🏔️",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dep-nhem-orthopedic-cloudfoot/a.jpg",
+   "kind": "product",
+   "emoji": "🩴",
+   "emoji2": "⚕️",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dep-nhem-orthopedic-cloudfoot/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🩴",
+   "emoji2": "⚕️",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tui-xach-tote-luminos/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "🛍️",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/tui-xach-tote-luminos/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "🛍️",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/tui-xach-da-pu-carryclass/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "✨",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/tui-xach-da-pu-carryclass/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "✨",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/tui-deo-cheo-nu-bagtica/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "💕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tui-deo-cheo-nu-bagtica/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "💕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tui-clutch-nho-gon-urbantote/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tui-clutch-nho-gon-urbantote/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "✨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tui-xach-hop-cao-luxepacks/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "👑",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tui-xach-hop-cao-luxepacks/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "👑",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tui-xach-tron-voyage-joy/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "🎯",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/tui-xach-tron-voyage-joy/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "🎯",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/tui-satchel-vai-satchel-pro/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "📚",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/tui-satchel-vai-satchel-pro/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "📚",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/tui-hobo-casual-luminos/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "😎",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/tui-hobo-casual-luminos/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "😎",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/tui-khan-lam-thop-carryclass/a.jpg",
+   "kind": "product",
+   "emoji": "👜",
+   "emoji2": "♻️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tui-khan-lam-thop-carryclass/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👜",
+   "emoji2": "♻️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/balo-hoc-tap-18l-urbantote/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "📚",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/balo-hoc-tap-18l-urbantote/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "📚",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/balo-du-lich-40l-luxepacks/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "✈️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/balo-du-lich-40l-luxepacks/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "✈️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/vali-keo-20-inch-voyagejoy/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🧳",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/vali-keo-20-inch-voyagejoy/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🧳",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/balo-chong-trom-smarttech/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🔐",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/balo-chong-trom-smarttech/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🔐",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/vali-24-inch-carryclass-premium/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🌍",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/vali-24-inch-carryclass-premium/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🌍",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/balo-gym-nam-satchel-pro/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🏋️",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/balo-gym-nam-satchel-pro/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🏋️",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/balo-vali-nhap-khau-luminos/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "✨",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/balo-vali-nhap-khau-luminos/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "✨",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/vali-28-inch-voyagejoy-deluxe/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "📦",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/vali-28-inch-voyagejoy-deluxe/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "📦",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/balo-leo-nui-daypack-luxepacks/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🏔️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/balo-leo-nui-daypack-luxepacks/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🏔️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "catalog/categories/dong-ho-phu-kien.jpg",
+   "kind": "category",
+   "emoji": "⌚",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "catalog/collections/dong-ho-phu-kien.jpg",
+   "kind": "collection",
+   "emoji": "⌚",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ],
+   "label": "Đồng hồ & Phụ kiện"
+  },
+  {
+   "out": "catalog/categories/dong-ho-nam.jpg",
+   "kind": "category",
+   "emoji": "⌚",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "catalog/categories/dong-ho-nu.jpg",
+   "kind": "category",
+   "emoji": "⌚",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/categories/kinh-mat.jpg",
+   "kind": "category",
+   "emoji": "🕶️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "catalog/categories/trang-suc.jpg",
+   "kind": "category",
+   "emoji": "💍",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-timeforge-sport/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "⚡",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-timeforge-sport/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "⚡",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-chrono-classic/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "✨",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-chrono-classic/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "✨",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-luxtime-business/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "💼",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-luxtime-business/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "💼",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-meridian-adventure/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "🏔️",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-meridian-adventure/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "🏔️",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-epoch-minimal/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "⏰",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-epoch-minimal/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "⏰",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-chronogem-luxury/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "👑",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-chronogem-luxury/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "👑",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-timeforge-diver/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "🤿",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-timeforge-diver/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "🤿",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-meridian-vintage/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "📜",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nam-meridian-vintage/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "📜",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-luxtime-diamond/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-luxtime-diamond/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-chrono-elegant/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "🌸",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-chrono-elegant/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "🌸",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-epoch-minimalist/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "⏰",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-epoch-minimalist/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "⏰",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-meridian-rose-gold/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "👑",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-meridian-rose-gold/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "👑",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-chronogem-fashion/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "💕",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-chronogem-fashion/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "💕",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-luxtime-sporty/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "🏃",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-luxtime-sporty/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "🏃",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-epoch-pearl/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "🌙",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-epoch-pearl/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "🌙",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-chronogem-romantic/a.jpg",
+   "kind": "product",
+   "emoji": "⌚",
+   "emoji2": "💗",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/dong-ho-nu-chronogem-romantic/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⌚",
+   "emoji2": "💗",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-viewglass-pilot/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "✈️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-viewglass-pilot/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "✈️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-luxvision-cat-eye/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "😸",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-luxvision-cat-eye/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "😸",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-shade-elite-wayfarer/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "🌞",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-shade-elite-wayfarer/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "🌞",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-polarshade-round/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "🎸",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-polarshade-round/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "🎸",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-shade-sport-performance/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "🏃",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-shade-sport-performance/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "🏃",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-luxvision-oval/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "👁️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-luxvision-oval/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "👁️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-viewglass-oversized/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "⭐",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-viewglass-oversized/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "⭐",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-polarshade-blue-light/a.jpg",
+   "kind": "product",
+   "emoji": "🕶️",
+   "emoji2": "💻",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/kinh-mat-polarshade-blue-light/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🕶️",
+   "emoji2": "💻",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/nhan-bac-silvergem-diamond/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/nhan-bac-silvergem-diamond/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/day-chuyen-bac-artisan-craft/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "🔗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/day-chuyen-bac-artisan-craft/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "🔗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/vong-tay-bac-luna-shine/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "🌙",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/vong-tay-bac-luna-shine/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "🌙",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/nhan-do-i-aurora-gems/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "💕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/nhan-do-i-aurora-gems/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "💕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tui-khuy-tai-bac-silvergem/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tui-khuy-tai-bac-silvergem/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/vong-tay-charm-artisan-craft/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "💫",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/vong-tay-charm-artisan-craft/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "💫",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/dau-khoa-tay-luna-shine/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "🔐",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/dau-khoa-tay-luna-shine/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "🔐",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/nhan-theo-bac-aurora-gems-trend/a.jpg",
+   "kind": "product",
+   "emoji": "💍",
+   "emoji2": "💎",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/nhan-theo-bac-aurora-gems-trend/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💍",
+   "emoji2": "💎",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "catalog/categories/the-thao-da-ngoai.jpg",
+   "kind": "category",
+   "emoji": "⚽",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "catalog/collections/the-thao-da-ngoai.jpg",
+   "kind": "collection",
+   "emoji": "⚽",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ],
+   "label": "Thể thao & Dã ngoại"
+  },
+  {
+   "out": "catalog/categories/dung-cu-gym-yoga.jpg",
+   "kind": "category",
+   "emoji": "🧘",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "catalog/categories/xe-dap-phu-kien.jpg",
+   "kind": "category",
+   "emoji": "🚲",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "catalog/categories/do-da-ngoai-cam-trai.jpg",
+   "kind": "category",
+   "emoji": "⛺",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "catalog/categories/do-the-thao-ngoai-troi.jpg",
+   "kind": "category",
+   "emoji": "🏊",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/tham-yoga-premium-fitpro/a.jpg",
+   "kind": "product",
+   "emoji": "🧘",
+   "emoji2": "💜",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/tham-yoga-premium-fitpro/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧘",
+   "emoji2": "💜",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/tham-yoga-basic-yogavita/a.jpg",
+   "kind": "product",
+   "emoji": "🧘",
+   "emoji2": "🌸",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tham-yoga-basic-yogavita/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧘",
+   "emoji2": "🌸",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/bo-tam-dumbbell-fitpro-20kg/a.jpg",
+   "kind": "product",
+   "emoji": "🏋️",
+   "emoji2": "💪",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/bo-tam-dumbbell-fitpro-20kg/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏋️",
+   "emoji2": "💪",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/bo-tam-dumbbell-powerzone-15kg/a.jpg",
+   "kind": "product",
+   "emoji": "🏋️",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/bo-tam-dumbbell-powerzone-15kg/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏋️",
+   "emoji2": "✨",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/day-khan-luc-resistance-bands/a.jpg",
+   "kind": "product",
+   "emoji": "💪",
+   "emoji2": "🔴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/day-khan-luc-resistance-bands/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💪",
+   "emoji2": "🔴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/bao-cat-yoga-foam-block/a.jpg",
+   "kind": "product",
+   "emoji": "🧘",
+   "emoji2": "🟦",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/bao-cat-yoga-foam-block/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧘",
+   "emoji2": "🟦",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/xich-keo-pull-up-bar/a.jpg",
+   "kind": "product",
+   "emoji": "🏋️",
+   "emoji2": "⬆️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/xich-keo-pull-up-bar/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏋️",
+   "emoji2": "⬆️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ket-tam-tro-luu-5kg/a.jpg",
+   "kind": "product",
+   "emoji": "🏋️",
+   "emoji2": "⭕",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/ket-tam-tro-luu-5kg/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏋️",
+   "emoji2": "⭕",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/xe-dap-duong-cyclemax/a.jpg",
+   "kind": "product",
+   "emoji": "🚲",
+   "emoji2": "🛣️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/xe-dap-duong-cyclemax/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚲",
+   "emoji2": "🛣️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/xe-dap-dua-toc-do/a.jpg",
+   "kind": "product",
+   "emoji": "🚴",
+   "emoji2": "⚡",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/xe-dap-dua-toc-do/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚴",
+   "emoji2": "⚡",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/non-bao-hiem-cyclemax-full/a.jpg",
+   "kind": "product",
+   "emoji": "🚲",
+   "emoji2": "🛡️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/non-bao-hiem-cyclemax-full/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚲",
+   "emoji2": "🛡️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/non-bao-hiem-sportzen-half/a.jpg",
+   "kind": "product",
+   "emoji": "🚲",
+   "emoji2": "⭕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/non-bao-hiem-sportzen-half/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚲",
+   "emoji2": "⭕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/den-led-xe-dap-phia-truoc/a.jpg",
+   "kind": "product",
+   "emoji": "🔦",
+   "emoji2": "💡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/den-led-xe-dap-phia-truoc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔦",
+   "emoji2": "💡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/khoa-xe-dap-chinh-khong-can/a.jpg",
+   "kind": "product",
+   "emoji": "🔒",
+   "emoji2": "🚲",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/khoa-xe-dap-chinh-khong-can/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔒",
+   "emoji2": "🚲",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/tay-nan-xe-dap-ergonomic/a.jpg",
+   "kind": "product",
+   "emoji": "🚲",
+   "emoji2": "✋",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/tay-nan-xe-dap-ergonomic/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚲",
+   "emoji2": "✋",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/leu-cam-trai-campstar-2-nguoi/a.jpg",
+   "kind": "product",
+   "emoji": "⛺",
+   "emoji2": "🌲",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/leu-cam-trai-campstar-2-nguoi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛺",
+   "emoji2": "🌲",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/leu-cam-trai-naturegeaf-4-nguoi/a.jpg",
+   "kind": "product",
+   "emoji": "⛺",
+   "emoji2": "🛌",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/leu-cam-trai-naturegeaf-4-nguoi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛺",
+   "emoji2": "🛌",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/tui-ngu-mua-dong-campstar/a.jpg",
+   "kind": "product",
+   "emoji": "🛌",
+   "emoji2": "❄️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tui-ngu-mua-dong-campstar/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛌",
+   "emoji2": "❄️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tui-ngu-mua-he-vitaflex/a.jpg",
+   "kind": "product",
+   "emoji": "🛌",
+   "emoji2": "🌅",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/tui-ngu-mua-he-vitaflex/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛌",
+   "emoji2": "🌅",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/balo-du-lich-trailbound-50l/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🏔️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/balo-du-lich-trailbound-50l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🏔️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/chieu-cam-trai-eva-chong-nuoc/a.jpg",
+   "kind": "product",
+   "emoji": "🏕️",
+   "emoji2": "☀️",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/chieu-cam-trai-eva-chong-nuoc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏕️",
+   "emoji2": "☀️",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/den-long-led-nam-trai/a.jpg",
+   "kind": "product",
+   "emoji": "🔦",
+   "emoji2": "🌙",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/den-long-led-nam-trai/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔦",
+   "emoji2": "🌙",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/bong-da-premium-sportzen/a.jpg",
+   "kind": "product",
+   "emoji": "⚽",
+   "emoji2": "🏟️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/bong-da-premium-sportzen/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⚽",
+   "emoji2": "🏟️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/bong-ro-basketball-fitpro/a.jpg",
+   "kind": "product",
+   "emoji": "🏀",
+   "emoji2": "🏀",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/bong-ro-basketball-fitpro/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏀",
+   "emoji2": "🏀",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/vot-cau-long-carbom-lite/a.jpg",
+   "kind": "product",
+   "emoji": "🏸",
+   "emoji2": "⚡",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/vot-cau-long-carbom-lite/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏸",
+   "emoji2": "⚡",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/vot-tennis-aluminum-sportzen/a.jpg",
+   "kind": "product",
+   "emoji": "🎾",
+   "emoji2": "🏆",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/vot-tennis-aluminum-sportzen/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎾",
+   "emoji2": "🏆",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/kinh-boi-uv-naturgear/a.jpg",
+   "kind": "product",
+   "emoji": "🏊",
+   "emoji2": "💧",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/kinh-boi-uv-naturgear/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏊",
+   "emoji2": "💧",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/vay-boi-tam-one-piece-vitaflex/a.jpg",
+   "kind": "product",
+   "emoji": "👙",
+   "emoji2": "🏖️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/vay-boi-tam-one-piece-vitaflex/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👙",
+   "emoji2": "🏖️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/vay-shorts-the-thao-nam-goactive/a.jpg",
+   "kind": "product",
+   "emoji": "👖",
+   "emoji2": "🏃",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/vay-shorts-the-thao-nam-goactive/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👖",
+   "emoji2": "🏃",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ao-the-thao-nam-fitpro-dry/a.jpg",
+   "kind": "product",
+   "emoji": "👕",
+   "emoji2": "💨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ao-the-thao-nam-fitpro-dry/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👕",
+   "emoji2": "💨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "catalog/categories/me-be.jpg",
+   "kind": "category",
+   "emoji": "🧸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "catalog/collections/me-be.jpg",
+   "kind": "collection",
+   "emoji": "🧸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ],
+   "label": "Mẹ & Bé"
+  },
+  {
+   "out": "catalog/categories/sua-ta-be.jpg",
+   "kind": "category",
+   "emoji": "🍼",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/categories/do-choi-tre-em.jpg",
+   "kind": "category",
+   "emoji": "🎲",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "catalog/categories/xe-day-ghe-an-di-choi.jpg",
+   "kind": "category",
+   "emoji": "🚼",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "catalog/categories/quan-ao-so-sinh.jpg",
+   "kind": "category",
+   "emoji": "👶",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sua-bot-nutribaby-so-1-600g/a.jpg",
+   "kind": "product",
+   "emoji": "🍼",
+   "emoji2": "👶",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sua-bot-nutribaby-so-1-600g/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍼",
+   "emoji2": "👶",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sua-bot-nutribaby-so-2-600g/a.jpg",
+   "kind": "product",
+   "emoji": "🍼",
+   "emoji2": "📈",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sua-bot-nutribaby-so-2-600g/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍼",
+   "emoji2": "📈",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sua-bot-lovelit-so-3-800g/a.jpg",
+   "kind": "product",
+   "emoji": "🥛",
+   "emoji2": "✨",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sua-bot-lovelit-so-3-800g/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🥛",
+   "emoji2": "✨",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/ta-dieu-babypro-size-s-60-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "👶",
+   "emoji2": "💧",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ta-dieu-babypro-size-s-60-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👶",
+   "emoji2": "💧",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ta-dieu-babypro-size-m-50-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "👶",
+   "emoji2": "💜",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ta-dieu-babypro-size-m-50-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👶",
+   "emoji2": "💜",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ta-dieu-safebaby-size-l-40-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "👶",
+   "emoji2": "🟨",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ta-dieu-safebaby-size-l-40-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👶",
+   "emoji2": "🟨",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/lot-ta-bamboo-babypro-100-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "🍃",
+   "emoji2": "💚",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/lot-ta-bamboo-babypro-100-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍃",
+   "emoji2": "💚",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/gau-bong-cozy-baby-40cm/a.jpg",
+   "kind": "product",
+   "emoji": "🧸",
+   "emoji2": "🤎",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/gau-bong-cozy-baby-40cm/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧸",
+   "emoji2": "🤎",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/toa-hinh-khoi-bao-set-36-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "🧱",
+   "emoji2": "🎨",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/toa-hinh-khoi-bao-set-36-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧱",
+   "emoji2": "🎨",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/xe-dia-playskool-mini-4-chiec/a.jpg",
+   "kind": "product",
+   "emoji": "🚗",
+   "emoji2": "🏎️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/xe-dia-playskool-mini-4-chiec/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚗",
+   "emoji2": "🏎️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/xep-hinh-jigsaw-50-mieng-hinata/a.jpg",
+   "kind": "product",
+   "emoji": "🧩",
+   "emoji2": "🦁",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/xep-hinh-jigsaw-50-mieng-hinata/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧩",
+   "emoji2": "🦁",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/may-choi-nhac-bang-len/a.jpg",
+   "kind": "product",
+   "emoji": "🎹",
+   "emoji2": "🎵",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/may-choi-nhac-bang-len/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎹",
+   "emoji2": "🎵",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tro-chuot-rung-luon-little-zen/a.jpg",
+   "kind": "product",
+   "emoji": "🐷",
+   "emoji2": "🏃",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/tro-chuot-rung-luon-little-zen/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐷",
+   "emoji2": "🏃",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/xe-day-3-chiec-babygo-foldable/a.jpg",
+   "kind": "product",
+   "emoji": "🚼",
+   "emoji2": "👶",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/xe-day-3-chiec-babygo-foldable/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚼",
+   "emoji2": "👶",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/xe-day-babypro-3-banh-nhe/a.jpg",
+   "kind": "product",
+   "emoji": "🚼",
+   "emoji2": "💨",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/xe-day-babypro-3-banh-nhe/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚼",
+   "emoji2": "💨",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/ghe-an-babypro-cao-khong-dieu-chinh/a.jpg",
+   "kind": "product",
+   "emoji": "🪑",
+   "emoji2": "🥄",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ghe-an-babypro-cao-khong-dieu-chinh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪑",
+   "emoji2": "🥄",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/chiec-noi-di-choi-safebaby-portable/a.jpg",
+   "kind": "product",
+   "emoji": "🛏️",
+   "emoji2": "🏠",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/chiec-noi-di-choi-safebaby-portable/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛏️",
+   "emoji2": "🏠",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ghe-oto-babypro-isofix-0-18kg/a.jpg",
+   "kind": "product",
+   "emoji": "🚗",
+   "emoji2": "👶",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/ghe-oto-babypro-isofix-0-18kg/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚗",
+   "emoji2": "👶",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/body-ao-so-sinh-lovelit-5-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "👶",
+   "emoji2": "🤍",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/body-ao-so-sinh-lovelit-5-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👶",
+   "emoji2": "🤍",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/quan-tay-dai-so-sinh-babypro-3-canh/a.jpg",
+   "kind": "product",
+   "emoji": "👖",
+   "emoji2": "👶",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/quan-tay-dai-so-sinh-babypro-3-canh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👖",
+   "emoji2": "👶",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/ao-khoac-mua-bebecot-2-tui/a.jpg",
+   "kind": "product",
+   "emoji": "🧥",
+   "emoji2": "☔",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/ao-khoac-mua-bebecot-2-tui/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧥",
+   "emoji2": "☔",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/ao-ngu-tang-lon-babypro-cotton-mua-he/a.jpg",
+   "kind": "product",
+   "emoji": "🌙",
+   "emoji2": "😴",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/ao-ngu-tang-lon-babypro-cotton-mua-he/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌙",
+   "emoji2": "😴",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/tat-tre-em-safebaby-3-doi/a.jpg",
+   "kind": "product",
+   "emoji": "🧦",
+   "emoji2": "👶",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/tat-tre-em-safebaby-3-doi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧦",
+   "emoji2": "👶",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/set-quan-ao-cho-be-gai-lovelit-full-set/a.jpg",
+   "kind": "product",
+   "emoji": "👗",
+   "emoji2": "👧",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/set-quan-ao-cho-be-gai-lovelit-full-set/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👗",
+   "emoji2": "👧",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/set-quan-ao-cho-be-trai-smilecare-full/a.jpg",
+   "kind": "product",
+   "emoji": "👕",
+   "emoji2": "👦",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/set-quan-ao-cho-be-trai-smilecare-full/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👕",
+   "emoji2": "👦",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "catalog/categories/sach-van-phong-pham.jpg",
+   "kind": "category",
+   "emoji": "📚",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "catalog/collections/sach-van-phong-pham.jpg",
+   "kind": "collection",
+   "emoji": "📚",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ],
+   "label": "Sách & Văn phòng phẩm"
+  },
+  {
+   "out": "catalog/categories/sach-van-hoc-ky-nang.jpg",
+   "kind": "category",
+   "emoji": "📖",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "catalog/categories/sach-thieu-nhi.jpg",
+   "kind": "category",
+   "emoji": "📕",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/categories/van-phong-pham.jpg",
+   "kind": "category",
+   "emoji": "✏️",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "catalog/categories/dung-cu-hoc-tap.jpg",
+   "kind": "category",
+   "emoji": "📔",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-tinh-tu-chi-dung/a.jpg",
+   "kind": "product",
+   "emoji": "📖",
+   "emoji2": "💔",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/sach-tinh-tu-chi-dung/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📖",
+   "emoji2": "💔",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/sach-hanh-phuc-co-the-nen/a.jpg",
+   "kind": "product",
+   "emoji": "😊",
+   "emoji2": "📚",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sach-hanh-phuc-co-the-nen/b.jpg",
+   "kind": "product-hover",
+   "emoji": "😊",
+   "emoji2": "📚",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sach-doanh-nhan-thong-minh-don-gian/a.jpg",
+   "kind": "product",
+   "emoji": "💼",
+   "emoji2": "📊",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/sach-doanh-nhan-thong-minh-don-gian/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💼",
+   "emoji2": "📊",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/sach-ap-luc-kieu-xu-ly/a.jpg",
+   "kind": "product",
+   "emoji": "😤",
+   "emoji2": "🧠",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sach-ap-luc-kieu-xu-ly/b.jpg",
+   "kind": "product-hover",
+   "emoji": "😤",
+   "emoji2": "🧠",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sach-tieng-anh-giao-tiep-co-ban/a.jpg",
+   "kind": "product",
+   "emoji": "🗣️",
+   "emoji2": "🌍",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-tieng-anh-giao-tiep-co-ban/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🗣️",
+   "emoji2": "🌍",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-tuyen-tap-tho-dep-dao-tao/a.jpg",
+   "kind": "product",
+   "emoji": "✍️",
+   "emoji2": "💝",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/sach-tuyen-tap-tho-dep-dao-tao/b.jpg",
+   "kind": "product-hover",
+   "emoji": "✍️",
+   "emoji2": "💝",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/sach-tranh-thien-tuong-mien-phia-tay/a.jpg",
+   "kind": "product",
+   "emoji": "🌳",
+   "emoji2": "🦁",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/sach-tranh-thien-tuong-mien-phia-tay/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌳",
+   "emoji2": "🦁",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/sach-tro-choi-thanh-lich-tre-em-5/a.jpg",
+   "kind": "product",
+   "emoji": "🧩",
+   "emoji2": "🎮",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sach-tro-choi-thanh-lich-tre-em-5/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧩",
+   "emoji2": "🎮",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sach-chuyen-co-tich-co-dien-3-tap/a.jpg",
+   "kind": "product",
+   "emoji": "📖",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sach-chuyen-co-tich-co-dien-3-tap/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📖",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/sach-phieu-luu-phia-duoi-bien/a.jpg",
+   "kind": "product",
+   "emoji": "🌊",
+   "emoji2": "🏴‍☠️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-phieu-luu-phia-duoi-bien/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌊",
+   "emoji2": "🏴‍☠️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-lau-tot-tua-chi-2024/a.jpg",
+   "kind": "product",
+   "emoji": "🗻",
+   "emoji2": "⚔️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/sach-lau-tot-tua-chi-2024/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🗻",
+   "emoji2": "⚔️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/but-gel-creative-mind-0-5mm-12-cay/a.jpg",
+   "kind": "product",
+   "emoji": "🖊️",
+   "emoji2": "✨",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/but-gel-creative-mind-0-5mm-12-cay/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖊️",
+   "emoji2": "✨",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/but-chi-h-faber-pencil-20-cay-hsd/a.jpg",
+   "kind": "product",
+   "emoji": "✏️",
+   "emoji2": "🎨",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/but-chi-h-faber-pencil-20-cay-hsd/b.jpg",
+   "kind": "product-hover",
+   "emoji": "✏️",
+   "emoji2": "🎨",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/tay-but-liquid-pen-0-7mm-24-mau/a.jpg",
+   "kind": "product",
+   "emoji": "🖍️",
+   "emoji2": "🌈",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tay-but-liquid-pen-0-7mm-24-mau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🖍️",
+   "emoji2": "🌈",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/bo-butte-eraser-latex-free-bao/a.jpg",
+   "kind": "product",
+   "emoji": "🧹",
+   "emoji2": "✓",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/bo-butte-eraser-latex-free-bao/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧹",
+   "emoji2": "✓",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/but-la-highlight-fluor-5-cay/a.jpg",
+   "kind": "product",
+   "emoji": "🟨",
+   "emoji2": "💡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/but-la-highlight-fluor-5-cay/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🟨",
+   "emoji2": "💡",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/keo-dan-kem-500ml-craft-bond/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "💫",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/keo-dan-kem-500ml-craft-bond/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "💫",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/bao-keo-dap-office-set-50-cay/a.jpg",
+   "kind": "product",
+   "emoji": "📎",
+   "emoji2": "🔗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/bao-keo-dap-office-set-50-cay/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📎",
+   "emoji2": "🔗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/vo-dot-a5-nhat-ky-100-trang/a.jpg",
+   "kind": "product",
+   "emoji": "📔",
+   "emoji2": "✍️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/vo-dot-a5-nhat-ky-100-trang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📔",
+   "emoji2": "✍️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/so-tay-to-chinh-grid-dot-b5-80-trang/a.jpg",
+   "kind": "product",
+   "emoji": "📊",
+   "emoji2": "📐",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/so-tay-to-chinh-grid-dot-b5-80-trang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📊",
+   "emoji2": "📐",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/sach-giao-khoa-ho-tro-toan-lop-5/a.jpg",
+   "kind": "product",
+   "emoji": "🔢",
+   "emoji2": "📚",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/sach-giao-khoa-ho-tro-toan-lop-5/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🔢",
+   "emoji2": "📚",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/hop-color-24-mau-faber-castle/a.jpg",
+   "kind": "product",
+   "emoji": "🎨",
+   "emoji2": "🌈",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/hop-color-24-mau-faber-castle/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎨",
+   "emoji2": "🌈",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sach-giao-an-tieng-viet-lop-3-full/a.jpg",
+   "kind": "product",
+   "emoji": "📚",
+   "emoji2": "✏️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-giao-an-tieng-viet-lop-3-full/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📚",
+   "emoji2": "✏️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sach-luyen-chu-dep-lop-1-2/a.jpg",
+   "kind": "product",
+   "emoji": "✍️",
+   "emoji2": "🎓",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/sach-luyen-chu-dep-lop-1-2/b.jpg",
+   "kind": "product-hover",
+   "emoji": "✍️",
+   "emoji2": "🎓",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "catalog/categories/thuc-pham-do-uong.jpg",
+   "kind": "category",
+   "emoji": "🍜",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "catalog/collections/thuc-pham-do-uong.jpg",
+   "kind": "collection",
+   "emoji": "🍜",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ],
+   "label": "Thực phẩm & Đồ uống"
+  },
+  {
+   "out": "catalog/categories/do-an-vat.jpg",
+   "kind": "category",
+   "emoji": "🍪",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "catalog/categories/ca-phe-tra.jpg",
+   "kind": "category",
+   "emoji": "☕",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "catalog/categories/dac-san-viet-nam.jpg",
+   "kind": "category",
+   "emoji": "🥭",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "catalog/categories/ngu-coc-hat-dinh-duong.jpg",
+   "kind": "category",
+   "emoji": "🌾",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/banh-khoai-mon-da-lat/a.jpg",
+   "kind": "product",
+   "emoji": "🧁",
+   "emoji2": "👑",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/banh-khoai-mon-da-lat/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧁",
+   "emoji2": "👑",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/chip-tao-say-khong-dau/a.jpg",
+   "kind": "product",
+   "emoji": "🍎",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/chip-tao-say-khong-dau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍎",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/keo-dua-hanoi/a.jpg",
+   "kind": "product",
+   "emoji": "🍬",
+   "emoji2": "🥥",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/keo-dua-hanoi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍬",
+   "emoji2": "🥥",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/trang-vang-muoi-oc/a.jpg",
+   "kind": "product",
+   "emoji": "🍘",
+   "emoji2": "🐚",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/trang-vang-muoi-oc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍘",
+   "emoji2": "🐚",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/popcorn-duong-manh/a.jpg",
+   "kind": "product",
+   "emoji": "🍿",
+   "emoji2": "✨",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/popcorn-duong-manh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍿",
+   "emoji2": "✨",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/hat-dua-rang-muoi/a.jpg",
+   "kind": "product",
+   "emoji": "🌻",
+   "emoji2": "🧂",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/hat-dua-rang-muoi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌻",
+   "emoji2": "🧂",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/mut-dau-gac/a.jpg",
+   "kind": "product",
+   "emoji": "🫐",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/mut-dau-gac/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🫐",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/khoai-tay-chien-tran/a.jpg",
+   "kind": "product",
+   "emoji": "🍟",
+   "emoji2": "🧄",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/khoai-tay-chien-tran/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍟",
+   "emoji2": "🧄",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/que-que-me-sen/a.jpg",
+   "kind": "product",
+   "emoji": "🌀",
+   "emoji2": "🍤",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/que-que-me-sen/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌀",
+   "emoji2": "🍤",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/keo-socola-hat-dau/a.jpg",
+   "kind": "product",
+   "emoji": "🍫",
+   "emoji2": "🍓",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/keo-socola-hat-dau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍫",
+   "emoji2": "🍓",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/cafe-day-tay-bac/a.jpg",
+   "kind": "product",
+   "emoji": "☕",
+   "emoji2": "🔥",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/cafe-day-tay-bac/b.jpg",
+   "kind": "product-hover",
+   "emoji": "☕",
+   "emoji2": "🔥",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/cafe-hat-dang-dung/a.jpg",
+   "kind": "product",
+   "emoji": "☕",
+   "emoji2": "👑",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/cafe-hat-dang-dung/b.jpg",
+   "kind": "product-hover",
+   "emoji": "☕",
+   "emoji2": "👑",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/cafe-sua-da-goi-san-sang/a.jpg",
+   "kind": "product",
+   "emoji": "🥛",
+   "emoji2": "🧊",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/cafe-sua-da-goi-san-sang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🥛",
+   "emoji2": "🧊",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/tra-xanh-thanh-loc/a.jpg",
+   "kind": "product",
+   "emoji": "🍵",
+   "emoji2": "🌿",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/tra-xanh-thanh-loc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍵",
+   "emoji2": "🌿",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/tra-oolong-tuong-linh/a.jpg",
+   "kind": "product",
+   "emoji": "🍵",
+   "emoji2": "🌸",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tra-oolong-tuong-linh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍵",
+   "emoji2": "🌸",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tra-hoa-cu-chi/a.jpg",
+   "kind": "product",
+   "emoji": "🌼",
+   "emoji2": "💛",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tra-hoa-cu-chi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌼",
+   "emoji2": "💛",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/tra-gung-mat-ong/a.jpg",
+   "kind": "product",
+   "emoji": "🧡",
+   "emoji2": "🍯",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/tra-gung-mat-ong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧡",
+   "emoji2": "🍯",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/qua-com-than-tuong-linh/a.jpg",
+   "kind": "product",
+   "emoji": "🎁",
+   "emoji2": "🍚",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/qua-com-than-tuong-linh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎁",
+   "emoji2": "🍚",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/kho-ca-com-ben-tre/a.jpg",
+   "kind": "product",
+   "emoji": "🐟",
+   "emoji2": "☀️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/kho-ca-com-ben-tre/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐟",
+   "emoji2": "☀️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/hat-sen-tam-duong/a.jpg",
+   "kind": "product",
+   "emoji": "🌸",
+   "emoji2": "💚",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/hat-sen-tam-duong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌸",
+   "emoji2": "💚",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ca-cao-nguyen-chat-tay-nguyen/a.jpg",
+   "kind": "product",
+   "emoji": "🍫",
+   "emoji2": "🌱",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/ca-cao-nguyen-chat-tay-nguyen/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍫",
+   "emoji2": "🌱",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/muoi-tron-lang-son/a.jpg",
+   "kind": "product",
+   "emoji": "🧂",
+   "emoji2": "🌿",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/muoi-tron-lang-son/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧂",
+   "emoji2": "🌿",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dua-say-da-nang/a.jpg",
+   "kind": "product",
+   "emoji": "🥥",
+   "emoji2": "☀️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/dua-say-da-nang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🥥",
+   "emoji2": "☀️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/hat-dau-phong-duong/a.jpg",
+   "kind": "product",
+   "emoji": "🥜",
+   "emoji2": "⚪",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/hat-dau-phong-duong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🥜",
+   "emoji2": "⚪",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/hat-oc-cho-moi/a.jpg",
+   "kind": "product",
+   "emoji": "🌰",
+   "emoji2": "💪",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/hat-oc-cho-moi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌰",
+   "emoji2": "💪",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/hat-hong-sam-tay-bac/a.jpg",
+   "kind": "product",
+   "emoji": "🫘",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/hat-hong-sam-tay-bac/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🫘",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/hat-dau-den-thuoc/a.jpg",
+   "kind": "product",
+   "emoji": "⚫",
+   "emoji2": "🫖",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/hat-dau-den-thuoc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⚫",
+   "emoji2": "🫖",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/hat-kinh-do-trang-mieng/a.jpg",
+   "kind": "product",
+   "emoji": "🤎",
+   "emoji2": "🌱",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/hat-kinh-do-trang-mieng/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🤎",
+   "emoji2": "🌱",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/hat-co-y-te-rang/a.jpg",
+   "kind": "product",
+   "emoji": "🟢",
+   "emoji2": "💚",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/hat-co-y-te-rang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🟢",
+   "emoji2": "💚",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "catalog/categories/thu-cung.jpg",
+   "kind": "category",
+   "emoji": "🐶",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "catalog/collections/thu-cung.jpg",
+   "kind": "collection",
+   "emoji": "🐶",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ],
+   "label": "Thú cưng"
+  },
+  {
+   "out": "catalog/categories/thuc-an-thu-cung.jpg",
+   "kind": "category",
+   "emoji": "🦴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "catalog/categories/phu-kien-do-choi-thu-cung.jpg",
+   "kind": "category",
+   "emoji": "🎾",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/categories/ve-sinh-cham-soc-thu-cung.jpg",
+   "kind": "category",
+   "emoji": "🧼",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/thuc-an-cho-smart-meal/a.jpg",
+   "kind": "product",
+   "emoji": "🦴",
+   "emoji2": "🐕",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/thuc-an-cho-smart-meal/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🦴",
+   "emoji2": "🐕",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/thuc-an-cho-puppy-nutri/a.jpg",
+   "kind": "product",
+   "emoji": "🐶",
+   "emoji2": "👶",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/thuc-an-cho-puppy-nutri/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐶",
+   "emoji2": "👶",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/thuc-an-cho-lao-healthylife/a.jpg",
+   "kind": "product",
+   "emoji": "👴",
+   "emoji2": "🐕",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/thuc-an-cho-lao-healthylife/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👴",
+   "emoji2": "🐕",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ]
+  },
+  {
+   "out": "product/thuc-an-meo-hairball/a.jpg",
+   "kind": "product",
+   "emoji": "🐱",
+   "emoji2": "✨",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/thuc-an-meo-hairball/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐱",
+   "emoji2": "✨",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/thuc-an-meo-con-momscare/a.jpg",
+   "kind": "product",
+   "emoji": "🐱",
+   "emoji2": "👶",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/thuc-an-meo-con-momscare/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐱",
+   "emoji2": "👶",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/thuc-an-chung-vat-nuoi-balanced/a.jpg",
+   "kind": "product",
+   "emoji": "🐕",
+   "emoji2": "🐱",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/thuc-an-chung-vat-nuoi-balanced/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐕",
+   "emoji2": "🐱",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/thuc-an-ca-canh-premium/a.jpg",
+   "kind": "product",
+   "emoji": "🐟",
+   "emoji2": "🌈",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/thuc-an-ca-canh-premium/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐟",
+   "emoji2": "🌈",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/xa-lon-pate-cho-meo/a.jpg",
+   "kind": "product",
+   "emoji": "🍖",
+   "emoji2": "🐾",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/xa-lon-pate-cho-meo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🍖",
+   "emoji2": "🐾",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/snack-thuong-cho-cheo/a.jpg",
+   "kind": "product",
+   "emoji": "🦴",
+   "emoji2": "😋",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/snack-thuong-cho-cheo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🦴",
+   "emoji2": "😋",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/day-dak-thu-cung-nylon/a.jpg",
+   "kind": "product",
+   "emoji": "🐕",
+   "emoji2": "🪢",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/day-dak-thu-cung-nylon/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐕",
+   "emoji2": "🪢",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/vong-co-thu-cung-luminous/a.jpg",
+   "kind": "product",
+   "emoji": "💡",
+   "emoji2": "🐶",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/vong-co-thu-cung-luminous/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💡",
+   "emoji2": "🐶",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/do-choi-banh-tennis-meo-cho/a.jpg",
+   "kind": "product",
+   "emoji": "🎾",
+   "emoji2": "🐕",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/do-choi-banh-tennis-meo-cho/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎾",
+   "emoji2": "🐕",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ]
+  },
+  {
+   "out": "product/do-choi-chuot-cho-meo/a.jpg",
+   "kind": "product",
+   "emoji": "🐭",
+   "emoji2": "🐱",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/do-choi-chuot-cho-meo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🐭",
+   "emoji2": "🐱",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/nha-thau-cho-meo-hang-khong/a.jpg",
+   "kind": "product",
+   "emoji": "🏠",
+   "emoji2": "✈️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/nha-thau-cho-meo-hang-khong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏠",
+   "emoji2": "✈️",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/sac-lap-vo-thu-cung/a.jpg",
+   "kind": "product",
+   "emoji": "🧵",
+   "emoji2": "🦴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sac-lap-vo-thu-cung/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧵",
+   "emoji2": "🦴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/nhu-cau-truong-1m-xin/a.jpg",
+   "kind": "product",
+   "emoji": "🪢",
+   "emoji2": "🐕",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/nhu-cau-truong-1m-xin/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪢",
+   "emoji2": "🐕",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/giam-ap-thuy-tinh-cho-meo/a.jpg",
+   "kind": "product",
+   "emoji": "🌳",
+   "emoji2": "🐱",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/giam-ap-thuy-tinh-cho-meo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🌳",
+   "emoji2": "🐱",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/dau-goi-cho-truong-long/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "🧴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/dau-goi-cho-truong-long/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "🧴",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ]
+  },
+  {
+   "out": "product/sua-tam-meo-tranh-ve/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "🐱",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/sua-tam-meo-tranh-ve/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "🐱",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ]
+  },
+  {
+   "out": "product/ban-chai-lot-long-thu-cung/a.jpg",
+   "kind": "product",
+   "emoji": "🪮",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/ban-chai-lot-long-thu-cung/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪮",
+   "emoji2": "✨",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/nhot-nho-tai-cho-meo-ve-sinh/a.jpg",
+   "kind": "product",
+   "emoji": "👂",
+   "emoji2": "🧴",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/nhot-nho-tai-cho-meo-ve-sinh/b.jpg",
+   "kind": "product-hover",
+   "emoji": "👂",
+   "emoji2": "🧴",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/giuong-thu-cung-len-goi/a.jpg",
+   "kind": "product",
+   "emoji": "🛏️",
+   "emoji2": "😴",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/giuong-thu-cung-len-goi/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛏️",
+   "emoji2": "😴",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/nuoi-chu-canh-10l-cat-litter/a.jpg",
+   "kind": "product",
+   "emoji": "🚽",
+   "emoji2": "💨",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/nuoi-chu-canh-10l-cat-litter/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🚽",
+   "emoji2": "💨",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "catalog/categories/o-to-xe-may.jpg",
+   "kind": "category",
+   "emoji": "🏍️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "catalog/collections/o-to-xe-may.jpg",
+   "kind": "collection",
+   "emoji": "🏍️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ],
+   "label": "Ô tô & Xe máy"
+  },
+  {
+   "out": "catalog/categories/phu-kien-o-to.jpg",
+   "kind": "category",
+   "emoji": "🚗",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "catalog/categories/phu-kien-xe-may.jpg",
+   "kind": "category",
+   "emoji": "🏍️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "catalog/categories/mu-bao-hiem.jpg",
+   "kind": "category",
+   "emoji": "⛑️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "catalog/categories/cham-soc-xe.jpg",
+   "kind": "category",
+   "emoji": "🛢️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/giu-do-dien-thoai-o-to-nam-tren-tap-lo/a.jpg",
+   "kind": "product",
+   "emoji": "📱",
+   "emoji2": "🚗",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/giu-do-dien-thoai-o-to-nam-tren-tap-lo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📱",
+   "emoji2": "🚗",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/tay-lai-co-nhan-tao-sac-chat-bang-khong-chat/a.jpg",
+   "kind": "product",
+   "emoji": "🛞",
+   "emoji2": "🚗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tay-lai-co-nhan-tao-sac-chat-bang-khong-chat/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛞",
+   "emoji2": "🚗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tap-lo-che-nang-sua-toan-bo/a.jpg",
+   "kind": "product",
+   "emoji": "☀️",
+   "emoji2": "🚗",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/tap-lo-che-nang-sua-toan-bo/b.jpg",
+   "kind": "product-hover",
+   "emoji": "☀️",
+   "emoji2": "🚗",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/tham-thau-o-to-3d-eco/a.jpg",
+   "kind": "product",
+   "emoji": "🏠",
+   "emoji2": "🚗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tham-thau-o-to-3d-eco/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🏠",
+   "emoji2": "🚗",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/camera-hanh-trinh-1080p-day-dem/a.jpg",
+   "kind": "product",
+   "emoji": "📹",
+   "emoji2": "🌙",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/camera-hanh-trinh-1080p-day-dem/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📹",
+   "emoji2": "🌙",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/den-led-noi-that-o-to-8-mau/a.jpg",
+   "kind": "product",
+   "emoji": "💡",
+   "emoji2": "🚗",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/den-led-noi-that-o-to-8-mau/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💡",
+   "emoji2": "🚗",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ]
+  },
+  {
+   "out": "product/cot-do-xang-dien-tu-o-to/a.jpg",
+   "kind": "product",
+   "emoji": "📊",
+   "emoji2": "🚗",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/cot-do-xang-dien-tu-o-to/b.jpg",
+   "kind": "product-hover",
+   "emoji": "📊",
+   "emoji2": "🚗",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ]
+  },
+  {
+   "out": "product/guong-chieu-hau-xe-may-cau-vong/a.jpg",
+   "kind": "product",
+   "emoji": "🪞",
+   "emoji2": "🏍️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/guong-chieu-hau-xe-may-cau-vong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪞",
+   "emoji2": "🏍️",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/tay-lai-xe-may-cao-su-chong-toc/a.jpg",
+   "kind": "product",
+   "emoji": "🛞",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/tay-lai-xe-may-cao-su-chong-toc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛞",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/bao-chu-xe-may-chong-mua-nang/a.jpg",
+   "kind": "product",
+   "emoji": "🧥",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/bao-chu-xe-may-chong-mua-nang/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧥",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/yeu-xe-may-chon-mem/a.jpg",
+   "kind": "product",
+   "emoji": "💺",
+   "emoji2": "🏍️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/yeu-xe-may-chon-mem/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💺",
+   "emoji2": "🏍️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/tui-ganh-xe-may-chong-nuoc/a.jpg",
+   "kind": "product",
+   "emoji": "🎒",
+   "emoji2": "🏍️",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/tui-ganh-xe-may-chong-nuoc/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎒",
+   "emoji2": "🏍️",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/giac-dinh-toc-do-xe-may-dien-tu/a.jpg",
+   "kind": "product",
+   "emoji": "⏱️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/giac-dinh-toc-do-xe-may-dien-tu/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⏱️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/chuot-tron-chong-rung-xe-may/a.jpg",
+   "kind": "product",
+   "emoji": "🎚️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/chuot-tron-chong-rung-xe-may/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎚️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mu-bao-hiem-fullface-aman-m/a.jpg",
+   "kind": "product",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mu-bao-hiem-fullface-aman-m/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mu-bao-hiem-fullface-speed-l/a.jpg",
+   "kind": "product",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/mu-bao-hiem-fullface-speed-l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ]
+  },
+  {
+   "out": "product/mu-nua-dau-airflow-xl/a.jpg",
+   "kind": "product",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mu-nua-dau-airflow-xl/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mu-chi-bang-protect-pro-m/a.jpg",
+   "kind": "product",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/mu-chi-bang-protect-pro-m/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛑️",
+   "emoji2": "🏍️",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ]
+  },
+  {
+   "out": "product/mu-bao-hiem-thao-tac-quoc-phong-l/a.jpg",
+   "kind": "product",
+   "emoji": "⛑️",
+   "emoji2": "🪖",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/mu-bao-hiem-thao-tac-quoc-phong-l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛑️",
+   "emoji2": "🪖",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ]
+  },
+  {
+   "out": "product/mu-nua-dau-phong-gio-coi-xl/a.jpg",
+   "kind": "product",
+   "emoji": "⛑️",
+   "emoji2": "💨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mu-nua-dau-phong-gio-coi-xl/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⛑️",
+   "emoji2": "💨",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/dau-nhot-dong-co-10w30-4l/a.jpg",
+   "kind": "product",
+   "emoji": "🛢️",
+   "emoji2": "⚙️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/dau-nhot-dong-co-10w30-4l/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🛢️",
+   "emoji2": "⚙️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ]
+  },
+  {
+   "out": "product/dau-nhot-canh-tay-nhan-tao-xe-may/a.jpg",
+   "kind": "product",
+   "emoji": "🫙",
+   "emoji2": "⚙️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/dau-nhot-canh-tay-nhan-tao-xe-may/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🫙",
+   "emoji2": "⚙️",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/nuoc-rua-kinh-o-to-4l-hoa-huong/a.jpg",
+   "kind": "product",
+   "emoji": "💧",
+   "emoji2": "🪟",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/nuoc-rua-kinh-o-to-4l-hoa-huong/b.jpg",
+   "kind": "product-hover",
+   "emoji": "💧",
+   "emoji2": "🪟",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ]
+  },
+  {
+   "out": "product/nuoc-that-tay-chui-roi-o-to/a.jpg",
+   "kind": "product",
+   "emoji": "🧴",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/nuoc-that-tay-chui-roi-o-to/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧴",
+   "emoji2": "✨",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ]
+  },
+  {
+   "out": "product/mol-may-xuat-mat-truot-toan-bo-xe-may/a.jpg",
+   "kind": "product",
+   "emoji": "⚙️",
+   "emoji2": "🔩",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/mol-may-xuat-mat-truot-toan-bo-xe-may/b.jpg",
+   "kind": "product-hover",
+   "emoji": "⚙️",
+   "emoji2": "🔩",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ]
+  },
+  {
+   "out": "product/chat-tay-khit-may-nho-hoa/a.jpg",
+   "kind": "product",
+   "emoji": "🧼",
+   "emoji2": "🔧",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/chat-tay-khit-may-nho-hoa/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🧼",
+   "emoji2": "🔧",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ]
+  },
+  {
+   "out": "product/xi-tang-cho-pho-o-to-lung-bac/a.jpg",
+   "kind": "product",
+   "emoji": "🪛",
+   "emoji2": "✨",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/xi-tang-cho-pho-o-to-lung-bac/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🪛",
+   "emoji2": "✨",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ]
+  },
+  {
+   "out": "product/goi-sua-son-oto-toan-the/a.jpg",
+   "kind": "product",
+   "emoji": "🎨",
+   "emoji2": "🚗",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "product/goi-sua-son-oto-toan-the/b.jpg",
+   "kind": "product-hover",
+   "emoji": "🎨",
+   "emoji2": "🚗",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ]
+  },
+  {
+   "out": "shop/fitly-official/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🛍️",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ],
+   "label": "FITLY Official"
+  },
+  {
+   "out": "shop/fitly-official/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🛍️",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ],
+   "label": "FITLY Official"
+  },
+  {
+   "out": "shop/techzone-vn/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "💻",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ],
+   "label": "TechZone Việt Nam"
+  },
+  {
+   "out": "shop/techzone-vn/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "💻",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ],
+   "label": "TechZone Việt Nam"
+  },
+  {
+   "out": "shop/mobile-hub/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "📱",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Mobile Hub"
+  },
+  {
+   "out": "shop/mobile-hub/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "📱",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Mobile Hub"
+  },
+  {
+   "out": "shop/gia-dung-thong-minh/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🍳",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ],
+   "label": "Gia Dụng Thông Minh"
+  },
+  {
+   "out": "shop/gia-dung-thong-minh/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🍳",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ],
+   "label": "Gia Dụng Thông Minh"
+  },
+  {
+   "out": "shop/nha-xinh-decor/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🛋️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ],
+   "label": "Nhà Xinh Decor"
+  },
+  {
+   "out": "shop/nha-xinh-decor/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🛋️",
+   "colors": [
+    "#d6b08c",
+    "#5c3a21"
+   ],
+   "label": "Nhà Xinh Decor"
+  },
+  {
+   "out": "shop/beauty-box-vn/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "💄",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ],
+   "label": "Beauty Box"
+  },
+  {
+   "out": "shop/beauty-box-vn/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "💄",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ],
+   "label": "Beauty Box"
+  },
+  {
+   "out": "shop/healthy-life/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🌿",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ],
+   "label": "Healthy Life"
+  },
+  {
+   "out": "shop/healthy-life/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🌿",
+   "colors": [
+    "#34d399",
+    "#065f46"
+   ],
+   "label": "Healthy Life"
+  },
+  {
+   "out": "shop/sneaker-station/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "👟",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ],
+   "label": "Sneaker Station"
+  },
+  {
+   "out": "shop/sneaker-station/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "👟",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ],
+   "label": "Sneaker Station"
+  },
+  {
+   "out": "shop/bag-and-co/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "👜",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ],
+   "label": "Bag & Co"
+  },
+  {
+   "out": "shop/bag-and-co/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "👜",
+   "colors": [
+    "#f0abfc",
+    "#a21caf"
+   ],
+   "label": "Bag & Co"
+  },
+  {
+   "out": "shop/time-lab/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "⌚",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ],
+   "label": "Time Lab Watches"
+  },
+  {
+   "out": "shop/time-lab/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "⌚",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ],
+   "label": "Time Lab Watches"
+  },
+  {
+   "out": "shop/sport-planet/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🏋️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ],
+   "label": "Sport Planet"
+  },
+  {
+   "out": "shop/sport-planet/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🏋️",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ],
+   "label": "Sport Planet"
+  },
+  {
+   "out": "shop/baby-land/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🧸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ],
+   "label": "BabyLand"
+  },
+  {
+   "out": "shop/baby-land/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🧸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ],
+   "label": "BabyLand"
+  },
+  {
+   "out": "shop/book-cafe/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "📚",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ],
+   "label": "Book & Cafe"
+  },
+  {
+   "out": "shop/book-cafe/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "📚",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ],
+   "label": "Book & Cafe"
+  },
+  {
+   "out": "shop/ngon-viet/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🍜",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ],
+   "label": "Ngon Việt"
+  },
+  {
+   "out": "shop/ngon-viet/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🍜",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ],
+   "label": "Ngon Việt"
+  },
+  {
+   "out": "shop/pet-world/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🐶",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ],
+   "label": "Pet World"
+  },
+  {
+   "out": "shop/pet-world/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🐶",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ],
+   "label": "Pet World"
+  },
+  {
+   "out": "shop/auto-moto-pro/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🏍️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ],
+   "label": "Auto Moto Pro"
+  },
+  {
+   "out": "shop/auto-moto-pro/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🏍️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ],
+   "label": "Auto Moto Pro"
+  },
+  {
+   "out": "shop/cua-hang-moi/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🏪",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Cửa Hàng Mới Mở"
+  },
+  {
+   "out": "shop/cua-hang-moi/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🏪",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Cửa Hàng Mới Mở"
+  },
+  {
+   "out": "shop/hang-nhai-24h/logo.jpg",
+   "kind": "shop-logo",
+   "emoji": "🚫",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ],
+   "label": "Hàng Nhái 24h"
+  },
+  {
+   "out": "shop/hang-nhai-24h/banner.jpg",
+   "kind": "shop-banner",
+   "emoji": "🚫",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ],
+   "label": "Hàng Nhái 24h"
+  },
+  {
+   "out": "banners/dien-thoai-phu-kien.jpg",
+   "kind": "banner",
+   "emoji": "📱",
+   "colors": [
+    "#6366f1",
+    "#1e1b4b"
+   ],
+   "label": "Điện thoại & Phụ kiện",
+   "subtitle": "Smartphone · Ốp lưng · Cáp sạc · Tai nghe",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/may-tinh-thiet-bi-dien-tu.jpg",
+   "kind": "banner",
+   "emoji": "💻",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Máy tính & Thiết bị điện tử",
+   "subtitle": "Laptop · Màn hình · Phụ kiện · Âm thanh",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/nha-cua-doi-song.jpg",
+   "kind": "banner",
+   "emoji": "🏠",
+   "colors": [
+    "#fdba74",
+    "#c2410c"
+   ],
+   "label": "Nhà cửa & Đời sống",
+   "subtitle": "Gia dụng · Nội thất · Chăn ga gối nệm",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/sac-dep-suc-khoe.jpg",
+   "kind": "banner",
+   "emoji": "💄",
+   "colors": [
+    "#f4a3c1",
+    "#9d174d"
+   ],
+   "label": "Sắc đẹp & Sức khoẻ",
+   "subtitle": "Chăm sóc da · Trang điểm · Nước hoa",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/giay-dep-tui-xach.jpg",
+   "kind": "banner",
+   "emoji": "👟",
+   "colors": [
+    "#60a5fa",
+    "#172554"
+   ],
+   "label": "Giày dép & Túi xách",
+   "subtitle": "Sneaker · Sandal · Túi xách · Vali",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/dong-ho-phu-kien.jpg",
+   "kind": "banner",
+   "emoji": "⌚",
+   "colors": [
+    "#94a3b8",
+    "#1e293b"
+   ],
+   "label": "Đồng hồ & Phụ kiện",
+   "subtitle": "Đồng hồ · Kính mắt · Trang sức bạc",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/the-thao-da-ngoai.jpg",
+   "kind": "banner",
+   "emoji": "⚽",
+   "colors": [
+    "#bef264",
+    "#4d7c0f"
+   ],
+   "label": "Thể thao & Dã ngoại",
+   "subtitle": "Gym · Yoga · Xe đạp · Cắm trại",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/me-be.jpg",
+   "kind": "banner",
+   "emoji": "🧸",
+   "colors": [
+    "#a7f3d0",
+    "#047857"
+   ],
+   "label": "Mẹ & Bé",
+   "subtitle": "Sữa · Tã · Đồ chơi · Xe đẩy",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/sach-van-phong-pham.jpg",
+   "kind": "banner",
+   "emoji": "📚",
+   "colors": [
+    "#f5e6c8",
+    "#a16207"
+   ],
+   "label": "Sách & Văn phòng phẩm",
+   "subtitle": "Sách hay · Bút vở · Dụng cụ học tập",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/thuc-pham-do-uong.jpg",
+   "kind": "banner",
+   "emoji": "🍜",
+   "colors": [
+    "#fbbf78",
+    "#b45309"
+   ],
+   "label": "Thực phẩm & Đồ uống",
+   "subtitle": "Đặc sản · Cà phê · Trà · Đồ ăn vặt",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/thu-cung.jpg",
+   "kind": "banner",
+   "emoji": "🐶",
+   "colors": [
+    "#5eead4",
+    "#115e59"
+   ],
+   "label": "Thú cưng",
+   "subtitle": "Thức ăn · Đồ chơi · Phụ kiện chó mèo",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/o-to-xe-may.jpg",
+   "kind": "banner",
+   "emoji": "🏍️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ],
+   "label": "Ô tô & Xe máy",
+   "subtitle": "Mũ bảo hiểm · Phụ kiện · Dầu nhớt",
+   "tag": "Ngành hàng",
+   "cta": "Mua ngay"
+  },
+  {
+   "out": "banners/home-1.jpg",
+   "kind": "banner",
+   "emoji": "🛍️",
+   "colors": [
+    "#ff8a7a",
+    "#d64433"
+   ],
+   "label": "Sàn FITLY — mua sắm đa ngành",
+   "subtitle": "Nhiều gian hàng · Một giỏ hàng · Giao tận nơi",
+   "tag": "FITLY",
+   "cta": "Khám phá ngay"
+  },
+  {
+   "out": "banners/home-2.jpg",
+   "kind": "banner",
+   "emoji": "🚚",
+   "colors": [
+    "#7dd3fc",
+    "#0369a1"
+   ],
+   "label": "Freeship toàn quốc",
+   "subtitle": "Đơn từ 500.000₫ của mỗi gian hàng được miễn phí vận chuyển",
+   "tag": "Vận chuyển",
+   "cta": "Xem chi tiết"
+  },
+  {
+   "out": "banners/home-3.jpg",
+   "kind": "banner",
+   "emoji": "🎟️",
+   "colors": [
+    "#c4b5fd",
+    "#5b21b6"
+   ],
+   "label": "Voucher của từng gian hàng",
+   "subtitle": "Săn mã riêng của mỗi shop, dùng kèm mã giảm giá của sàn",
+   "tag": "Khuyến mãi",
+   "cta": "Săn voucher"
+  }
+ ]
+}
