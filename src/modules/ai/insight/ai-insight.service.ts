@@ -109,7 +109,7 @@ export class AiInsightService {
       return { text: AiInsightService.ruleCopy(input), source: 'rule' };
     }
     const prompts: Record<string, string> = {
-      product_description: 'Viết mô tả sản phẩm quần áo (80-140 từ) tiếng Việt, giọng tự nhiên, nêu chất liệu/form/dịp mặc/cách phối, không bịa thông số không có trong ngữ cảnh. TRẢ JSON {"text": string}.',
+      product_description: 'Viết mô tả sản phẩm (80-140 từ) tiếng Việt, giọng tự nhiên, nêu đặc điểm/chất liệu hoặc thông số/công dụng phù hợp với loại sản phẩm, không bịa thông số không có trong ngữ cảnh. TRẢ JSON {"text": string}.',
       review_reply: 'Viết câu trả lời của cửa hàng cho đánh giá của khách (2-4 câu), lịch sự, cảm ơn, xử lý khéo nếu khách chưa hài lòng. TRẢ JSON {"text": string}.',
       promotion_copy: 'Viết nội dung quảng bá ngắn (≤ 60 từ) cho chương trình khuyến mãi, tiếng Việt, có kêu gọi hành động. TRẢ JSON {"text": string}.',
     };

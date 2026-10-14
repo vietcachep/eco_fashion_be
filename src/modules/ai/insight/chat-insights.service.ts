@@ -93,7 +93,7 @@ export class ChatInsightsService {
       try {
         const res = await this.openai.chatJson<{ clusters?: Array<{ index?: number; label?: string; suggestedTitle?: string }> }>(
           [
-            { role: 'system', content: 'Cho các CỤM câu hỏi khách hỏi chatbot cửa hàng quần áo mà bot không trả lời được. Với mỗi cụm: label (tên cụm 3-8 từ, tiếng Việt) và suggestedTitle (tiêu đề bài kho tri thức nên viết, ≤ 80 ký tự). Không dùng ngoặc kép. TRẢ JSON {"clusters":[{"index","label","suggestedTitle"}]}.' },
+            { role: 'system', content: 'Cho các CỤM câu hỏi khách hỏi chatbot sàn thương mại điện tử (nhiều ngành hàng) mà bot không trả lời được. Với mỗi cụm: label (tên cụm 3-8 từ, tiếng Việt) và suggestedTitle (tiêu đề bài kho tri thức nên viết, ≤ 80 ký tự). Không dùng ngoặc kép. TRẢ JSON {"clusters":[{"index","label","suggestedTitle"}]}.' },
             { role: 'user', content: clusters.map((c, i) => `#${i} (${c.length} câu):\n${c.slice(0, 5).map((q) => `- ${q}`).join('\n')}`).join('\n\n') },
           ],
           { feature: AI_FEATURE.CHAT_INSIGHTS, maxTokens: 500, temperature: 0.2 },

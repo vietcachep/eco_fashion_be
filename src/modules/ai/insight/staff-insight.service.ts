@@ -100,7 +100,7 @@ export class StaffInsightService {
     try {
       const res = await this.openai.chatJson<{ categorySlug?: string; gender?: string; tags?: string[]; material?: string; confidence?: number; alternatives?: string[] }>(
         [
-          { role: 'system', content: `Phân loại sản phẩm quần áo cho cửa hàng. Ngành hàng có: ${categories.map((c) => `${c.slug} (${c.name})`).join(', ')}. Giới: nam | nu | unisex. Tag gợi ý: new, sale, basic, office, party, summer, winter, casual. TRẢ JSON {"categorySlug", "gender", "tags": string[] (≤ 4), "material": string|null (chất liệu nếu nêu), "confidence": 0..1, "alternatives": string[] (≤ 2 slug khác có thể)}.` },
+          { role: 'system', content: `Phân loại sản phẩm thời trang cho sàn thương mại điện tử (tính năng này chỉ áp dụng ngành hàng thời trang — còn giới/size). Ngành hàng thời trang có: ${categories.map((c) => `${c.slug} (${c.name})`).join(', ')}. Giới: nam | nu | unisex. Tag gợi ý: new, sale, basic, office, party, summer, winter, casual. TRẢ JSON {"categorySlug", "gender", "tags": string[] (≤ 4), "material": string|null (chất liệu nếu nêu), "confidence": 0..1, "alternatives": string[] (≤ 2 slug khác có thể)}.` },
           { role: 'user', content: `Tên: ${input.name}\nMô tả: ${(input.description ?? '').slice(0, 1500)}\nChất liệu: ${input.material ?? ''}` },
         ],
         { feature: AI_FEATURE.STAFF_INSIGHT, userId: actor.userId, maxTokens: 200, temperature: 0 },
@@ -127,23 +127,28 @@ export class StaffInsightService {
   async precheck(actor: AuthenticatedActor, productId: string): Promise<PrecheckResponse> {
     const detail = await this.products.detailForAiById(productId, true);
     if (!detail) throw new NotFoundException(AI_ERR.PRODUCT_NOT_FOUND, 'Không tìm thấy sản phẩm');
-    const rule = StaffInsightService.rulePrecheck({ name: detail.name, hasImage: detail.imageCount > 0, shortDescription: detail.shortDescription, description: detail.description, material: detail.material, care: detail.care, variants: detail.variants.length });
+    const isFashion = detail.attributeMode === 'legacy_fashion';
+    const rule = StaffInsightService.rulePrecheck({ name: detail.name, hasImage: detail.imageCount > 0, shortDescription: detail.shortDescription, description: detail.description, material: detail.material, care: detail.care, variants: detail.variants.length, isFashion });
     if (!this.openai.isConfigured) return rule;
+    const optionsText = [...new Set(detail.variants.flatMap((v) => (v.optionsText ? [v.optionsText] : [])))];
     const text = [
       `Tên: ${detail.name}`,
-      `Ngành: ${detail.categorySlug} · ${detail.gender} · trạng thái ${detail.status}`,
+      `Ngành: ${detail.categorySlug}${detail.gender ? ` · ${detail.gender}` : ''} · trạng thái ${detail.status}`,
       `Giá: ${detail.price}${detail.listPrice ? ` (gốc ${detail.listPrice})` : ''}`,
       `Mô tả ngắn: ${detail.shortDescription ?? '(trống)'}`,
       `Mô tả: ${detail.description ?? '(trống)'}`,
-      `Chất liệu: ${detail.material ?? '(trống)'}`,
-      `Bảo quản: ${detail.care.join('; ') || '(trống)'}`,
-      `Biến thể: ${detail.variants.length} (màu: ${[...new Set(detail.variants.map((v) => v.colorName))].join(', ') || '-'}; size: ${[...new Set(detail.variants.map((v) => v.sizeCode))].join(', ') || '-'})`,
+      isFashion ? `Chất liệu: ${detail.material ?? '(trống)'}` : '',
+      isFashion ? `Bảo quản: ${detail.care.join('; ') || '(trống)'}` : '',
+      detail.attributesText ? `Thông số: ${detail.attributesText}` : '',
+      isFashion
+        ? `Biến thể: ${detail.variants.length} (màu: ${[...new Set(detail.variants.map((v) => v.colorName).filter(Boolean))].join(', ') || '-'}; size: ${[...new Set(detail.variants.map((v) => v.sizeCode).filter(Boolean))].join(', ') || '-'})`
+        : `Biến thể: ${detail.variants.length}${optionsText.length ? ` (${optionsText.join(' | ')})` : ''}`,
       `Ảnh: ${detail.imageCount}`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     try {
       const res = await this.openai.chatJson<{ ready?: boolean; score?: number; issues?: Array<{ severity?: string; field?: string; problem?: string; suggestion?: string }>; missing?: string[] }>(
         [
-          { role: 'system', content: 'Bạn là quản lý cửa hàng quần áo kiểm tra LISTING TRƯỚC KHI ĐĂNG. Tiêu chí: tên/mô tả rõ, đúng ngành; có chất liệu, form/dáng, hướng dẫn size, bảo quản; không hứa hẹn quá đà (chống nước tuyệt đối, không bao giờ phai…), không so sánh hạ thấp thương hiệu khác, không lỗi chính tả. TRẢ JSON {"ready": boolean, "score": 0-100, "issues": [{"severity": "block|warn|info", "field": "name|shortDescription|description|material|care|variants|images|other", "problem": string ≤ 140, "suggestion": string ≤ 160}] (≤ 8, block trước), "missing": string[] (thông tin khách hay cần mà chưa có)}.' },
+          { role: 'system', content: `Bạn là quản lý sàn thương mại điện tử kiểm tra LISTING TRƯỚC KHI ĐĂNG (sản phẩm có thể thuộc bất kỳ ngành hàng nào). Tiêu chí: tên/mô tả rõ, đúng ngành${isFashion ? '; có chất liệu, form/dáng, hướng dẫn size, bảo quản' : '; có đủ thông số quan trọng khách cần biết trước khi mua'}; không hứa hẹn quá đà (chống nước tuyệt đối, không bao giờ hỏng…), không so sánh hạ thấp thương hiệu khác, không lỗi chính tả. TRẢ JSON {"ready": boolean, "score": 0-100, "issues": [{"severity": "block|warn|info", "field": "name|shortDescription|description|material|care|variants|images|other", "problem": string ≤ 140, "suggestion": string ≤ 160}] (≤ 8, block trước), "missing": string[] (thông tin khách hay cần mà chưa có)}.` },
           { role: 'user', content: text.slice(0, 6000) },
         ],
         { feature: AI_FEATURE.STAFF_INSIGHT, userId: actor.userId, maxTokens: 700, temperature: 0.1 },
@@ -157,16 +162,16 @@ export class StaffInsightService {
     }
   }
 
-  static rulePrecheck(p: { name: string; hasImage: boolean; shortDescription: string | null; description: string | null; material: string | null; care: string[]; variants: number }): PrecheckResponse {
+  static rulePrecheck(p: { name: string; hasImage: boolean; shortDescription: string | null; description: string | null; material: string | null; care: string[]; variants: number; isFashion: boolean }): PrecheckResponse {
     const issues: PrecheckResponse['issues'] = [];
     const missing: string[] = [];
     if (!p.hasImage) issues.push({ severity: 'block', field: 'images', problem: 'Chưa có ảnh sản phẩm', suggestion: 'Thêm ít nhất 1 ảnh chính, tốt nhất theo từng màu' });
-    if (p.variants === 0) issues.push({ severity: 'block', field: 'variants', problem: 'Chưa có biến thể màu/size', suggestion: 'Thêm biến thể và nhập tồn qua phiếu nhập' });
+    if (p.variants === 0) issues.push({ severity: 'block', field: 'variants', problem: 'Chưa có biến thể', suggestion: 'Thêm biến thể và nhập tồn qua phiếu nhập' });
     if (p.name.trim().length < 8) issues.push({ severity: 'warn', field: 'name', problem: 'Tên quá ngắn', suggestion: 'Nêu loại + đặc điểm nổi bật, ví dụ "Áo thun cotton nam basic"' });
-    if (!p.description || p.description.length < 80) issues.push({ severity: 'warn', field: 'description', problem: 'Mô tả quá ngắn (< 80 ký tự)', suggestion: 'Thêm form/dáng, dịp mặc, cách phối, cảm giác vải' });
+    if (!p.description || p.description.length < 80) issues.push({ severity: 'warn', field: 'description', problem: 'Mô tả quá ngắn (< 80 ký tự)', suggestion: p.isFashion ? 'Thêm form/dáng, dịp mặc, cách phối, cảm giác vải' : 'Thêm công dụng, thông số kỹ thuật, tình huống sử dụng' });
     if (!p.shortDescription) missing.push('Mô tả ngắn cho thẻ sản phẩm');
-    if (!p.material) missing.push('Chất liệu');
-    if (p.care.length === 0) missing.push('Hướng dẫn bảo quản/giặt');
+    if (p.isFashion && !p.material) missing.push('Chất liệu');
+    if (p.isFashion && p.care.length === 0) missing.push('Hướng dẫn bảo quản/giặt');
     const score = Math.max(0, 100 - issues.filter((i) => i.severity === 'block').length * 40 - issues.filter((i) => i.severity === 'warn').length * 15 - missing.length * 5);
     return { ready: !issues.some((i) => i.severity === 'block'), score, issues, missing, source: 'rule' };
   }
@@ -197,7 +202,7 @@ export class StaffInsightService {
       try {
         const res = await this.openai.chatJson<{ summary?: string }>(
           [
-            { role: 'system', content: 'Bạn là quản lý kho cửa hàng quần áo. Từ bảng tốc độ bán 30 ngày, viết 2-5 gạch đầu dòng nhận xét NGẮN tiếng Việt cho nhân viên: cần nhập gì gấp (critical < 7 ngày), món nào bán chậm (stale) nên giảm giá/ghép combo, món hết hàng đang mất doanh thu. Chỉ dùng số trong bảng. Không dùng ngoặc kép. TRẢ JSON {"summary": string (các dòng bắt đầu bằng "- ")}.' },
+            { role: 'system', content: 'Bạn là quản lý kho của sàn thương mại điện tử (nhiều ngành hàng). Từ bảng tốc độ bán 30 ngày, viết 2-5 gạch đầu dòng nhận xét NGẮN tiếng Việt cho nhân viên: cần nhập gì gấp (critical < 7 ngày), món nào bán chậm (stale) nên giảm giá/ghép combo, món hết hàng đang mất doanh thu. Chỉ dùng số trong bảng. Không dùng ngoặc kép. TRẢ JSON {"summary": string (các dòng bắt đầu bằng "- ")}.' },
             { role: 'user', content: items.slice(0, 40).map((i) => `${i.productName} ${i.label} (${i.sku}): còn ${i.available}, bán 30 ngày ${i.sold30d}, còn ~${i.daysLeft ?? '∞'} ngày, mức ${i.level}`).join('\n') },
           ],
           { feature: AI_FEATURE.STAFF_INSIGHT, userId: actor.userId, maxTokens: 350, temperature: 0.3 },
@@ -235,7 +240,7 @@ export class StaffInsightService {
       try {
         const res = await this.openai.chatJson<{ summary?: string }>(
           [
-            { role: 'system', content: 'Bạn là quản lý cửa hàng quần áo. Viết 3-5 gạch đầu dòng nhận xét NGẮN tiếng Việt về doanh thu 30 ngày qua so với 30 ngày trước và top sản phẩm: xu hướng, ngày cao/thấp, gợi ý hành động (nhập thêm, khuyến mãi, đẩy sản phẩm). CHỈ dùng số được cung cấp; tiền viết dạng đã cho. Không dùng ngoặc kép. TRẢ JSON {"summary": string}.' },
+            { role: 'system', content: 'Bạn là quản lý sàn thương mại điện tử (nhiều ngành hàng). Viết 3-5 gạch đầu dòng nhận xét NGẮN tiếng Việt về doanh thu 30 ngày qua so với 30 ngày trước và top sản phẩm: xu hướng, ngày cao/thấp, gợi ý hành động (nhập thêm, khuyến mãi, đẩy sản phẩm). CHỈ dùng số được cung cấp; tiền viết dạng đã cho. Không dùng ngoặc kép. TRẢ JSON {"summary": string}.' },
             { role: 'user', content: `30 NGÀY QUA (${cur.from}→${cur.to}): doanh thu ${c.total.revenue.display}, đơn đã thanh toán ${c.total.paidCount}, huỷ ${c.total.cancelledCount}, sản phẩm bán ${c.total.itemsSold}, hoàn ${c.total.refunded.display}.\n30 NGÀY TRƯỚC (${prev.from}→${prev.to}): doanh thu ${p.total.revenue.display}, đơn ${p.total.paidCount}, huỷ ${p.total.cancelledCount}, bán ${p.total.itemsSold}, hoàn ${p.total.refunded.display}.\nTheo ngày (30 ngày qua): ${c.points.filter((x) => x.paidCount > 0).map((x) => `${x.period}: ${x.revenue.display} (${x.paidCount} đơn)`).join('; ') || 'không có đơn'}.\nTop: ${top.map((t) => `${t.name} ${t.quantity} cái ${t.revenue.display}`).join('; ') || 'chưa có'}.` },
           ],
           { feature: AI_FEATURE.STAFF_INSIGHT, userId: actor.userId, maxTokens: 350, temperature: 0.3 },
@@ -270,14 +275,14 @@ export class StaffInsightService {
       let combos = valid.map((p) => {
         const a = cards.get(p.productA)!;
         const b = cards.get(p.productB)!;
-        return { name: `${a.name} + ${b.name}`, reason: p.evidence === 'orders' ? `Cùng nằm trong ${p.orders} đơn 90 ngày qua` : 'Phong cách tương đồng, dễ phối cùng nhau', discountPercent: 10, evidence: p.evidence, orders: p.orders, products: [a, b] };
+        return { name: `${a.name} + ${b.name}`, reason: p.evidence === 'orders' ? `Cùng nằm trong ${p.orders} đơn 90 ngày qua` : 'Hay được khách mua cùng nhau', discountPercent: 10, evidence: p.evidence, orders: p.orders, products: [a, b] };
       });
       let byAi = false;
       if (this.openai.isConfigured && combos.length > 0) {
         try {
           const res = await this.openai.chatJson<{ combos?: Array<{ index?: number; name?: string; reason?: string; discountPercent?: number }> }>(
             [
-              { role: 'system', content: 'Bạn là marketing cửa hàng quần áo. Cho các CẶP sản phẩm hay được mua cùng, với mỗi cặp: đặt TÊN combo (3-6 từ, hấp dẫn, tiếng Việt), một câu LÝ DO (≤ 90 ký tự, vì sao hợp nhau/dịp nào) và mức giảm % hợp lý (5-30, cặp bán chạy thì giảm ít). Không dùng ngoặc kép. TRẢ JSON {"combos":[{"index","name","reason","discountPercent"}]}.' },
+              { role: 'system', content: 'Bạn là marketing của sàn thương mại điện tử (nhiều ngành hàng). Cho các CẶP sản phẩm hay được mua cùng, với mỗi cặp: đặt TÊN combo (3-6 từ, hấp dẫn, tiếng Việt), một câu LÝ DO (≤ 90 ký tự, vì sao hợp nhau/dịp nào — có thể là phối đồ, dùng kèm, hoặc nhu cầu chung tuỳ loại sản phẩm) và mức giảm % hợp lý (5-30, cặp bán chạy thì giảm ít). Không dùng ngoặc kép. TRẢ JSON {"combos":[{"index","name","reason","discountPercent"}]}.' },
               { role: 'user', content: combos.map((c, i) => `#${i}: ${c.products[0].name} (${c.products[0].price.display}) + ${c.products[1].name} (${c.products[1].price.display}) — ${c.evidence === 'orders' ? `${c.orders} đơn chung` : 'tương đồng'}`).join('\n') },
             ],
             { feature: AI_FEATURE.STAFF_INSIGHT, userId: actor.userId, maxTokens: 500, temperature: 0.6 },
