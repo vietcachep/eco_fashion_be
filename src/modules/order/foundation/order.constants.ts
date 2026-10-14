@@ -1,6 +1,8 @@
 import type { CacheSpec } from '@common/cache/cache.service';
 
-export const ORDER_MODULE = 'order';
+import { ORDER_MODULE } from '../enums/order-events';
+
+export { ORDER_MODULE };
 
 export const ORDER_ERR = {
   NOT_FOUND: 'ORDER_NOT_FOUND',
@@ -19,6 +21,9 @@ export const ORDER_ERR = {
   RETURN_NOT_FOUND: 'ORDER_RETURN_NOT_FOUND',
   RETURN_INVALID_STATE: 'ORDER_RETURN_INVALID_STATE',
   EVIDENCE_REQUIRED: 'ORDER_EVIDENCE_REQUIRED',
+  /* PLAN-0014 bước 7 — giỏ nhiều shop: một gian hàng trong giỏ ngừng hoạt động / khoá COD giữa lúc đặt hàng. */
+  SHOP_NOT_AVAILABLE: 'ORDER_SHOP_NOT_AVAILABLE',
+  SHOP_COD_DISABLED: 'ORDER_SHOP_COD_DISABLED',
 } as const;
 
 export const ORDER_AUDIT = {
@@ -30,21 +35,13 @@ export const ORDER_AUDIT = {
   RETURN_PROCESSED: 'RETURN_PROCESSED',
 } as const;
 
-export const ORDER_EVENT = {
-  CREATED: 'ORDER_CREATED',
-  STATUS_CHANGED: 'ORDER_STATUS_CHANGED',
-  CANCELLED: 'ORDER_CANCELLED',
-  PAID: 'ORDER_PAID',
-  DELIVERED: 'ORDER_DELIVERED',
-  RETURN_REQUESTED: 'RETURN_REQUESTED',
-  RETURN_PROCESSED: 'RETURN_PROCESSED',
-} as const;
+export { ORDER_EVENT } from '../enums/order-events';
 
 export const ORDER_STATUS = { PENDING: 'pending', CONFIRMED: 'confirmed', PACKING: 'packing', SHIPPING: 'shipping', DELIVERED: 'delivered', COMPLETED: 'completed', CANCELLED: 'cancelled', RETURNED: 'returned' } as const;
 export type OrderStatus = (typeof ORDER_STATUS)[keyof typeof ORDER_STATUS];
 export const PAYMENT_STATUS = { UNPAID: 'unpaid', PROCESSING: 'processing', PAID: 'paid', REFUNDED: 'refunded', PARTIALLY_REFUNDED: 'partially_refunded' } as const;
 export const RETURN_STATUS = { REQUESTED: 'requested', APPROVED: 'approved', REJECTED: 'rejected', REFUNDED: 'refunded' } as const;
-export const PAYMENT_METHOD = { COD: 'cod', BANK_TRANSFER: 'bank_transfer', VNPAY: 'vnpay' } as const;
+export const PAYMENT_METHOD = { COD: 'cod', BANK_TRANSFER: 'bank_transfer', VNPAY: 'vnpay', PAYOS: 'payos' } as const;
 
 /* Lưới chuyển trạng thái do NHÂN VIÊN thao tác (khách chỉ huỷ ở pending). */
 export const STAFF_TRANSITIONS: Record<string, string[]> = {
@@ -52,8 +49,9 @@ export const STAFF_TRANSITIONS: Record<string, string[]> = {
   confirmed: ['packing', 'cancelled'],
   packing: ['shipping'],
   shipping: ['delivered'],
-  delivered: ['completed', 'returned'],
-  completed: ['returned'],
+  // `returned` KHÔNG nằm ở đây: trả hàng chỉ đi qua ReturnService (hoàn kho + hoàn tiền + đảo hoa hồng); chuyển tay sang returned sẽ mất đơn khỏi đối soát mà khách không được hoàn.
+  delivered: ['completed'],
+  completed: [],
 };
 
 export const STATUS_LABEL: Record<string, string> = {

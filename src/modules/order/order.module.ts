@@ -5,13 +5,16 @@ import { CartModule } from '../cart/cart.module';
 import { PaymentModule } from '../payment/payment.module';
 import { ProductModule } from '../product/product.module';
 import { PromotionModule } from '../promotion/promotion.module';
+import { ShopModule } from '../shop/shop.module';
 import { SystemModule } from '../system/system.module';
 import { OrderAuditLogService } from './audit/order-audit-log.service';
 import { OrderActionsGatewayImpl } from './gateway/order-actions.gateway.impl';
 import { OrderPaymentGatewayImpl } from './gateway/order-payment.gateway.impl';
 import { AdminOrderController, OrderController } from './order/controller/order.controllers';
+import { ShopOrderController } from './order/controller/shop-order.controller';
 import { OrderRepository } from './order/repository/order.repository';
 import { OrderService } from './order/service/order.service';
+import { ShopOrderService } from './order/service/shop-order.service';
 import { OrderOutboxService } from './outbox/order-outbox.service';
 import { OrderQueryApi } from './queryapi/order.queryapi';
 import { ReturnService } from './return/return.service';
@@ -22,9 +25,9 @@ import { ReturnService } from './return/return.service';
  */
 @Global()
 @Module({
-  imports: [CartModule, ProductModule, PromotionModule, SystemModule, PaymentModule],
-  controllers: [OrderController, AdminOrderController],
-  providers: [OrderRepository, OrderAuditLogService, OrderOutboxService, OrderService, ReturnService, OrderQueryApi, { provide: ORDER_PAYMENT_GATEWAY, useClass: OrderPaymentGatewayImpl }, { provide: ORDER_ACTIONS_GATEWAY, useClass: OrderActionsGatewayImpl }],
+  imports: [CartModule, ProductModule, PromotionModule, SystemModule, PaymentModule, ShopModule],
+  controllers: [OrderController, AdminOrderController, ShopOrderController],
+  providers: [OrderRepository, OrderAuditLogService, OrderOutboxService, OrderService, ShopOrderService, ReturnService, OrderQueryApi, { provide: ORDER_PAYMENT_GATEWAY, useClass: OrderPaymentGatewayImpl }, { provide: ORDER_ACTIONS_GATEWAY, useClass: OrderActionsGatewayImpl }],
   // OrderService/OrderOutboxService export CHỈ cho OrderWorkerModule (job huỷ quá hạn, listener mail).
   exports: [OrderQueryApi, ORDER_PAYMENT_GATEWAY, ORDER_ACTIONS_GATEWAY, OrderService, OrderOutboxService],
 })

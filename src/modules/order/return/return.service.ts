@@ -62,10 +62,12 @@ export class ReturnService {
         rows.push({ orderItemId: oi.id, variantId: oi.variantId, name: oi.name, color: oi.color, size: oi.size, quantity: it.quantity, imageUrl: oi.imageUrl, unitPrice: oi.unitPrice });
         refund += vnd(oi.unitPrice.toString()) * BigInt(it.quantity);
       }
-      // Hoàn theo tỉ lệ giảm giá của đơn (không hoàn phần đã được giảm)
+      // Hoàn theo TỈ LỆ hàng trả trên tổng tiền khách ĐÃ TRẢ (gồm phí ship, đã trừ mọi voucher): hoàn đủ ⇒ đúng bằng `total`. Cách cũ (trừ discount/subtotal) hoàn thiếu
+      // khi có voucher freeship (discount gồm cả phần ship nhưng chia cho subtotal không gồm ship) và lệch với đối soát (đảo doanh thu theo tỉ lệ trên total).
       const subtotal = vnd(o.subtotal.toString());
-      const discount = vnd(o.discount.toString());
-      if (subtotal > 0n && discount > 0n) refund = refund - (refund * discount) / subtotal;
+      const total = vnd(o.total.toString());
+      if (subtotal > 0n) refund = (refund * total) / subtotal;
+      if (refund > total) refund = total;
       const r = await tx.returnRequest.create({
         data: {
           orderId: o.id,
@@ -125,7 +127,7 @@ export class ReturnService {
         await this.inventory.restock(r.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })), { type: 'return', id: r.orderCode }, tx);
         let status: string = RETURN_STATUS.APPROVED;
         if (o.paymentStatus === PAYMENT_STATUS.PAID || o.paymentStatus === PAYMENT_STATUS.PARTIALLY_REFUNDED) {
-          await this.payment.requestRefund({ orderCode: r.orderCode, amount, reason: `Đổi trả: ${r.reason}`, returnRequestId: r.id, actorUserId: actor.userId }, tx);
+          await this.payment.requestRefund({ orderCode: r.orderCode, shopId: o.shopId, amount, reason: `Đổi trả: ${r.reason}`, returnRequestId: r.id, actorUserId: actor.userId }, tx);
         } else {
           status = RETURN_STATUS.REFUNDED; // chưa thu tiền (COD chưa giao?) — coi như xong
         }

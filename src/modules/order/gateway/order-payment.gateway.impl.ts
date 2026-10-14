@@ -20,8 +20,12 @@ export class OrderPaymentGatewayImpl implements OrderPaymentGateway {
     return this.orders.onPaymentFailed(orderCode, reason, tx);
   }
 
-  async onRefunded(orderCode: string, amount: bigint, refundId: string, tx: Tx): Promise<void> {
-    await this.orders.onRefunded(orderCode, amount, refundId, tx);
+  async onRefunded(orderCode: string, amount: bigint, refundId: string, tx: Tx, fullyRefunded?: boolean): Promise<void> {
+    await this.orders.onRefunded(orderCode, amount, refundId, tx, fullyRefunded);
+  }
+
+  canRetryPayment(orderCode: string): Promise<boolean> {
+    return this.orders.canRetryPayment(orderCode);
   }
 
   /* payment gọi thêm khi hoàn tiền của yêu cầu đổi trả xong. */
