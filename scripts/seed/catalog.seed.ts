@@ -17,11 +17,15 @@ export const CATEGORIES = [
   { slug: 'ao-khoac', name: 'Áo khoác', description: 'Bomber, áo dù, blazer', sortOrder: 7 },
 ];
 
+/* PLAN-0016 — bộ sưu tập theo NGÀNH HÀNG (không theo giới tính) — sàn đa ngành hàng, không phải shop thời
+   trang đơn lẻ. Ảnh minh hoạ (gradient + icon, `scripts/seed/assets/catalog/collections/`) tự vẽ bằng
+   script Python chạy tay một lần khi thêm — khớp icon của dải ngành hàng trang chủ
+   (fashion_frontend_user `department-strip.tsx`) và mega menu Bộ sưu tập. */
 export const COLLECTIONS = [
-  { slug: 'nu', name: 'Thời trang nữ', tagline: 'Nhẹ nhàng cho ngày mới', queryGender: 'nu', sortOrder: 1 },
-  { slug: 'nam', name: 'Thời trang nam', tagline: 'Đơn giản mà chỉn chu', queryGender: 'nam', sortOrder: 2 },
-  { slug: 'hang-moi', name: 'Hàng mới về', tagline: 'Bộ sưu tập mùa này', queryTag: 'new', sortOrder: 3 },
-  { slug: 'dam-du-tiec', name: 'Đầm dự tiệc', tagline: 'Toả sáng mọi buổi tối', queryCategorySlug: 'dam', sortOrder: 4 },
+  { slug: 'thoi-trang', name: 'Thời trang', tagline: 'Phong cách mỗi ngày', queryCategorySlug: 'ao-thun', sortOrder: 1 },
+  { slug: 'dien-thoai-cong-nghe', name: 'Điện thoại & Công nghệ', tagline: 'Công nghệ trong tầm tay', queryCategorySlug: 'dien-thoai', sortOrder: 2 },
+  { slug: 'nha-cua-doi-song', name: 'Nhà cửa & Đời sống', tagline: 'Tiện nghi cho tổ ấm', queryCategorySlug: 'do-dung-nha-bep', sortOrder: 3 },
+  { slug: 'sac-dep-suc-khoe', name: 'Sắc đẹp & Sức khoẻ', tagline: 'Chăm sóc bản thân mỗi ngày', queryCategorySlug: 'cham-soc-da', sortOrder: 4 },
 ];
 
 /* Màu — code dùng làm khoá ảnh (`mau-<code>.jpg`) và mã biến thể. */
