@@ -6,7 +6,7 @@ import { CurrentActor, RequirePermission } from '@common/security/decorators';
 import { RateLimit } from '@common/security/rate-limit.guard';
 import { PageQuery } from '@common/utils/pagination';
 import { ReturnService } from '../../return/return.service';
-import { CheckoutSummaryResponse, OrderResponse, OrderSummaryResponse, ReturnRequestResponse } from '../dto/order.responses';
+import { CheckoutSummaryResponse, OrderGroupResponse, OrderResponse, OrderSummaryResponse, ReturnRequestResponse } from '../dto/order.responses';
 import { AdminOrderListQuery, CancelOrderRequest, CheckoutSummaryQuery, CreateOrderRequest, CreateReturnRequest, MyOrderListQuery, ProcessReturnRequest, ReturnListQuery, UpdateOrderStatusRequest } from '../request/order.requests';
 import { OrderService } from '../service/order.service';
 
@@ -27,15 +27,26 @@ export class OrderController {
 
   @Post('orders') @RateLimit({ name: 'place-order', limit: 10, windowSeconds: 600, by: 'user' })
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Gửi lại cùng key → trả đúng đơn đã tạo, không tạo đôi' })
-  @ApiOperation({ summary: 'Đặt hàng từ giỏ (dòng đã tick). Không gửi tiền; không gửi số thẻ (card → VNPay redirect)' }) @ApiOkResponse({ type: OrderResponse })
-  async place(@CurrentActor() actor: AuthenticatedActor, @Body() body: CreateOrderRequest, @Headers('idempotency-key') key?: string): Promise<ApiResponse<OrderResponse>> {
+  @ApiOperation({ summary: 'Đặt hàng từ giỏ (dòng đã tick) — trả đơn CHA kèm đơn con theo shop (PLAN-0014 bước 7). Không gửi tiền; không gửi số thẻ (card → VNPay redirect)' }) @ApiOkResponse({ type: OrderGroupResponse })
+  async place(@CurrentActor() actor: AuthenticatedActor, @Body() body: CreateOrderRequest, @Headers('idempotency-key') key?: string): Promise<ApiResponse<OrderGroupResponse>> {
     const address = body.address ? { ...body.address, provinceCode: null, districtName: body.address.districtName ?? null, wardName: body.address.wardName ?? null } : undefined;
-    return ApiResponse.ok(await this.orders.placeOrder(actor, { addressId: body.addressId, address, paymentMethodCode: body.paymentMethodCode, bankCode: body.bankCode ?? null, note: body.note, voucherCode: body.voucherCode ?? null }, key ?? null), 'Đặt hàng thành công');
+    return ApiResponse.ok(await this.orders.placeOrder(actor, { addressId: body.addressId, address, paymentMethodCode: body.paymentMethodCode, bankCode: body.bankCode ?? null, note: body.note, voucherCode: body.voucherCode ?? null, voucherCodes: body.voucherCodes }, key ?? null), 'Đặt hàng thành công');
   }
 
-  @Get('orders') @ApiOkResponse({ type: PageResponse }) @ApiOperation({ summary: 'Đơn của tôi — tóm tắt; `full=true` trả OrderResponse đầy đủ' })
+  @Get('orders') @ApiOkResponse({ type: PageResponse }) @ApiOperation({ summary: 'Đơn của tôi — tóm tắt; `full=true` trả OrderResponse đầy đủ (đơn CON, không gộp nhóm)' })
   async mine(@CurrentActor() actor: AuthenticatedActor, @Query() q: MyOrderListQuery): Promise<ApiResponse<PageResponse<OrderSummaryResponse | OrderResponse>>> {
     return ApiResponse.ok(q.full ? await this.orders.myOrdersFull(actor, q.page, q.size, q.status) : await this.orders.myOrders(actor, q.page, q.size, q.status));
+  }
+
+  /* Khai báo TRƯỚC 'orders/:code' — nếu không, Nest khớp path theo thứ tự đăng ký và 'groups' sẽ rơi vào :code. */
+  @Get('orders/groups') @ApiOkResponse({ type: PageResponse }) @ApiOperation({ summary: 'Đơn của tôi theo nhóm (đơn cha + đơn con từng shop) — PLAN-0014 bước 7' })
+  async mineGroups(@CurrentActor() actor: AuthenticatedActor, @Query() q: PageQuery): Promise<ApiResponse<PageResponse<OrderGroupResponse>>> {
+    return ApiResponse.ok(await this.orders.myOrderGroups(actor, q.page, q.size));
+  }
+
+  @Get('orders/groups/:code') @ApiOkResponse({ type: OrderGroupResponse })
+  async detailGroup(@CurrentActor() actor: AuthenticatedActor, @Param('code') code: string): Promise<ApiResponse<OrderGroupResponse>> {
+    return ApiResponse.ok(await this.orders.myOrderGroup(actor, code.toUpperCase()));
   }
 
   @Get('orders/:code') @ApiOkResponse({ type: OrderResponse })

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ToBoolean } from '@common/utils/transform';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, MaxLength, Min, ValidateNested } from 'class-validator';
 import { PageQuery } from '@common/utils/pagination';
@@ -19,6 +19,8 @@ export class CheckoutAddressInput {
 
 export class CheckoutSummaryQuery {
   @ApiPropertyOptional({ example: 'FREESHIP' }) @IsOptional() @IsString() @MaxLength(40) voucherCode?: string;
+  @ApiPropertyOptional({ example: 'FREESHIP,SHOPA10', description: 'Nhiều mã cách nhau dấu phẩy: tối đa 1 mã sàn + 1 mã gian hàng cho mỗi shop trong giỏ' })
+  @IsOptional() @Transform(({ value }: { value: unknown }): unknown => (typeof value === 'string' ? value.split(',').map((x) => x.trim()).filter(Boolean) : value)) @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) @MaxLength(40, { each: true }) voucherCodes?: string[];
   @ApiPropertyOptional({ description: 'Tỉnh/thành để tính ship (bỏ trống = địa chỉ mặc định)' }) @IsOptional() @IsString() @MaxLength(100) province?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() addressId?: string;
 }
@@ -31,6 +33,8 @@ export class CreateOrderRequest {
   @ApiPropertyOptional({ description: 'VNPay: VNBANK (ATM) · INTCARD (Visa/Master) · VNPAYQR' }) @IsOptional() @IsIn(['VNBANK', 'INTCARD', 'VNPAYQR']) bankCode?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
   @ApiPropertyOptional({ example: 'FREESHIP', nullable: true }) @IsOptional() @IsString() @MaxLength(40) voucherCode?: string | null;
+  @ApiPropertyOptional({ type: [String], example: ['SHOPA10'], description: 'Mã bổ sung (gộp với voucherCode): tối đa 1 mã sàn + 1 mã gian hàng cho mỗi shop trong giỏ' })
+  @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) @MaxLength(40, { each: true }) voucherCodes?: string[];
 }
 
 export class CancelOrderRequest {

@@ -1,12 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma, Tx } from '@common/prisma/types';
+import { RETURN_STATUS } from '../../foundation/order.constants';
 
 export const ORDER_INCLUDE = { items: { orderBy: { name: 'asc' as const } }, histories: { orderBy: { createdAt: 'asc' as const } } } as const;
 export type OrderRow = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
+/* PLAN-0014 bước 7 — đơn cha kèm các đơn con theo shop (mỗi đơn con đủ items/histories như OrderRow). */
+export const ORDER_GROUP_INCLUDE = { orders: { include: ORDER_INCLUDE, orderBy: { createdAt: 'asc' as const } } } as const;
+export type OrderGroupRow = Prisma.OrderGroupGetPayload<{ include: typeof ORDER_GROUP_INCLUDE }>;
+
+/* Số lượng ĐÃ yêu cầu trả (đang mở/đã duyệt/đã hoàn) theo dòng hàng — cùng định nghĩa với ReturnService khi chặn trả quá số lượng. */
+export const RETURN_COUNTED_STATUSES = [RETURN_STATUS.REQUESTED, RETURN_STATUS.APPROVED, RETURN_STATUS.REFUNDED] as const;
+
 export interface OrderListFilter {
   userId?: string;
+  shopId?: string;
   status?: string;
   paymentStatus?: string;
   paymentMethodCode?: string;
@@ -30,6 +39,33 @@ export class OrderRepository {
     return `DH${day}${String(row.counter).padStart(4, '0')}`;
   }
 
+  /* Mã đơn CHA — dãy đếm riêng (order_group_sequences), không dùng chung counter với đơn con để tránh
+     đụng logic sinh mã Order hiện có. Tiền tố DHN phân biệt rõ với DH của đơn con. */
+  async nextGroupCode(tx: Tx): Promise<string> {
+    const d = new Date();
+    const day = `${d.getFullYear().toString().slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    await tx.$executeRaw`INSERT INTO "order"."order_group_sequences" (day, counter) VALUES (${day}, 0) ON CONFLICT (day) DO NOTHING`;
+    const [row] = await tx.$queryRaw<Array<{ counter: number }>>`UPDATE "order"."order_group_sequences" SET counter = counter + 1 WHERE day = ${day} RETURNING counter`;
+    return `DHN${day}${String(row.counter).padStart(4, '0')}`;
+  }
+
+  async createGroup(data: Prisma.OrderGroupUncheckedCreateInput, tx: Tx): Promise<{ id: string; code: string }> {
+    return tx.orderGroup.create({ data, select: { id: true, code: true } });
+  }
+
+  async findGroupByCode(code: string, tx?: Tx | null): Promise<OrderGroupRow | null> {
+    return this.db(tx).orderGroup.findFirst({ where: { code }, include: ORDER_GROUP_INCLUDE });
+  }
+
+  async listGroups(userId: string, skip: number, take: number): Promise<{ items: OrderGroupRow[]; total: number }> {
+    const where: Prisma.OrderGroupWhereInput = { userId };
+    const [items, total] = await Promise.all([
+      this.prisma.orderGroup.findMany({ where, include: ORDER_GROUP_INCLUDE, orderBy: { createdAt: 'desc' }, skip, take }),
+      this.prisma.orderGroup.count({ where }),
+    ]);
+    return { items, total };
+  }
+
   async findByCode(code: string, tx?: Tx | null): Promise<OrderRow | null> {
     return this.db(tx).order.findFirst({ where: { code, isDeleted: false }, include: ORDER_INCLUDE });
   }
@@ -39,10 +75,24 @@ export class OrderRepository {
     return rows[0] ? tx.order.findUnique({ where: { id: rows[0].id }, include: ORDER_INCLUDE }) : null;
   }
 
+  /* Mã đơn cha + số đơn con KHÁC còn hiệu lực (chưa huỷ) — huỷ đơn con cuối của nhóm thì mới nhả voucher sàn. */
+  async returnedQtyByItem(orderId: string): Promise<Map<string, number>> {
+    const rows = await this.prisma.returnRequestItem.groupBy({ by: ['orderItemId'], where: { request: { orderId, status: { in: [...RETURN_COUNTED_STATUSES] } } }, _sum: { quantity: true } });
+    return new Map(rows.map((g) => [g.orderItemId, g._sum.quantity ?? 0]));
+  }
+
+  async groupSiblingInfo(orderGroupId: string, excludeOrderId: string, tx: Tx): Promise<{ groupCode: string; activeOthers: number } | null> {
+    const group = await tx.orderGroup.findUnique({ where: { id: orderGroupId }, select: { code: true } });
+    if (!group) return null;
+    const activeOthers = await tx.order.count({ where: { orderGroupId, id: { not: excludeOrderId }, isDeleted: false, status: { not: 'cancelled' } } });
+    return { groupCode: group.code, activeOthers };
+  }
+
   async list(f: OrderListFilter, skip: number, take: number): Promise<{ items: OrderRow[]; total: number }> {
     const where: Prisma.OrderWhereInput = {
       isDeleted: false,
       ...(f.userId ? { userId: f.userId } : {}),
+      ...(f.shopId ? { shopId: f.shopId } : {}),
       ...(f.status ? { status: f.status } : {}),
       ...(f.paymentStatus ? { paymentStatus: f.paymentStatus } : {}),
       ...(f.paymentMethodCode ? { paymentMethodCode: f.paymentMethodCode } : {}),
@@ -75,8 +125,8 @@ export class OrderRepository {
   }
 
   /* Đã giao quá N ngày không khiếu nại → hoàn tất (job). */
-  async findDeliveredBefore(before: Date, limit: number): Promise<Array<{ code: string }>> {
-    return this.prisma.order.findMany({ where: { isDeleted: false, status: 'delivered', deliveredAt: { lt: before } }, select: { code: true }, take: limit });
+  async findDeliveredBefore(before: Date, limit: number, excludeCodes: string[] = []): Promise<Array<{ code: string }>> {
+    return this.prisma.order.findMany({ where: { isDeleted: false, status: 'delivered', deliveredAt: { lt: before }, ...(excludeCodes.length > 0 ? { code: { notIn: excludeCodes } } : {}) }, orderBy: { deliveredAt: 'asc' }, select: { code: true }, take: limit });
   }
 
   /* Khách đã mua sản phẩm này (đơn delivered/completed) — review dùng. */

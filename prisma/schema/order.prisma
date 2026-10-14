@@ -4,11 +4,57 @@
 // Trạng thái: pending → confirmed → packing → shipping → delivered → completed; pending/confirmed → cancelled; delivered/completed → returned.
 // =====================================================================
 
+/* PLAN-0014 bước 7 — đơn CHA khi giỏ có sản phẩm từ nhiều gian hàng: 1 lần checkout → 1 OrderGroup
+   + N Order con (mỗi shop 1 Order, giữ nguyên state machine/thanh toán riêng của Order như cũ).
+   OrderGroup KHÔNG có trạng thái/lifecycle riêng (trạng thái sống ở từng Order con) — chỉ gom địa chỉ
+   giao (dùng chung 1 địa chỉ cho cả giỏ) + tổng tiền hiển thị. Đơn single-shop cũ (trước bước 7) cũng có
+   1 OrderGroup riêng (nhóm 1-đơn) sau migration backfill, để FE luôn chỉ cần xử lý MỘT hình dạng dữ liệu. */
+model OrderGroup {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /* DHN + yymmdd + 4 số — order_group_sequences riêng, KHÔNG dùng chung counter với Order (bước 7) */
+  code            String   @unique @db.VarChar(30)
+  userId          String   @map("user_id") @db.Uuid
+  recipientName   String   @map("recipient_name") @db.VarChar(120)
+  recipientPhone  String   @map("recipient_phone") @db.VarChar(20)
+  /* Chuỗi địa chỉ đầy đủ — snapshot y hệt từng Order con (trùng lặp có chủ đích, theo đúng cách Order
+     tự chụp snapshot chứ không tham chiếu bảng khác — mỗi Order con vẫn tự đứng độc lập được). */
+  shippingAddress String   @map("shipping_address") @db.VarChar(500)
+  /* Tổng của CẢ giỏ — bằng tổng cộng dồn subtotal/shippingFee/discount/total của các Order con lúc tạo. */
+  subtotal        Decimal  @db.Decimal(14, 0)
+  shippingFee     Decimal  @map("shipping_fee") @db.Decimal(14, 0)
+  discount        Decimal  @default(0) @db.Decimal(14, 0)
+  total           Decimal  @db.Decimal(14, 0)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy       String?  @map("created_by") @db.Uuid
+
+  orders Order[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("order_groups")
+  @@schema("order")
+}
+
+/* Bộ đếm mã OrderGroup theo ngày — tách riêng khỏi OrderSequence (bước 7) để không đụng logic sinh mã Order hiện có. */
+model OrderGroupSequence {
+  day     String @id @db.VarChar(6)
+  counter Int    @default(0)
+
+  @@map("order_group_sequences")
+  @@schema("order")
+}
+
 model Order {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /* DH + yymmdd + 4 số — order_sequences theo ngày, khoá dòng */
   code              String    @unique @db.VarChar(30)
   userId            String    @map("user_id") @db.Uuid
+  /* Gian hàng sở hữu đơn NÀY — một OrderGroup có N Order, mỗi Order thuộc ĐÚNG 1 shop (PLAN-0014 bước 7).
+     Không @relation sang shop.shops (khác schema — chỉ lưu id theo quy ước schema-per-module). */
+  shopId            String    @map("shop_id") @db.Uuid
+  orderGroupId      String    @map("order_group_id") @db.Uuid
+  /* % hoa hồng sàn ĐÓNG BĂNG lúc đặt hàng (đọc từ Shop.commissionRate tại thời điểm tạo đơn) — dùng cho
+     đối soát payout PLAN-0015, chưa có logic dùng ở bước 7, chỉ ghi nhận snapshot. */
+  commissionRateSnapshot Decimal @map("commission_rate_snapshot") @db.Decimal(5, 2)
   status            String    @default("pending") @db.VarChar(20)
   paymentMethodCode String    @map("payment_method_code") @db.VarChar(20)
   /* unpaid | processing | paid | refunded — payment cập nhật qua gateway/outbox */
@@ -25,9 +71,15 @@ model Order {
   customerNote      String?   @map("customer_note") @db.VarChar(500)
   subtotal          Decimal   @db.Decimal(14, 0)
   shippingFee       Decimal   @map("shipping_fee") @db.Decimal(14, 0)
+  /* Tổng giảm = shopDiscount + platformDiscount. Voucher SÀN (promotionCode) do SÀN chịu chi phí: đối soát/hoa hồng tính trên
+     total + platformDiscount, sàn hoàn phần platformDiscount cho shop. Voucher GIAN HÀNG (shopPromotionCode) do shop chịu. */
   discount          Decimal   @default(0) @db.Decimal(14, 0)
+  shopDiscount      Decimal   @default(0) @map("shop_discount") @db.Decimal(14, 0)
+  platformDiscount  Decimal   @default(0) @map("platform_discount") @db.Decimal(14, 0)
   promotionCode     String?   @map("promotion_code") @db.VarChar(40)
   promotionName     String?   @map("promotion_name") @db.VarChar(200)
+  shopPromotionCode String?   @map("shop_promotion_code") @db.VarChar(40)
+  shopPromotionName String?   @map("shop_promotion_name") @db.VarChar(200)
   total             Decimal   @db.Decimal(14, 0)
   itemCount         Int       @map("item_count")
   cancelReason      String?   @map("cancel_reason") @db.VarChar(255)
@@ -48,13 +100,16 @@ model Order {
   updatedBy         String?   @map("updated_by") @db.Uuid
   isDeleted         Boolean   @default(false) @map("is_deleted")
 
-  items     OrderItem[]
-  histories OrderStatusHistory[]
-  returns   ReturnRequest[]
+  orderGroup OrderGroup           @relation(fields: [orderGroupId], references: [id])
+  items      OrderItem[]
+  histories  OrderStatusHistory[]
+  returns    ReturnRequest[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
   @@index([paymentStatus, paymentExpiresAt])
+  @@index([shopId, createdAt(sort: Desc)])
+  @@index([orderGroupId])
   @@map("orders")
   @@schema("order")
 }
@@ -62,6 +117,9 @@ model Order {
 model OrderItem {
   id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId   String  @map("order_id") @db.Uuid
+  /* Đồng bộ với Order.shopId (đơn con chỉ chứa hàng của ĐÚNG 1 shop) — chép ra đây để báo cáo/reporting
+     shop-scoped (bước 9b) không phải join sang Order. */
+  shopId    String  @map("shop_id") @db.Uuid
   variantId String  @map("variant_id") @db.Uuid
   productId String  @map("product_id") @db.Uuid
   slug      String  @db.VarChar(160)
@@ -80,6 +138,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+  @@index([shopId])
   @@map("order_items")
   @@schema("order")
 }

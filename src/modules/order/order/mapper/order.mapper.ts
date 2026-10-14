@@ -1,8 +1,8 @@
 import type { BankTransferIntent } from '@common/gateway/payment.gateway';
 import { money } from '@common/response/money-response';
 import { ORDER_STATUS, STATUS_LABEL } from '../../foundation/order.constants';
-import { OrderResponse, OrderSummaryResponse, ReturnRequestResponse } from '../dto/order.responses';
-import type { OrderRow } from '../repository/order.repository';
+import { OrderGroupResponse, OrderResponse, OrderSummaryResponse, ReturnRequestResponse } from '../dto/order.responses';
+import type { OrderGroupRow, OrderRow } from '../repository/order.repository';
 
 export interface PaymentExtras {
   paymentIntent: BankTransferIntent | null;
@@ -12,7 +12,7 @@ export interface PaymentExtras {
   cardLast4: string | null;
 }
 
-export function toOrderResponse(o: OrderRow, extras: PaymentExtras | null, returnWindowDays: number): OrderResponse {
+export function toOrderResponse(o: OrderRow, extras: PaymentExtras | null, returnWindowDays: number, shopName: string): OrderResponse {
   const canReturn = (o.status === ORDER_STATUS.DELIVERED || o.status === ORDER_STATUS.COMPLETED) && !!o.deliveredAt && Date.now() - o.deliveredAt.getTime() <= returnWindowDays * 86_400_000;
   return {
     id: o.id,
@@ -21,6 +21,8 @@ export function toOrderResponse(o: OrderRow, extras: PaymentExtras | null, retur
     statusLabel: STATUS_LABEL[o.status] ?? o.status,
     paymentMethodCode: o.paymentMethodCode,
     paymentStatus: o.paymentStatus,
+    shopId: o.shopId,
+    shopName,
     cardBrand: extras?.cardBrand ?? null,
     cardLast4: extras?.cardLast4 ?? null,
     transactionCode: extras?.transactionCode ?? null,
@@ -33,6 +35,9 @@ export function toOrderResponse(o: OrderRow, extras: PaymentExtras | null, retur
     shippingFee: money(o.shippingFee.toString()),
     discount: money(o.discount.toString()),
     promotion: o.promotionCode ? { code: o.promotionCode, name: o.promotionName } : null,
+    shopPromotion: o.shopPromotionCode ? { code: o.shopPromotionCode, name: o.shopPromotionName } : null,
+    shopDiscount: money(o.shopDiscount.toString()),
+    platformDiscount: money(o.platformDiscount.toString()),
     total: money(o.total.toString()),
     paymentIntent: extras?.paymentIntent ? { ...extras.paymentIntent } : null,
     paymentUrl: extras?.paymentUrl ?? null,
@@ -43,6 +48,21 @@ export function toOrderResponse(o: OrderRow, extras: PaymentExtras | null, retur
     canCancel: o.status === ORDER_STATUS.PENDING,
     canReturn,
     createdAt: o.createdAt.toISOString(),
+  };
+}
+
+export function toOrderGroupResponse(g: OrderGroupRow, orders: OrderResponse[]): OrderGroupResponse {
+  return {
+    code: g.code,
+    recipientName: g.recipientName,
+    recipientPhone: g.recipientPhone,
+    shippingAddress: g.shippingAddress,
+    subtotal: money(g.subtotal.toString()),
+    shippingFee: money(g.shippingFee.toString()),
+    discount: money(g.discount.toString()),
+    total: money(g.total.toString()),
+    orders,
+    createdAt: g.createdAt.toISOString(),
   };
 }
 
