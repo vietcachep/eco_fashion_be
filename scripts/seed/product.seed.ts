@@ -8,6 +8,7 @@ import { loadEnv } from '../../src/config/env';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { COLORS } from './catalog.seed';
 import { SeedImages } from './lib/seed-images';
+import { FITLY_OFFICIAL_SHOP_ID } from './lib/seed-shop';
 
 const SIZE_AO = ['S', 'M', 'L', 'XL'];
 const SIZE_QUAN = ['28', '29', '30', '31', '32'];
@@ -136,6 +137,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     const product = await prisma.product.create({
       data: {
         slug: p.slug,
+        shopId: FITLY_OFFICIAL_SHOP_ID,
         name: p.name,
         categoryId,
         categorySlug: p.cat,
@@ -159,7 +161,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
           create: p.mau.flatMap((m) =>
             p.size.map((s) => {
               const color = colorByCode.get(m)!;
-              return { sku: makeSku(p.slug, m, s), colorCode: m, colorName: color.name, colorHex: color.hex, sizeCode: s, isActive: true, stock: 0, reserved: 0 };
+              return { sku: makeSku(p.slug, m, s), shopId: FITLY_OFFICIAL_SHOP_ID, colorCode: m, colorName: color.name, colorHex: color.hex, sizeCode: s, isActive: true, stock: 0, reserved: 0 };
             }),
           ),
         },
@@ -168,8 +170,8 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     });
     await prisma.category.update({ where: { id: categoryId }, data: { productCount: { increment: 1 } } });
     for (const v of product.variants) {
-      const mi = p.mau.indexOf(v.colorCode);
-      const si = p.size.indexOf(v.sizeCode);
+      const mi = p.mau.indexOf(v.colorCode ?? "");
+      const si = p.size.indexOf(v.sizeCode ?? "");
       const qty = tonKho(i + 1, mi * 10 + si + 1);
       if (qty > 0) receiptItems.push({ variantId: v.id, sku: v.sku, quantity: qty, unitCost: BigInt(Math.round(p.gia * 0.55)), productId: product.id });
     }
