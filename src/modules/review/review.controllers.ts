@@ -93,7 +93,7 @@ export class AdminReviewController {
     return ApiResponse.ok(await this.reviews.moderate(actor, id, body.status, body.note), body.status === 'hidden' ? 'Đã ẩn đánh giá' : 'Đã hiện đánh giá');
   }
 
-  @Post(':id/reply') @HttpCode(HttpStatus.OK) @RequirePermission('review.review.reply') @ApiOperation({ summary: 'Trả lời thay cửa hàng (một trả lời / đánh giá, gọi lại = sửa)' })
+  @Post(':id/reply') @HttpCode(HttpStatus.OK) @RequirePermission('review.review.reply') @ApiOperation({ summary: 'Nhân viên sàn trả lời thay cửa hàng (một trả lời / đánh giá, gọi lại = sửa); hiện công khai dưới tên "Sàn FITLY", không lộ họ tên nhân viên' })
   async reply(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Body() body: ReplyRequest): Promise<ApiResponse<ReviewAdminResponse>> {
     return ApiResponse.ok(await this.reviews.reply(actor, id, body.content), 'Đã trả lời');
   }

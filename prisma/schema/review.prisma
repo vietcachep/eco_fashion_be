@@ -8,6 +8,7 @@ model Review {
   productId      String    @map("product_id") @db.Uuid
   productSlug    String    @map("product_slug") @db.VarChar(160)
   productName    String    @map("product_name") @db.VarChar(200)
+  shopId         String    @map("shop_id") @db.Uuid                      // PLAN-0014 bước 9: snapshot shopId cho review.reply của vendor
   userId         String    @map("user_id") @db.Uuid
   authorName     String    @map("author_name") @db.VarChar(120)
   avatarUrl      String?   @map("avatar_url") @db.VarChar(500)
@@ -35,6 +36,7 @@ model Review {
   @@unique([userId, orderItemId])
   @@index([productId, status, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([shopId])                                                      // PLAN-0014: lọc review theo shop
   @@map("reviews")
   @@schema("review")
 }
@@ -43,7 +45,10 @@ model ReviewReply {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   reviewId    String   @map("review_id") @db.Uuid
   staffUserId String   @map("staff_user_id") @db.Uuid
+  /// Tên lúc ghi (shop: tên gian hàng; platform: 'Sàn FITLY'). Dữ liệu CŨ có thể còn HỌ TÊN nhân viên ⇒ API công khai KHÔNG đọc cột này, tính tên từ author_kind.
   staffName   String   @map("staff_name") @db.VarChar(120)
+  /// shop | platform (CHECK ck_review_replies_author_kind): ai đứng tên phản hồi — gian hàng (vendor) hay sàn (nhân viên sàn). Quyết định tên hiển thị công khai.
+  authorKind  String   @default("platform") @map("author_kind") @db.VarChar(20)
   content     String   @db.VarChar(2000)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
