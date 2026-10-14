@@ -1,16 +1,18 @@
 # Thiết kế DB — module identity (PLAN-0002)
 
-Schema `identity`. Model: `prisma/schema/identity.prisma`. Migration: `prisma/migrations/20260915022842_identity_init`.
+Schema `identity`. Model: `prisma/schema/identity.prisma`. Migration: `prisma/migrations/20260915022842_identity_init`,
+`20260915070000_identity_google_login` (`users.google_sub` unique, `addresses.province_code` nullable),
+`20260928014603_identity_role_scope_and_shop_permissions` (`roles.scope`).
 Sơ đồ: `docs/database/eco_fashion.dbml`.
 
 ## Bảng và vai trò
 
 | Bảng | Vai trò | Ghi chú thiết kế |
 |---|---|---|
-| `roles` | 7 vai hệ thống (preset quyền) | `perms:sync` tạo; `is_system=true`; API không tạo/xoá vai (đề tài cố định 7 vai). Admin luôn = toàn bộ catalog, không sửa preset. |
+| `roles` | 9 vai hệ thống (preset quyền): 7 vai nền tảng `scope='platform'` (admin · manager · sales · warehouse · accountant · marketing · customer) + 2 vai gian hàng `scope='shop'` (`shop_owner` · `shop_staff`) | `perms:sync` tạo; `is_system=true`; API không tạo/xoá vai (bộ vai cố định). Admin luôn = toàn bộ catalog, không sửa preset. `scope` có CHECK `ck_roles_scope` (`platform`\|`shop`). Vai `scope='shop'` KHÔNG BAO GIỜ gán vào `users.role_id` — chỉ dùng qua `shop.shop_members.role_id` (module shop), quyền hiệu lực do `ShopContextGuard` đọc qua `IdentityQueryApi.shopRoleContext`. |
 | `permissions` | catalog mã quyền `module.resource.action` | nguồn sự thật là `permission/catalog.ts`; sync upsert theo `code`; `deprecated` → `is_active=false` (không xoá vì route cũ có thể còn dùng). |
 | `role_permissions` | preset của vai | PK (role_id, permission_id). Sync chỉ THÊM mã thiếu, không gỡ mã admin đã thêm tay. |
-| `users` | một bảng cho khách lẫn nhân viên | `role_id` phân loại (`customer` = khách). `permission_version` (pv) là khoá vô hiệu token/cache. `password_hash` argon2id (memory 19MB, t=2) — chỉ `UserRepository.findForLogin/passwordHashOf` đọc. |
+| `users` | một bảng cho khách lẫn nhân viên | `role_id` phân loại (`customer` = khách). `permission_version` (pv) là khoá vô hiệu token/cache. `password_hash` argon2id (memory 19MB, t=2) — chỉ `UserRepository.findForLogin/passwordHashOf` đọc. `google_sub` (unique, nullable) = định danh đăng nhập Google. `email_verified_at` được đặt khi đăng ký bằng OTP đúng (từ 2026-10-04) hoặc đăng nhập Google; tài khoản nhân viên do CHỦ SHOP tạo (`POST /shop/members` → `IdentityApplicationApi.createCustomerAccount`) có `email_verified_at` RỖNG vì người tạo chỉ gõ địa chỉ chứ không chứng minh được chủ địa chỉ (hiện không luồng nào đòi cờ này; nhân viên chiếm lại tài khoản bằng "quên mật khẩu" qua OTP email); luồng lời mời nhân viên từng dựa vào cờ này đã bỏ ngày 2026-10-13. Chủ/nhân viên gian hàng là user có vai nền tảng `customer` + một dòng `shop.shop_members` (không có cột shop trên `users`). |
 | `user_permissions` | cấp/chặn riêng | `allowed=false` thắng vai (deny-wins). Không có override = theo vai. |
 | `refresh_tokens` | phiên đăng nhập | chỉ giữ SHA-256; `family_id` = chuỗi rotation; token đã `revoked_reason=ROTATED` bị dùng lại → thu hồi cả family (`REUSE_DETECTED`). Dọn sau 30 ngày. |
 | `login_histories` | mọi lần đăng nhập thành/bại | append-only; `reason`: REGISTER, INVALID_CREDENTIALS, THROTTLED, USER_LOCKED, hoặc tên thiết bị khi thành công. Dọn sau `EF_LOGIN_HISTORY_RETENTION_DAYS`. |

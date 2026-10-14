@@ -41,7 +41,7 @@ fork again
   #EEF6FF:UPSERT **reporting.daily_sales** (day)
   = SUM từ order.orders / order_items / payment.refunds
   (orders_count, items_sold, revenue, refunded, cod, transfer);
-  :@Cron 17:05 UTC (00:05 VN) — closeYesterday: chốt ngày hôm qua;
+  :@Cron 17:05 UTC (00:05 VN) — closeRecentDays: tính lại 14 ngày gần nhất (không chỉ hôm qua);
 fork again
   |Kho — product|
   :Relay outbox catalog/product (PRODUCT_UPDATED → AI reindex);

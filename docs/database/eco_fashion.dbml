@@ -1,20 +1,24 @@
 // EcoFashion — sơ đồ DB (dán vào https://dbdiagram.io). Cập nhật sau mỗi plan có migration.
+// Phản ánh trạng thái tới migration 20261013090000_drop_shop_invitations (12 schema: thêm `shop` — sàn đa gian hàng, PLAN-0014/0016/0017).
 // Quy ước: schema = module; không FK xuyên schema (tham chiếu chéo bằng id + code + snapshot).
 // Cột chuẩn (+base): created_at, created_by, updated_at, updated_by, version, is_deleted.
+// Mỗi bảng viết nhiều dòng (DBML không cho nhiều cột trên một dòng). CHECK / partial unique index / trigger mà Prisma không
+// biểu diễn được ghi trong `note` của cột hoặc `Note` của bảng — chi tiết SQL ở prisma/migrations/*/migration.sql.
 
 Project eco_fashion {
   database_type: 'PostgreSQL'
   Note: 'Nguồn sự thật là prisma/schema/*.prisma + prisma/migrations. File này chỉ để nhìn tổng thể.'
 }
 
-// ===================================================== identity (PLAN-0002)
+// ===================================================== identity (PLAN-0002, PLAN-0014 bước 2)
 
 Table identity.roles {
   id uuid [pk]
-  code varchar(40) [unique, note: 'admin · manager · sales · warehouse · accountant · marketing · customer']
+  code varchar(40) [unique, note: 'platform: admin · manager · sales · warehouse · accountant · marketing · customer | shop: shop_owner · shop_staff']
   name varchar(100)
   description varchar(255)
-  is_system boolean [default: false]
+  is_system boolean [default: true]
+  scope varchar(20) [not null, default: 'platform', note: 'platform | shop — CHECK ck_roles_scope. Vai scope=shop KHÔNG BAO GIỜ gán vào users.role_id, chỉ dùng qua shop.shop_members.role_id (migration 20260928014603)']
   created_at timestamptz
   created_by uuid
   updated_at timestamptz
@@ -51,12 +55,13 @@ Table identity.users {
   password_hash varchar(255) [note: 'argon2id']
   full_name varchar(120)
   avatar_url varchar(500)
-  role_id uuid
-  status varchar(20) [note: 'active · locked · inactive']
-  permission_version int [default: 0, note: 'bump khi đổi vai/quyền/mật khẩu/khoá → token cũ mất hiệu lực']
+  role_id uuid [note: 'chỉ vai scope=platform (nhân viên sàn / customer)']
+  status varchar(30) [note: 'active · locked · inactive']
+  permission_version int [default: 1, note: 'bump khi đổi vai/quyền/mật khẩu/khoá → token cũ mất hiệu lực']
   email_verified_at timestamptz
   last_login_at timestamptz
   locked_reason varchar(255)
+  google_sub varchar(64) [null, unique, note: 'đăng nhập Google: sub của id_token (migration 20260915070000)']
   created_at timestamptz
   created_by uuid
   updated_at timestamptz
@@ -108,7 +113,7 @@ Table identity.addresses {
   user_id uuid
   recipient_name varchar(120)
   phone varchar(20)
-  province_code varchar(10) [note: 'mã tỉnh (system.provinces) — chụp lại tên để địa chỉ cũ không đổi']
+  province_code varchar(10) [null, note: 'mã tỉnh (system.provinces) — chụp lại tên để địa chỉ cũ không đổi']
   province_name varchar(100)
   district_name varchar(100)
   ward_name varchar(100)
@@ -177,7 +182,96 @@ Ref: identity.addresses.user_id > identity.users.id
 
 
 
-// ===================================================== catalog (PLAN-0003)
+// ===================================================== shop (PLAN-0014 bước 1, PLAN-0017) — migration 20260928014536_shop_init
+
+// Gian hàng của sàn đa gian hàng. owner_user_id / user_id / role_id là id TRẦN trỏ sang schema identity — không FK xuyên schema.
+// Gian hàng chính chủ "FITLY Official" (id 00000000-0000-0000-0000-000000000001, code SHOP-000001, hoa hồng 0, status approved)
+// được migration 20260929084707 tạo sẵn để backfill dữ liệu cũ; owner_user_id của nó là UUID giữ chỗ cùng giá trị, không phải user thật.
+
+Table shop.shops {
+  id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(20) [unique, not null]
+  slug varchar(160) [unique, not null]
+  name varchar(200) [not null]
+  logo_url varchar(500) [null]
+  banner_url varchar(500) [null]
+  description varchar(2000) [null]
+  status varchar(20) [not null, default: 'pending', note: 'pending | approved | suspended | rejected — CHECK ck_shops_status; lưới chuyển ở SHOP_TRANSITIONS (foundation/shop.constants.ts). Sàn quản status/commission_rate/cod_enabled, vendor tự sửa hồ sơ']
+  commission_rate numeric(5,2) [not null, default: 10.00, note: '% hoa hồng sàn thu — CHECK ck_shops_commission_rate 0..100; đóng băng vào order.orders.commission_rate_snapshot lúc đặt hàng']
+  cod_enabled boolean [not null, default: true, note: 'tự tắt khi ví COD (payment.shop_wallets) về <= 0']
+  bank_code varchar(20) [null, note: 'PLAN-0017 (migration 20261003100000): BIN ngân hàng Napas/PayOS (6 số) — toBin khi chi tiền đối soát']
+  bank_account_number varchar(30) [null]
+  bank_account_name varchar(120) [null]
+  rating_avg numeric(3,2) [null]
+  total_products int [not null, default: 0, note: 'denormalized; CHECK ck_shops_total_products >= 0']
+  owner_user_id uuid [not null, note: 'identity.users.id đứng tên đăng ký — không FK xuyên schema']
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  is_deleted boolean [not null, default: false]
+  Note: 'UQ code, UQ slug (unique thường, không partial). Index status, owner_user_id'
+}
+
+Table shop.shop_members {
+  id uuid [pk, default: `gen_random_uuid()`]
+  shop_id uuid [not null]
+  user_id uuid [not null, note: 'identity.users.id — không FK xuyên schema']
+  role_id uuid [not null, note: 'identity.roles.id của vai scope=shop (shop_owner | shop_staff) — không FK xuyên schema']
+  status varchar(20) [not null, default: 'active', note: 'active | removed — CHECK ck_shop_members_status; gỡ nhân viên = status removed (giữ lịch sử, không xoá cứng)']
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  updated_at timestamptz [not null, default: `now()`]
+  updated_by uuid [null]
+  Note: 'Bảng n-n Shop-User. UQ (shop_id, user_id). Index (user_id, status). UQ MỘT PHẦN uq_shop_members_one_active_per_user (user_id) WHERE status = ''active'' — mỗi người chỉ thuộc MỘT gian hàng active (migration 20261004090000, viết tay vì Prisma không biểu diễn; GIỮ nguyên khi bảng lời mời bị bỏ ở 20261013090000). Dòng thành viên do chủ shop THÊM TRỰC TIẾP (POST /shop/members: tạo tài khoản khách + dòng này trong một transaction; nhân viên cũ bị gỡ được thêm lại = kích hoạt lại chính dòng này). Miễn cột version / is_deleted'
+}
+
+Table shop.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table shop.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20)
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+Table shop.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler)'
+}
+
+Ref: shop.shop_members.shop_id > shop.shops.id
+
+// ===================================================== catalog (PLAN-0003, PLAN-0016)
 
 Table catalog.categories {
   id uuid [pk]
@@ -189,6 +283,7 @@ Table catalog.categories {
   parent_id uuid [null]
   sort_order int
   is_active boolean
+  attribute_mode varchar(20) [not null, default: 'dynamic', note: 'PLAN-0016: legacy_fashion = ngành thời trang cũ (sản phẩm dùng gender/material/care + color_code/size_code) | dynamic = ngành mới (dùng dynamic_attributes + category_attributes). Migration 20260929120000 backfill toàn bộ category cũ = legacy_fashion. Chỉ category LÁ được gán sản phẩm, mode đọc từ chính category lá (không kế thừa). Không có CHECK ở DB, service kiểm']
   product_count int [note: 'đếm sẵn — product cập nhật qua CategoryStatsGateway']
   created_at timestamptz
   created_by uuid
@@ -220,7 +315,7 @@ Table catalog.collections {
 
 Table catalog.attributes {
   id uuid [pk]
-  code varchar(40) [unique, note: 'color · size · material']
+  code varchar(40) [unique, note: 'color · size · material — thuộc tính CỐ ĐỊNH của thời trang (legacy_fashion), giữ nguyên; ngành khác dùng dynamic_attributes']
   name varchar(120)
   kind varchar(20)
   is_filterable boolean
@@ -250,25 +345,91 @@ Table catalog.attribute_values {
   is_deleted boolean
 }
 
-Table catalog.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
-Table catalog.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
+// PLAN-0016 (migration 20260929120000) — thuộc tính động cho ngành hàng NGOÀI thời trang (điện tử, gia dụng, mỹ phẩm…).
+// KHÁC attributes/attribute_values ở trên (khoá cứng 3 mã color/size/material). Không cột chuẩn base (không version/is_deleted).
+
+Table catalog.dynamic_attributes {
+  id uuid [pk]
+  code varchar(60) [unique, note: 'không giới hạn mã, tạo mới qua API']
+  name varchar(100)
+  input_type varchar(20) [not null, default: 'select', note: 'select = chọn từ dynamic_attribute_values | text / number = nhập tay (product.product_attribute_values.custom_value)']
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table catalog.dynamic_attribute_values {
+  id uuid [pk]
+  attribute_id uuid
+  value varchar(100)
+  extra jsonb [null, note: 'vd {"hex":"#ff0000"} khi thuộc tính là màu — tự do theo input_type']
+  sort_order int [default: 0]
+  Note: 'UQ (attribute_id, value)'
+}
+
+Table catalog.category_attributes {
+  id uuid [pk]
+  category_id uuid [note: 'category LÁ']
+  attribute_id uuid
+  required boolean [default: false]
+  is_variant_axis boolean [default: false, note: 'dùng làm trục biến thể; TỐI ĐA 2 dòng is_variant_axis=true / category — chỉ service kiểm, không có ràng buộc DB']
+  sort_order int [default: 0]
+  Note: 'Mẫu thuộc tính theo ngành hàng. UQ (category_id, attribute_id)'
+}
+
+Table catalog.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table catalog.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20)
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
 
 Ref: catalog.categories.parent_id > catalog.categories.id
 Ref: catalog.attribute_values.attribute_id > catalog.attributes.id
+Ref: catalog.dynamic_attribute_values.attribute_id > catalog.dynamic_attributes.id
+Ref: catalog.category_attributes.category_id > catalog.categories.id
+Ref: catalog.category_attributes.attribute_id > catalog.dynamic_attributes.id
 
-// ===================================================== product (PLAN-0004)
+// ===================================================== product (PLAN-0004, PLAN-0014 bước 5, PLAN-0016, PLAN-0017)
 
 Table product.products {
   id uuid [pk]
   slug varchar(160) [note: 'UQ partial sống']
   name varchar(200)
+  shop_id uuid [not null, note: 'PLAN-0014 bước 5: gian hàng sở hữu sản phẩm (shop.shops.id — không FK xuyên schema). Migration 20260929084707 backfill toàn bộ sản phẩm cũ vào FITLY Official (00000000-0000-0000-0000-000000000001)']
   category_id uuid [note: 'catalog.categories.id — không FK xuyên schema']
   category_slug varchar(120) [note: 'snapshot, worker đồng bộ khi catalog đổi slug']
-  gender varchar(10) [note: 'nam · nu · unisex']
+  gender varchar(10) [note: 'nam · nu · unisex — chỉ có nghĩa với category attribute_mode=legacy_fashion']
   short_description varchar(500)
   description text
-  material varchar(200)
-  care jsonb [note: 'string[]']
+  material varchar(200) [note: 'chỉ có nghĩa với legacy_fashion']
+  care jsonb [note: 'string[] — chỉ có nghĩa với legacy_fashion']
   base_price numeric(14,0)
   list_price numeric(14,0) [note: 'giá gốc (gạch) khi giảm']
   status varchar(20) [note: 'draft · active · hidden']
@@ -287,16 +448,18 @@ Table product.products {
   updated_by uuid
   version int
   is_deleted boolean
+  Note: 'index shop_id (products_shop_id_idx). Thuộc tính ngành hàng mới (attribute_mode=dynamic) nằm ở product_attribute_values; sản phẩm thời trang thì bảng đó rỗng'
 }
 
 Table product.product_variants {
   id uuid [pk]
   product_id uuid
-  sku varchar(64) [note: 'UQ partial sống — makeSku(slug, màu, size)']
-  color_code varchar(40)
-  color_name varchar(120) [note: 'snapshot từ catalog']
-  color_hex varchar(9)
-  size_code varchar(40)
+  shop_id uuid [not null, note: 'PLAN-0014 bước 5: đồng bộ products.shop_id (backfill qua JOIN)']
+  sku varchar(64) [note: 'UQ partial THEO GIAN HÀNG: uq_product_variants_shop_sku_active (shop_id, sku) WHERE is_deleted=false — migration 20261003140000 thay cho unique(sku) toàn sàn và unique(shop_id, sku) tính cả xoá mềm; hai shop được trùng SKU, SKU xoá mềm dùng lại được. Prisma không khai @@unique cho nó (service kiểm trước). Thời trang sinh bằng makeSku(slug, màu, size)']
+  color_code varchar(40) [null, note: 'NULL với biến thể ngành dynamic (dùng product_variant_options) — migration 20260929120000 bỏ NOT NULL']
+  color_name varchar(120) [null, note: 'snapshot từ catalog; NULL với ngành dynamic']
+  color_hex varchar(9) [null]
+  size_code varchar(40) [null, note: 'NULL với biến thể ngành dynamic']
   price numeric(14,0) [null, note: 'NULL = base_price']
   stock int [note: 'tồn thô']
   reserved int [note: 'đang giữ cho đơn; CHECK 0 ≤ reserved ≤ stock']
@@ -307,7 +470,28 @@ Table product.product_variants {
   updated_by uuid
   version int
   is_deleted boolean
-  Note: 'UQ (product_id, color_code, size_code)'
+  Note: 'UQ (product_id, color_code, size_code) — với NULL (ngành dynamic) Postgres coi mỗi dòng là khác nhau nên unique này KHÔNG chặn trùng tổ hợp trục dynamic; service kiểm. Index sku, shop_id. CHECK ck_product_variants_stock_nonneg'
+}
+
+// PLAN-0016 (migration 20260929120000). attribute_id / attribute_value_id trỏ sang schema catalog (dynamic_attributes /
+// dynamic_attribute_values) bằng id trần — KHÔNG FK xuyên schema.
+
+Table product.product_attribute_values {
+  id uuid [pk]
+  product_id uuid
+  attribute_id uuid [note: 'catalog.dynamic_attributes.id']
+  attribute_value_id uuid [null, note: 'catalog.dynamic_attribute_values.id; NULL khi nhập tay']
+  custom_value varchar(255) [null, note: 'nhập tay khi input_type = text | number']
+  Note: 'Thuộc tính cấp sản phẩm, KHÔNG tạo biến thể (vd Xuất xứ, Bảo hành). UQ (product_id, attribute_id)'
+}
+
+Table product.product_variant_options {
+  id uuid [pk]
+  variant_id uuid
+  attribute_id uuid [note: 'catalog.dynamic_attributes.id']
+  attribute_value_id uuid [note: 'catalog.dynamic_attribute_values.id']
+  display_value varchar(100) [note: 'snapshot tên hiển thị lúc tạo (vd 128GB) — đổi tên giá trị gốc không làm lệch đơn cũ']
+  Note: 'Một trục biến thể của một variant (thay color_code/size_code cho ngành dynamic); tối đa 2 dòng / variant (chỉ service kiểm). UQ (variant_id, attribute_id)'
 }
 
 Table product.product_images {
@@ -330,6 +514,7 @@ Table product.stock_receipts {
   note varchar(500)
   status varchar(20) [note: 'draft · posted · cancelled']
   total_cost numeric(14,0)
+  shop_id uuid [null, note: 'PLAN-0017 (migration 20261003110000): phiếu của gian hàng nào (vendor tự nhập kho); NULL = phiếu của sàn. Mọi dòng phải là biến thể cùng shop_id (service kiểm). Phiếu cũ backfill = FITLY Official']
   posted_at timestamptz
   posted_by uuid
   created_at timestamptz
@@ -338,6 +523,7 @@ Table product.stock_receipts {
   updated_by uuid
   version int
   is_deleted boolean
+  Note: 'index (shop_id, created_at DESC) và (status, created_at DESC)'
 }
 
 Table product.stock_receipt_items {
@@ -364,13 +550,66 @@ Table product.stock_movements {
   created_at timestamptz
 }
 
-Table product.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
-Table product.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
-Table product.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
-Table product.idempotency_keys { id uuid [pk]  scope varchar(60)  actor_key varchar(64)  idempotency_key varchar(128)  request_hash varchar(64)  status varchar(20)  response_status int  response_body jsonb  result_ref varchar(64)  expires_at timestamptz  created_at timestamptz  Note: 'UQ (scope, actor_key, idempotency_key)' }
+Table product.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table product.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20)
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+Table product.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler)'
+}
+Table product.idempotency_keys {
+  id uuid [pk]
+  scope varchar(60)
+  actor_key varchar(64)
+  idempotency_key varchar(128)
+  request_hash varchar(64)
+  status varchar(20)
+  response_status int
+  response_body jsonb
+  result_ref varchar(64)
+  expires_at timestamptz
+  created_at timestamptz
+  Note: 'UQ (scope, actor_key, idempotency_key)'
+}
 
 Ref: product.product_variants.product_id > product.products.id
 Ref: product.product_images.product_id > product.products.id
+Ref: product.product_attribute_values.product_id > product.products.id
+Ref: product.product_variant_options.variant_id > product.product_variants.id
 Ref: product.stock_receipt_items.receipt_id > product.stock_receipts.id
 Ref: product.stock_receipt_items.variant_id - product.product_variants.id
 Ref: product.stock_movements.variant_id > product.product_variants.id
@@ -390,6 +629,7 @@ Table cart.cart_items {
   cart_id uuid [not null]
   variant_id uuid [not null]
   product_id uuid [not null]
+  shop_id uuid [not null, note: 'PLAN-0014 bước 6: denormalize từ product.shop_id lúc thêm giỏ — để tách giỏ theo shop khi checkout']
   quantity int [not null]
   selected bool [not null, default: true]
   created_at timestamptz [not null, default: `now()`]
@@ -502,14 +742,30 @@ Table system.pages {
   updated_by uuid [null]
 }
 
-Table system.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table system.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
 
 
-// ===================================================== promotion (PLAN-0008)
+// ===================================================== promotion (PLAN-0008, PLAN-0017)
 
 Table promotion.promotions {
   id uuid [pk, default: `gen_random_uuid()`]
-  code varchar(40) [not null]
+  code varchar(40) [not null, note: 'UQ partial uq_promotions_code_active: upper(code) WHERE is_deleted=false — duy nhất TOÀN SÀN, voucher sàn và voucher mọi shop dùng chung không gian mã']
   name varchar(200) [not null]
   description varchar(500) [null]
   type varchar(20) [not null]
@@ -524,12 +780,15 @@ Table promotion.promotions {
   ends_at timestamptz [not null]
   is_active bool [not null, default: true]
   is_public bool [not null, default: true]
+  scope varchar(10) [not null, default: 'platform', note: 'PLAN-0017: platform = voucher SÀN (áp trên tổng OrderGroup) | shop = voucher GIAN HÀNG (chỉ áp cho đơn con của đúng shop_id)']
+  shop_id uuid [null, note: 'shop.shops.id (không FK xuyên schema); NULL với voucher sàn']
   version int [not null, default: 0]
   created_at timestamptz [not null, default: `now()`]
   created_by uuid [null]
   updated_at timestamptz [not null, default: `now()`]
   updated_by uuid [null]
   is_deleted bool [not null, default: false]
+  Note: 'CHECK chk_promotions_scope: (scope=platform AND shop_id IS NULL) OR (scope=shop AND shop_id IS NOT NULL). CHECK ck_promotions_used_le_limit: usage_limit IS NULL OR used_count <= usage_limit. Index (scope, shop_id) và (is_active, starts_at, ends_at). Migration 20261003100000'
 }
 
 Table promotion.promotion_targets {
@@ -551,18 +810,61 @@ Table promotion.promotion_usages {
   Note: 'UQ (promotion_id, order_code)'
 }
 
-Table promotion.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
+Table promotion.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
 
 Ref: promotion.promotion_targets.promotion_id > promotion.promotions.id
 Ref: promotion.promotion_usages.promotion_id > promotion.promotions.id
 
 
-// ===================================================== order (PLAN-0006)
+// ===================================================== order (PLAN-0006, PLAN-0014 bước 7, PLAN-0017)
+
+// Đơn CHA: 1 lần checkout → 1 OrderGroup + N Order con (mỗi shop 1 Order, state machine/thanh toán riêng như cũ).
+// Không có trạng thái/lifecycle riêng. Đơn single-shop cũ được backfill thành nhóm 1-đơn (mã = DHN + phần sau 'DH' của mã đơn).
+Table order.order_groups {
+  id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(30) [unique, not null, note: 'DHN + yymmdd + 4 số — order_group_sequences riêng']
+  user_id uuid [not null]
+  recipient_name varchar(120) [not null]
+  recipient_phone varchar(20) [not null]
+  shipping_address varchar(500) [not null, note: 'snapshot địa chỉ (trùng lặp có chủ đích với từng Order con)']
+  subtotal numeric(14,0) [not null, note: 'tổng cả giỏ = cộng dồn các Order con lúc tạo']
+  shipping_fee numeric(14,0) [not null]
+  discount numeric(14,0) [not null, default: 0]
+  total numeric(14,0) [not null]
+  created_at timestamptz [not null, default: `now()`]
+  created_by uuid [null]
+  Note: 'index (user_id, created_at DESC). Không có updated_at / version / is_deleted'
+}
+
+Table order.order_group_sequences {
+  day varchar(6) [pk]
+  counter int [not null, default: 0]
+  Note: 'bộ đếm mã OrderGroup theo ngày, tách khỏi order_sequences'
+}
 
 Table order.orders {
   id uuid [pk, default: `gen_random_uuid()`]
   code varchar(30) [unique, not null]
   user_id uuid [not null]
+  shop_id uuid [not null, note: 'gian hàng sở hữu đơn NÀY — mỗi Order thuộc đúng 1 shop (shop.shops.id, không FK xuyên schema). Index (shop_id, created_at DESC)']
+  order_group_id uuid [not null, note: 'FK order.order_groups — mọi Order luôn thuộc đúng 1 OrderGroup (ON DELETE RESTRICT)']
+  commission_rate_snapshot numeric(5,2) [not null, note: '% hoa hồng sàn ĐÓNG BĂNG lúc đặt (đọc shop.shops.commission_rate); đơn cũ backfill từ hoa hồng hiện tại của shop. Dùng cho đối soát payout']
   status varchar(20) [not null, default: 'pending']
   payment_method_code varchar(20) [not null]
   payment_status varchar(20) [not null, default: 'unpaid']
@@ -577,9 +879,13 @@ Table order.orders {
   customer_note varchar(500) [null]
   subtotal numeric(14,0) [not null]
   shipping_fee numeric(14,0) [not null]
-  discount numeric(14,0) [not null, default: 0]
-  promotion_code varchar(40) [null]
+  discount numeric(14,0) [not null, default: 0, note: 'tổng giảm = shop_discount + platform_discount (không có CHECK ở DB)']
+  shop_discount numeric(14,0) [not null, default: 0, note: 'PLAN-0017 (migration 20261003120000): phần giảm do voucher GIAN HÀNG — shop chịu']
+  platform_discount numeric(14,0) [not null, default: 0, note: 'phần giảm do voucher SÀN — sàn chịu: đối soát/hoa hồng tính trên total + platform_discount, sàn hoàn phần này cho shop. Đơn cũ có promotion_code backfill = discount']
+  promotion_code varchar(40) [null, note: 'voucher SÀN']
   promotion_name varchar(200) [null]
+  shop_promotion_code varchar(40) [null, note: 'voucher GIAN HÀNG (đơn con mang tối đa 1 voucher sàn + 1 voucher shop)']
+  shop_promotion_name varchar(200) [null]
   total numeric(14,0) [not null]
   item_count int [not null]
   cancel_reason varchar(255) [null]
@@ -598,11 +904,13 @@ Table order.orders {
   updated_at timestamptz [not null, default: `now()`]
   updated_by uuid [null]
   is_deleted bool [not null, default: false]
+  Note: 'CHECK ck_orders_money_nonneg: subtotal, shipping_fee, discount, total >= 0. Index (user_id, created_at DESC), (status, created_at DESC), (payment_status, payment_expires_at), (shop_id, created_at DESC), (order_group_id)'
 }
 
 Table order.order_items {
   id uuid [pk, default: `gen_random_uuid()`]
   order_id uuid [not null]
+  shop_id uuid [not null, note: 'đồng bộ order.orders.shop_id (đơn con chỉ chứa hàng của 1 shop) — chép ra để báo cáo theo shop khỏi JOIN. Index shop_id']
   variant_id uuid [not null]
   product_id uuid [not null]
   slug varchar(160) [not null]
@@ -666,21 +974,73 @@ Table order.order_sequences {
   counter int [not null, default: 0]
 }
 
-Table order.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
-Table order.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
-Table order.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
-Table order.idempotency_keys { id uuid [pk]  scope varchar(60)  actor_key varchar(64)  idempotency_key varchar(128)  request_hash varchar(64)  status varchar(20)  response_status int  response_body jsonb  result_ref varchar(64)  expires_at timestamptz  created_at timestamptz  Note: 'UQ (scope, actor_key, idempotency_key)' }
+Table order.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table order.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20)
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+Table order.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler)'
+}
+Table order.idempotency_keys {
+  id uuid [pk]
+  scope varchar(60)
+  actor_key varchar(64)
+  idempotency_key varchar(128)
+  request_hash varchar(64)
+  status varchar(20)
+  response_status int
+  response_body jsonb
+  result_ref varchar(64)
+  expires_at timestamptz
+  created_at timestamptz
+  Note: 'UQ (scope, actor_key, idempotency_key)'
+}
 
+Ref: order.orders.order_group_id > order.order_groups.id
 Ref: order.order_items.order_id > order.orders.id
 Ref: order.order_status_histories.order_id > order.orders.id
 Ref: order.return_requests.order_id > order.orders.id
 Ref: order.return_request_items.return_id > order.return_requests.id
 
 
-// ===================================================== payment (PLAN-0007)
+// ===================================================== payment (PLAN-0007, PLAN-0017)
 
 Table payment.payment_methods {
-  code varchar(20) [pk]
+  code varchar(20) [pk, note: 'cod | bank_transfer | vnpay | payos. `payos` bật trong DB nhưng khách chỉ thấy khi backend có khoá PayOS (isMethodActive)']
   name varchar(120) [not null]
   description varchar(300) [null]
   kind varchar(20) [not null]
@@ -693,7 +1053,7 @@ Table payment.payment_methods {
 
 Table payment.payments {
   id uuid [pk, default: `gen_random_uuid()`]
-  order_id uuid [not null]
+  order_id uuid [not null, note: 'id đơn CON (order.orders.id, không FK xuyên schema) — payment gắn từng đơn con, KHÔNG gắn order_groups; mỗi đơn con thanh toán/hoàn tiền riêng']
   order_code varchar(30) [not null]
   user_id uuid [not null]
   method_code varchar(20) [not null]
@@ -705,7 +1065,7 @@ Table payment.payments {
   card_last4 varchar(4) [null]
   transfer_content varchar(60) [null]
   refunded_amount numeric(14,0) [not null, default: 0]
-  gateway_response jsonb [null]
+  gateway_response jsonb [null, note: 'payload webhook gốc của cổng; PayOS: có counterAccountBankId/counterAccountNumber (chỉ 3 ngân hàng) để hoàn tiền tự động qua Lệnh chi']
   paid_at timestamptz [null]
   expires_at timestamptz [null]
   version int [not null, default: 0]
@@ -713,18 +1073,20 @@ Table payment.payments {
   created_by uuid [null]
   updated_at timestamptz [not null, default: `now()`]
   updated_by uuid [null]
+  Note: 'UQ partial uq_payments_order_live: (order_id) WHERE status IN pending/processing/paid — mỗi đơn tối đa 1 giao dịch thanh toán sống'
 }
 
 Table payment.payment_transactions {
   id uuid [pk, default: `gen_random_uuid()`]
   payment_id uuid [not null]
-  type varchar(20) [not null]
+  type varchar(20) [not null, note: 'create_url | ipn | payos_webhook | return | query | refund | manual_confirm | cod_collect']
   status varchar(20) [not null]
   amount numeric(14,0) [null]
-  provider_ref varchar(120) [null]
+  provider_ref varchar(120) [null, note: 'VNPay: vnp_TxnRef; PayOS: orderCode PayOS (số, Date.now()*1000 + random(1000)) — cùng (type, provider_ref) là khoá chống ghi đôi']
   raw_request jsonb [null]
   raw_response jsonb [null]
   created_at timestamptz [not null, default: `now()`]
+  Note: 'UQ partial uq_payment_transactions_provider_ref: (type, provider_ref) WHERE provider_ref IS NOT NULL — IPN/return trùng không cộng tiền hai lần'
 }
 
 Table payment.bank_transfer_confirmations {
@@ -751,27 +1113,147 @@ Table payment.refunds {
   requested_by uuid [null]
   processed_by uuid [null]
   processed_at timestamptz [null]
+  kind varchar(20) [not null, default: 'order', note: 'order = hoàn theo đơn | duplicate_payment = hoàn khoản khách trả trùng (không đổi payment_status của đơn, không đảo hoa hồng, không vào báo cáo hoàn). CHECK chk_refunds_kind']
+  gateway_attempted_at timestamptz [null, note: 'Ghi TRƯỚC khi gọi cổng VNPay (không có idempotency-key). Còn dấu mà chưa có provider_ref = chưa rõ cổng đã hoàn chưa => failed + needsReconcile, người xử lý đối chiếu rồi mới gọi lại']
+  shop_id uuid [null, note: 'PLAN-0017: snapshot gian hàng của đơn bị hoàn (đối soát payout trừ hoàn tiền đúng shop); backfill từ order.orders theo order_code, đơn không tìm thấy = NULL. Index shop_id']
   version int [not null, default: 0]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
 }
 
-Table payment.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
-Table payment.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
-Table payment.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+// ----- PLAN-0017 (migration 20261003100000): ví quỹ COD + đối soát (payout) theo gian hàng. shop_id = shop.shops.id (id trần).
+
+Table payment.shop_wallets {
+  id uuid [pk, default: `gen_random_uuid()`]
+  shop_id uuid [unique, not null, note: '1-1 với shop. Migration tạo sẵn ví số dư 0 cho mọi shop đã duyệt']
+  balance numeric(14,0) [not null, default: 0, note: 'CÓ THỂ ÂM. balance <= 0 thì service tắt shop.shops.cod_enabled (qua gateway sang module shop)']
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  Note: 'Ví quỹ COD: mỗi đơn COD hoàn tất trừ đúng hoa hồng khỏi ví'
+}
+
+Table payment.shop_wallet_transactions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  wallet_id uuid [not null]
+  shop_id uuid [not null]
+  type varchar(20) [not null, note: 'cod_commission | deposit | adjust | cod_refund — CHECK chk_shop_wallet_tx_type (cod_refund thêm ở migration 20261003160000: hoàn tiền đơn COD đã thu, ghi nợ ví số hoàn và hoàn lại hoa hồng tương ứng)']
+  order_code varchar(30) [null, note: 'mã đơn; với cod_refund là khoá RF-<26 ký tự đầu của refund id> (chống ghi hai lần); NULL với deposit/adjust']
+  amount numeric(14,0) [not null, note: 'âm = trừ khỏi ví (hoa hồng; cod_refund = hoa hồng hoàn lại - số hoàn), dương = cộng (nộp quỹ / điều chỉnh; cod_commission cũng có thể dương khi sàn hoàn voucher sàn lớn hơn hoa hồng)']
+  balance_after numeric(14,0) [not null]
+  note varchar(500) [null]
+  created_by uuid [null]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'SỔ CÁI APPEND-ONLY (không update/xoá; điều chỉnh = thêm dòng bù). UQ (shop_id, type, order_code) — gọi completed hai lần không trừ hoa hồng hai lần (order_code NULL thì unique không ràng). Index (shop_id, created_at DESC)'
+}
+
+Table payment.shop_wallet_deposit_requests {
+  id uuid [pk, default: `gen_random_uuid()`]
+  shop_id uuid [not null]
+  amount numeric(14,0) [not null, note: 'CHECK chk_shop_wallet_deposit_status: amount > 0']
+  status varchar(20) [not null, default: 'pending', note: 'pending | approved | rejected — CHECK chk_shop_wallet_deposit_status; sàn duyệt thì cộng ví']
+  proof_url varchar(500) [null]
+  note varchar(500) [null]
+  decided_by uuid [null]
+  decided_at timestamptz [null]
+  decide_note varchar(500) [null]
+  created_by uuid [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  Note: 'Shop xin nộp thêm quỹ khi ví về 0/âm bị khoá COD. Index (shop_id, status), (status, created_at DESC)'
+}
+
+Table payment.shop_payouts {
+  id uuid [pk, default: `gen_random_uuid()`]
+  code varchar(30) [unique, not null]
+  shop_id uuid [not null]
+  period_start timestamptz [not null]
+  period_end timestamptz [not null]
+  gross_revenue numeric(14,0) [not null]
+  commission numeric(14,0) [not null]
+  refund_amount numeric(14,0) [not null]
+  carried_debt numeric(14,0) [not null, default: 0, note: 'nợ mang từ kỳ trước']
+  net_payout numeric(14,0) [not null, note: '= gross_revenue - commission - refund_amount - carried_debt; CÓ THỂ ÂM (khi đó không chi, nợ âm sang kỳ sau)']
+  status varchar(20) [not null, default: 'pending', note: 'pending | processing | paid | failed | carried (net < 0: không chi, mang nợ) | settled (net = 0: không có gì để chi) — CHECK chk_shop_payouts_status (carried/settled thêm ở migration 20261003130000); một chiều, không có đường paid về pending']
+  provider_ref varchar(120) [null, note: 'mã giao dịch chi PayOS / mã chuyển khoản tay — chống chi trùng, tra soát']
+  fail_reason varchar(500) [null]
+  bank_snapshot jsonb [null, note: 'snapshot tài khoản nhận lúc chạy kỳ (đổi hồ sơ shop sau đó không làm lệch chứng từ)']
+  paid_at timestamptz [null]
+  created_by uuid [null]
+  version int [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  Note: 'Kỳ đối soát một shop, số liệu ĐÓNG BĂNG lúc chạy kỳ. UQ (shop_id, period_start, period_end). Index (status, created_at DESC)'
+}
+
+Table payment.shop_payout_lines {
+  id uuid [pk, default: `gen_random_uuid()`]
+  payout_id uuid [not null]
+  order_code varchar(30) [not null, note: 'kind=sale: mã đơn | kind=refund: khoá RF-<26 ký tự đầu của refund id>']
+  kind varchar(10) [not null, note: 'sale | refund — CHECK chk_shop_payout_lines_kind']
+  gross numeric(14,0) [not null]
+  commission numeric(14,0) [not null]
+  Note: 'UQ (order_code, kind) TOÀN BẢNG — một đơn/hoàn tiền không bao giờ bị tính vào hai kỳ. Index payout_id'
+}
+
+Table payment.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table payment.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20)
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+Table payment.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler)'
+}
 
 Ref: payment.payment_transactions.payment_id > payment.payments.id
 Ref: payment.bank_transfer_confirmations.payment_id > payment.payments.id
 Ref: payment.refunds.payment_id > payment.payments.id
+Ref: payment.shop_wallet_transactions.wallet_id > payment.shop_wallets.id
+Ref: payment.shop_payout_lines.payout_id > payment.shop_payouts.id
 
 
-// ===================================================== review (PLAN-0009)
+// ===================================================== review (PLAN-0009, PLAN-0014 bước 9)
 
 Table review.reviews {
   id uuid [pk, default: `gen_random_uuid()`]
   product_id uuid [not null]
   product_slug varchar(160) [not null]
   product_name varchar(200) [not null]
+  shop_id uuid [not null, note: 'PLAN-0014 bước 9: snapshot product.shop_id lúc tạo review (cho vendor trả lời review của shop mình; backfill qua JOIN products). Index shop_id']
   user_id uuid [not null]
   author_name varchar(120) [not null]
   avatar_url varchar(500) [null]
@@ -790,22 +1272,61 @@ Table review.reviews {
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
   is_deleted bool [not null, default: false]
-  Note: 'UQ (user_id, order_item_id)'
+  Note: 'UQ (user_id, order_item_id). CHECK ck_reviews_rating: rating BETWEEN 1 AND 5'
 }
 
 Table review.review_replies {
   id uuid [pk, default: `gen_random_uuid()`]
   review_id uuid [not null]
   staff_user_id uuid [not null]
-  staff_name varchar(120) [not null]
+  staff_name varchar(120) [not null, note: 'Dữ liệu lịch sử (có thể là họ tên nhân viên) — API KHÔNG đọc cột này, tên hiển thị tính từ author_kind']
+  author_kind varchar(20) [not null, default: 'platform', note: 'shop = tên shop hiện tại | platform = Sàn FITLY. CHECK ck_review_replies_author_kind']
   content varchar(2000) [not null]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
 }
 
-Table review.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
-Table review.outbox_events { id uuid [pk]  event_type varchar(80)  event_version varchar(10)  aggregate_type varchar(80)  aggregate_id varchar(64)  payload jsonb  status varchar(20)  retry_count int  next_attempt_at timestamptz  error_message text  request_id varchar(64)  processed_at timestamptz  created_at timestamptz  updated_at timestamptz }
-Table review.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+Table review.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table review.outbox_events {
+  id uuid [pk]
+  event_type varchar(80)
+  event_version varchar(10)
+  aggregate_type varchar(80)
+  aggregate_id varchar(64)
+  payload jsonb
+  status varchar(20)
+  retry_count int
+  next_attempt_at timestamptz
+  error_message text
+  request_id varchar(64)
+  processed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+Table review.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler)'
+}
 
 Ref: review.review_replies.review_id > review.reviews.id
 
@@ -989,8 +1510,31 @@ Table ai.product_faqs {
   updated_at timestamptz [not null, default: `now()`]
 }
 
-Table ai.audit_logs { id uuid [pk]  actor_user_id uuid  actor_email varchar(255)  action varchar(80)  module_code varchar(40)  entity_type varchar(80)  entity_id varchar(64)  entity_code varchar(100)  request_id varchar(64)  idempotency_key varchar(128)  before_summary jsonb  after_summary jsonb  ip_address varchar(45)  user_agent varchar(255)  created_at timestamptz }
-Table ai.processed_events { id uuid [pk]  event_id uuid  event_type varchar(80)  handler varchar(120)  processed_at timestamptz  Note: 'UQ (event_id, handler)' }
+Table ai.audit_logs {
+  id uuid [pk]
+  actor_user_id uuid
+  actor_email varchar(255)
+  action varchar(80)
+  module_code varchar(40)
+  entity_type varchar(80)
+  entity_id varchar(64)
+  entity_code varchar(100)
+  request_id varchar(64)
+  idempotency_key varchar(128)
+  before_summary jsonb
+  after_summary jsonb
+  ip_address varchar(45)
+  user_agent varchar(255)
+  created_at timestamptz
+}
+Table ai.processed_events {
+  id uuid [pk]
+  event_id uuid
+  event_type varchar(80)
+  handler varchar(120)
+  processed_at timestamptz
+  Note: 'UQ (event_id, handler)'
+}
 
 Ref: ai.document_chunks.document_id > ai.documents.id
 Ref: ai.chat_messages.session_id > ai.chat_sessions.id

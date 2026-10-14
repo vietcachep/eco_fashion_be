@@ -1,5 +1,11 @@
 # docs/design — Use case & Database Workflow (PlantUML)
 
+> **LƯU Ý (2026-10-03):** phần **SePay** trong bộ sơ đồ này (file `11`, `12`, `13`, `14`, `18`, `19`, `20`, `eco_fashion-sepay.dbml`, `erd/07-erd-payment-sepay.puml`) là thiết kế CŨ,
+> **chưa từng có trong mã nguồn** (grep `sepay` trong `src/` `prisma/` `scripts/` không ra gì) và đã được thay bằng **PayOS** (PLAN-0015/0017: payment link + webhook thu tiền, "Lệnh chi" hoàn tiền/chi trả shop).
+> Bộ sơ đồ cũng dừng ở mô hình **một cửa hàng** — chưa có module `shop`, đơn cha `OrderGroup`, ví quỹ COD, đối soát chi trả shop, ngành hàng thuộc tính động.
+> Nguồn sự thật hiện hành: `docs/02_MODULE_MAP.md` (module, luồng, sự kiện), `docs/database/eco_fashion.dbml` (schema thật), `docs/plans/PLAN-0015-*.md` + `PLAN-0017-*.md` (thanh toán), `docs/06_FE_CONTRACT.md` (API).
+> Các file ở đây giữ lại làm tài liệu tham khảo lịch sử, KHÔNG dùng để suy ra hành vi hệ thống.
+
 Bộ sơ đồ thiết kế hệ thống FITLY (EcoFashion) dựng từ backend hiện có (`src/modules/**`), bổ sung
 phần **thanh toán chuyển khoản qua SePay** và **hoàn tiền bằng mã QR** (kế toán quét, SePay báo tiền ra
 → DB tự cập nhật). Mọi sơ đồ là file `.puml` thuần, vẽ bằng PlantUML; mũi tên là đường thẳng
