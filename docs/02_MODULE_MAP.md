@@ -3,9 +3,9 @@
 Cập nhật sau mỗi plan. Cột "Đọc chéo" = queryapi module khác mà module này gọi; "Gateway cài" = interface ở
 `common/gateway` do module này cài đặt.
 
-Từ PLAN-0014/0015/0016/0017 hệ thống là **sàn đa gian hàng, đa ngành hàng** (không còn "một cửa hàng"): có thêm module
-**shop** (§12), đơn cha `OrderGroup` + đơn con theo shop (§6), voucher sàn + voucher shop (§5), PayOS + ví quỹ COD + đối soát
-chi trả shop (§7), ngành hàng có bộ thuộc tính riêng (§2/§3). Ranh giới import do `.dependency-cruiser.cjs` gác: module chỉ
+Từ PLAN-0014/0015/0016/0017/0018 hệ thống là **sàn đa gian hàng, đa ngành hàng** (không còn "một cửa hàng"): có thêm module
+**shop** (§12), đơn cha `OrderGroup` + đơn con theo shop (§6), voucher sàn + voucher shop (§5), PayOS + COD (sàn thu mọi khoản tiền, PLAN-0018) + đối soát
+chi trả shop tự động (§7), ngành hàng có bộ thuộc tính riêng (§2/§3). Ranh giới import do `.dependency-cruiser.cjs` gác: module chỉ
 được import `queryapi/` (đọc), `applicationapi/` (use case GHI công khai, hiếm — hiện chỉ `identity/applicationapi`), `enums/`, `security/` (guard dùng chung của `/shop/**`) và file `*.module.ts` của module khác; mọi thứ khác là ruột.
 Danh sách sự kiện outbox + ai nghe nằm ở §13.
 
@@ -21,7 +21,6 @@ common
 ├── gateway/        UserDirectoryGateway (findSnapshot[s]/staffUserIdsWithPermission) · NotificationGateway · InventoryGateway (availableOf/reserve/release/commit/restock) · ProductStatsGateway · CategoryStatsGateway · CartGateway (removeLines/addItem)
 │                   PromotionGateway (scopeOf/quote/consume/release — voucher sàn gắn mã đơn CHA, voucher shop gắn mã đơn CON) · PaymentGateway (initiate/cancel/markCodCollected/requestRefund{shopId,paymentId?}/isMethodActive)
 │                   OrderPaymentGateway (onPaid/onPaymentFailed/onRefunded{fullyRefunded}/canRetryPayment/markReturnRefunded) · OrderActionsGateway (cancelByCustomer — ai sau khi khách xác nhận)
-│                   ShopCodGateway (setCodEnabled — payment đổi Shop.codEnabled theo dấu số dư ví COD; shop cài, trả true khi trạng thái THỰC SỰ đổi)
 ├── prisma/         PrismaService (PrismaClient + adapter pg, global) · Tx = Prisma.TransactionClient · isPrismaError/prismaErrorTarget
 ├── audit/          writeAuditLog(delegate, moduleCode, actor, entry) + sanitizeSummary (che password/token/secret/otp/hash)
 ├── outbox/         writeOutboxEvent(delegate, input) · OutboxRelay (claim FOR UPDATE SKIP LOCKED, backoff mũ, MAX_RETRY 8, hồi phục PROCESSING kẹt >10')
@@ -37,7 +36,7 @@ common
 ```text
 identity                              schema identity · @Global (cung cấp 3 cổng cho guard/module khác)
 ├── foundation/      IDENTITY_ERR · IDENTITY_AUDIT · IDENTITY_EVENT · REDIS_KEY · hằng số khoá/OTP/TTL cache
-├── permission/      catalog.ts (83 mã `module.resource.action` — 82 đang dùng + `catalog.brand.manage` deprecated; 9 vai: 7 vai nền tảng `scope=platform` +
+├── permission/      catalog.ts (79 mã `module.resource.action` — 78 đang dùng + `catalog.brand.manage` deprecated; PLAN-0018 bỏ 4 mã ví; 9 vai: 7 vai nền tảng `scope=platform` +
 │                    `shop_owner`/`shop_staff` `scope=shop`; ROLE_PRESETS — nguồn sự thật, perms:sync đồng bộ DB). Namespace `supplier.*` = nhân viên SÀN thao tác trên MỌI shop,
 │                    `shop.*` = chủ/nhân viên shop trên CHÍNH shop mình (kiểm bằng ShopContextGuard từ ShopMember.roleId, KHÔNG qua PermissionGuard — vai shop không gán vào User.roleId)
 │                    PermissionService (quyền hiệu lực = vai ∪ cấp riêng − chặn riêng; cache `effective-perms:<uid>:<pv>` 300s)
@@ -139,11 +138,11 @@ Luật cộng dồn mỗi lần checkout: tối đa 1 voucher sàn + 1 voucher s
 
 ```text
 order                                 schema order · @Global (cung cấp ORDER_PAYMENT_GATEWAY, ORDER_ACTIONS_GATEWAY, OrderQueryApi) · import Cart/Product/Promotion/System/Payment/ShopModule
-├── foundation/      ORDER_STATUS · STAFF_TRANSITIONS · STATUS_LABEL · ORDER_EVENT (ORDER_ERR có ORDER_SHOP_NOT_AVAILABLE / ORDER_SHOP_COD_DISABLED / ORDER_PROMOTION_INVALID / ORDER_COD_LIMIT)
+├── foundation/      ORDER_STATUS · STAFF_TRANSITIONS · STATUS_LABEL · ORDER_EVENT (ORDER_ERR có ORDER_SHOP_NOT_AVAILABLE / ORDER_PROMOTION_INVALID / ORDER_COD_LIMIT)
 ├── order/           OrderRepository (nextCode DHyymmddNNNN + nextGroupCode qua order_sequences, findByCodeForUpdate, purchasedItem) · OrderMapper (canCancel/canReturn/badge)
 │                    MỘT lần checkout = 1 `OrderGroup` (đơn cha: địa chỉ giao, tổng tiền = Σ đơn con, KHÔNG có vòng đời riêng) + N `Order` CON (mỗi shop 1 đơn, vòng đời + Payment riêng;
 │                    commissionRateSnapshot đóng băng hoa hồng lúc đặt; shop_discount/platform_discount/shop_promotion_code tách phần voucher shop vs voucher sàn)
-│                    OrderService (checkoutSummary, placeOrder [tx: kiểm lại trạng thái từng shop + COD theo shop → mã đơn → snapshot → reserve kho → applyVouchers (1 sàn + 1 shop/đơn con,
+│                    OrderService (checkoutSummary, placeOrder [tx: kiểm lại trạng thái từng shop + hạn mức COD → mã đơn → snapshot → reserve kho → applyVouchers (1 sàn + 1 shop/đơn con,
 │                    phân bổ voucher sàn theo tỉ lệ subtotal, freeship theo phí ship từng gói, dồn dư làm tròn) → consume mã → xoá giỏ → initiate thanh toán từng đơn con → thông báo → outbox],
 │                    myOrders/myOrder/myOrderGroup[s], cancelByCustomer, listAdmin/getAdmin/updateStatus/cancelByStaff, onPaid/onPaymentFailed/onRefunded, cancelExpired/autoComplete)
 │                    ShopOrderService (vendor: chỉ đơn có shopId của phiên, đơn shop khác ⇒ 404; lưới chuyển trạng thái hẹp pending→confirmed→packing→shipping→delivered, huỷ khi pending/confirmed;
@@ -153,50 +152,46 @@ order                                 schema order · @Global (cung cấp ORDER_
 ├── return/          ReturnService (tạo ≥1 minh chứng, hoàn theo tỉ lệ giảm, approve/reject, markRefunded) — sàn xử lý TẬP TRUNG (không có quyền đổi trả cho vendor)
 ├── gateway/         OrderPaymentGatewayImpl (payment gọi ngược khi paid/failed/refunded) · OrderActionsGatewayImpl (ai huỷ đơn thay khách)
 ├── queryapi/        OrderQueryApi (purchasedItem, markItemsReviewed, recentOrders, findByCodeForUser, boughtTogether, purchasedProductIds, recentPurchases, soldByVariant, coPurchasePairs;
-│                    cho tiền/đối soát: shopIdOfOrder, commissionBasisOf, orderTotalsOf, completedCodOrderCodesSince, settlementOrders)
+│                    cho tiền/đối soát: shopIdOfOrder, commissionBasisOf, orderTotalsOf, settlementOrders — gom CẢ đơn online lẫn đơn COD đã `Payment=paid`)
 ├── order-worker.module.ts   relay outbox order+payment · OrderMailListeners (đặt/thanh toán/đổi trạng thái/giao/huỷ — idempotent qua processed_events) · job huỷ quá hạn thanh toán (1'), auto-complete (02:30), dọn idempotency (03:40)
 └── audit/ outbox/ idempotency (POST /orders)
 ```
 
 Bất biến: kho chỉ đổi qua InventoryGateway; đơn pending giữ `reserved`, confirmed trừ `stock`; huỷ sau confirmed = restock. PaymentService lấy ORDER_PAYMENT_GATEWAY lười qua `ModuleRef` (tránh vòng DI).
 placeOrder đọc lại trạng thái từng shop TRONG transaction: shop không còn `approved` (hoặc người mua là thành viên chính shop đó — chống mua chéo) ⇒ 409 `ORDER_SHOP_NOT_AVAILABLE`,
-COD khi shop tắt COD ⇒ 409 `ORDER_SHOP_COD_DISABLED`, hạn mức COD kiểm theo TỪNG đơn con — các lỗi này chặn CẢ lần checkout (không loại riêng dòng của shop đó khỏi giỏ); đơn con bị giảm hết (total 0) ⇒ 409.
+hạn mức COD (tham số hệ thống) kiểm theo TỪNG đơn con; không còn khoá COD theo shop/ví (PLAN-0018) — các lỗi này chặn CẢ lần checkout (không loại riêng dòng của shop đó khỏi giỏ); đơn con bị giảm hết (total 0) ⇒ 409.
 Mã đơn cha `DHN<yymmdd><4 số>` (bảng `order_group_sequences`), mã đơn con `DH<yymmdd><4 số>`.
 Ai chịu voucher: voucher sàn do SÀN chịu (shop vẫn nhận đủ doanh thu — đối soát/hoa hồng tính trên `total + platformDiscount`), voucher shop do SHOP chịu.
 
-## 7. payment ✅ PLAN-0007 · PLAN-0015 · PLAN-0017
+## 7. payment ✅ PLAN-0007 · PLAN-0015 · PLAN-0017 · PLAN-0018 (sàn thu mọi khoản tiền)
 
-Hai module Nest cùng schema `payment`: **PaymentModule** (thu tiền, hoàn tiền, ví COD) và **PaymentSettlementModule** (đối soát chi trả shop). Tách vì đối soát cần
+Hai module Nest cùng schema `payment`: **PaymentModule** (thu tiền PayOS + COD, hoàn tiền) và **PaymentSettlementModule** (đối soát chi trả shop). Tách vì đối soát cần
 `OrderQueryApi` mà `OrderModule` đã import `PaymentModule` — `PaymentModule` KHÔNG import `OrderModule` (nhận ORDER_PAYMENT_GATEWAY do OrderModule @Global cung cấp).
 Payment gắn từng đơn CON (không phải OrderGroup): mỗi đơn con có payment/link thanh toán riêng.
 
 ```text
 payment                               schema payment · PaymentModule import ShopModule + SystemModule
-├── foundation/      PAYMENT_STATUS · REFUND_STATUS · TX_TYPE · METHOD (cod · bank_transfer · vnpay · payos) · PAYOUT_STATUS/PAYOUT_ERR/PAYOUT_AUDIT · WALLET_* (lỗi/audit/loại sổ/sự kiện) · VNPAY_RESPONSE
-├── vnpay/           VnpayService (buildPayUrl HMAC-SHA512, verify return/IPN, refund API; returnUrl = EF_WEB_URL/checkout/vnpay-return)
+├── foundation/      PAYMENT_STATUS · REFUND_STATUS · TX_TYPE · METHOD (cod · payos) · PAYOUT_STATUS/PAYOUT_ERR/PAYOUT_AUDIT
 ├── payos/           PayosService — thu: createPaymentLink (POST /v2/payment-requests, ký HMAC-SHA256, orderCode = Date.now()*1000 + random(1000), link hết hạn 30'), verifyWebhookSignature (HMAC-SHA256, so sánh hằng-thời-gian),
 │                    getPaymentLink, cancelPaymentLink; chi: payout (POST /v1/payouts từng khoản + x-idempotency-key), payoutBalance. Hai cặp khoá RIÊNG (thu / chi); khoá thu trống ⇒ `isConfigured=false` ⇒ method `payos` tự tắt, webhook từ chối;
 │                    khoá chi trống ⇒ `isPayoutConfigured=false` ⇒ kỳ đối soát để `pending` cho kế toán chi tay. Header `x-signature` của API chi CHƯA được gửi/xác nhận (xem PLAN-0017 "Việc còn lại")
-├── payment/         PaymentService (cài PaymentGateway: listMethods/isMethodActive, initiate COD|VietQR intent|VNPay URL|PayOS link, cancel, markCodCollected, requestRefund{shopId};
-│                    handleVnpay return/ipn + handlePayos (webhook)/handlePayosReturn idempotent theo (type, provider_ref), retryVnpay/retryPayos, confirmTransfer, extrasForOrder;
-│                    processRefund: CHIẾM yêu cầu (requested|failed → processing, compare-and-set) rồi mới gọi cổng — VNPay refund API, PayOS payout CHỈ khi webhook gốc có tài khoản đối ứng
-│                    + có khoá chi (không thì kế toán chuyển tay + nhập providerRef), cod/bank_transfer luôn tay; thanh toán đến muộn/trả trùng ⇒ tự tạo refund (refundDuplicate))
-│                    PaymentPublicController /payment-methods · /payments/vnpay/return|ipn · /payments/payos/webhook|return · PaymentController /payments/vnpay|payos/retry/:orderCode
-│                    AdminPaymentController /admin/payment-methods · /admin/payments[/:id/confirm-transfer] · /admin/refunds[/:id/process]
-├── shop-wallet/     ví quỹ COD (ShopWallet + ShopWalletTransaction sổ cái APPEND-ONLY loại cod_commission|deposit|adjust|cod_refund + ShopWalletDepositRequest): đơn COD hoàn tất trừ hoa hồng ròng
-│                    (hoa hồng − voucher sàn sàn hoàn lại; âm = cộng ví), hoàn tiền đơn COD đã hoàn tất ghi nợ + hoàn hoa hồng (`cod_refund`); ví ≤ 0 ⇒ ShopCodGateway.setCodEnabled(false) NGAY trong tx
-│                    (không có vùng đệm âm), nộp quỹ được duyệt/điều chỉnh làm ví > 0 ⇒ mở lại COD · /shop/wallet[…] (vendor) · /admin/wallets · /admin/shops/:id/wallet[/transactions|/adjust] · /admin/wallet-deposits[/:id/approve|reject]
-├── shop-payout/     (thuộc PaymentSettlementModule) ShopPayoutService — đối soát chi trả shop: gom đơn ONLINE đã qua hạn đổi trả (escrow) chưa thuộc kỳ nào, trừ hoa hồng theo snapshot trên đơn, hoàn tiền đã chi
+├── payment/         PaymentService (cài PaymentGateway: listMethods/isMethodActive, initiate COD|PayOS link, cancel, markCodCollected, requestRefund{shopId};
+│                    handlePayos (webhook)/handlePayosReturn idempotent theo (type, provider_ref), retryPayos, extrasForOrder; markCodCollected = sàn ghi nhận đã thu COD khi giao thành công (Payment=paid);
+│                    processRefund: CHIẾM yêu cầu (requested|failed → processing, compare-and-set) rồi mới gọi cổng — PayOS payout CHỈ khi webhook gốc có tài khoản đối ứng
+│                    + có khoá chi (không thì kế toán chuyển tay + nhập providerRef), COD luôn hoàn tay; thanh toán đến muộn/trả trùng ⇒ tự tạo refund (refundDuplicate))
+│                    PaymentPublicController /payment-methods (chỉ cod · payos) · /payments/payos/webhook|return · PaymentController /payments/payos/retry/:orderCode
+│                    AdminPaymentController /admin/payment-methods · /admin/payments · /admin/refunds[/:id/process]
+├── shop-payout/     (thuộc PaymentSettlementModule) ShopPayoutService — đối soát chi trả shop: gom đơn PayOS VÀ đơn COD (đã `delivered/completed` + `Payment=paid` do sàn xác nhận thu) đã qua hạn đổi trả (escrow) chưa thuộc kỳ nào, trừ hoa hồng theo snapshot trên đơn, hoàn tiền đã chi
 │                    (chia theo tỉ lệ luỹ kế), nợ mang sang. net>0 ⇒ chi PayOS tự động (nếu có khoá chi + TK ngân hàng shop, trừ 24 giờ giữ chi trả sau khi shop đổi TK) hoặc `pending` cho kế toán `mark-paid`;
 │                    net=0 ⇒ `settled`; net<0 ⇒ `carried` (không chi, nợ sang kỳ sau). UNIQUE(shopId, kỳ) + UNIQUE(orderCode, kind) ⇒ chạy lại không trùng; gọi PayOS NGOÀI transaction; gọi PayOS thành công ⇒ kỳ ở `processing` (CHƯA có webhook payout nên không tự thành `paid` — kế toán đối chiếu rồi `mark-paid`; `processing` treo > 10 phút được `retry`)
-│                    /admin/payouts[/:id[/retry|mark-paid]] · /admin/payouts/run · /admin/payouts/payos-balance · /shop/payouts[/:id] — chạy kỳ là THAO TÁC TAY (chưa có cron)
+│                    /admin/payouts[/:id[/retry|mark-paid]] · /admin/payouts/run · /admin/payouts/payos-balance · /shop/payouts[/:id] — **cron tự động** (ShopPayoutCron trong worker, 02:00 Asia/Ho_Chi_Minh, kỳ `[ngày sau kỳ gần nhất, hết hôm qua]`; chỉ chạy khi setting `payout.auto_enabled`=true và PayOS chi đã cấu hình; kỳ rỗng bỏ qua); chạy tay `/admin/payouts/run` vẫn giữ để chạy bù
 ├── queryapi/        PaymentQueryApi (extrasForOrder, activeMethods, paidSummaryBetween)
-├── payment-worker.module.ts   relay outbox payment · PaymentEventListeners (ORDER_STATUS_CHANGED→completed + COD ⇒ ghi hoa hồng ví; PAYMENT_REFUNDED (COD) ⇒ ghi nợ hoàn tiền; SHOP_APPROVED ⇒ tạo ví)
-│                    · PaymentJobs (10': quét đơn COD hoàn tất 45 ngày gần nhất tối đa 1000 đơn chưa có dòng hoa hồng và ghi bù)
+├── payment-worker.module.ts   relay outbox payment · PaymentEventListeners (không còn listener ví COD; hoàn tiền đơn COD đã đối soát ⇒ dòng REFUND ở kỳ sau qua đối soát)
+│                    · cron chi trả shop tự động (xem shop-payout)
 └── audit/ outbox/ processed (relay chạy ở PaymentWorkerModule và cả OrderWorkerModule — claim SKIP LOCKED nên không xử lý đôi)
 ```
 
-Bất biến tiền: mọi thay đổi số dư ví = transaction + FOR UPDATE ví + dòng sổ cái + audit (+ outbox khi COD đổi trạng thái); hoa hồng COD idempotent theo (shop, loại, mã đơn);
+Bất biến tiền: sàn thu mọi khoản (PayOS + COD) và là bên duy nhất trả shop — không có ví/sổ quỹ COD; đối soát idempotent theo UNIQUE(shopId, kỳ) + UNIQUE(orderCode, kind);
 voucher sàn do sàn chịu (đối soát tính trên `total + platformDiscount`); chi PayOS có idempotency-key = mã kỳ nên retry không chi đôi.
 
 ## 8. review ✅ PLAN-0009 · PLAN-0014 (đánh giá theo shop)
@@ -285,7 +280,7 @@ shop                                  schema shop (Shop · ShopMember · audit/o
 ├── foundation/      SHOP_ERR · SHOP_AUDIT · SHOP_STATUS (pending|approved|suspended|rejected) · SHOP_TRANSITIONS (pending→approved|rejected, approved→suspended, suspended→approved, rejected cuối) · FITLY_OFFICIAL_SHOP_CODE `SHOP-000001`
 ├── shop/            ShopService (duyệt/khoá/từ chối + sửa hoa hồng — không hồi tố đơn cũ; getMe/updateMe: hồ sơ + TK ngân hàng nhận tiền, số TK che ở response, đổi TK ghi audit `SHOP_BANK_UPDATED` + outbox SHOP_BANK_CHANGED.
 │                    KHÔNG có cột "ngày đổi TK": mốc đổi gần nhất do `ShopQueryApi.bankAccountOf().changedAt` đọc từ audit log `SHOP_BANK_UPDATED` của chính module shop, đối soát dùng nó để giữ chi trả 24 giờ)
-│                    AdminShopController /admin/shops (list/get/approve/suspend/reject/commission — `supplier.shop.*`; KHÔNG có API tạo shop: shop tạo bằng seed/script)
+│                    AdminShopController /admin/shops (list/get/approve/suspend/reject/commission — `supplier.shop.*`; shop mới vào bằng luồng người bán tự đăng ký — xem registration/ — hoặc seed/script)
 │                    ShopController /shop/session (@AllowAnyShopStatus — chạy cả khi shop chờ duyệt/bị khoá, trả shop + vai + mã quyền `shop.*` để FE vendor dựng menu) · /shop/me (GET/PATCH)
 ├── member/          ShopMemberService (PLAN-0017 §12, đổi 2026-10-13: chủ shop THÊM nhân viên TRỰC TIẾP — không mời, không chờ chấp nhận). `add` = `POST /shop/members` {email, fullName, password, roleCode}: băm mật khẩu NGOÀI transaction (IdentityApplicationApi.hashPassword) →
 │                    transaction: advisory lock theo shop → đếm thành viên active (trần SHOP_MEMBER_MAX_ACTIVE = 50 ⇒ 409 SHOP_MEMBER_LIMIT_REACHED) → IdentityApplicationApi.createCustomerAccount (tài khoản khách) + ShopMember active + audit SHOP_MEMBER_ADDED + outbox SHOP_MEMBER_JOINED — CÙNG một transaction
@@ -293,10 +288,14 @@ shop                                  schema shop (Shop · ShopMember · audit/o
 │                    không ở shop khác ⇒ kích hoạt lại ShopMember với vai mới (`restored: true`), KHÔNG đổi mật khẩu/hồ sơ; không khôi phục được ⇒ 409 SHOP_MEMBER_UNAVAILABLE (cũng khi đua ở chốt unique DB). Đổi vai/gỡ/tự rời khoá FOR UPDATE các dòng chủ ⇒ shop không bao giờ về 0 chủ, 409 SHOP_LAST_OWNER ·
 │                    GET /shop/members · POST /shop/members (quyền `shop.staff.invite` — tên cũ giữ nguyên, mô tả "Thêm nhân viên"; rate-limit 30/giờ/user) · PATCH|DELETE /shop/members/:id · POST /shop/members/leave (@AllowAnyShopStatus).
 │                    Luật "mỗi người MỘT shop active" chốt bằng unique một phần uq_shop_members_one_active_per_user (migration 20261004090000, GIỮ nguyên sau khi bỏ bảng lời mời)
+├── registration/    người bán TỰ ĐĂNG KÝ gian hàng (PLAN-0019): ShopRegistrationService `submit` = POST /shop/registrations (transaction: advisory lock theo người nộp → kiểm chưa là thành viên/chưa có shop pending →
+│                    lock toàn cục cấp mã → kiểm trùng tên → mã SHOP-###### + slug → Shop(pending) + ShopRegistration → audit/outbox), `getMine` = GET /shop/registrations/me (data null nếu chưa đăng ký),
+│                    `getForShop` = GET /admin/shops/:id/registration (supplier.shop.read, kèm người nộp). `prepareStatusChange`/`recordDecision` móc vào ShopService.changeStatus: DUYỆT lần đầu tạo ShopMember
+│                    shop_owner cho người nộp (cùng transaction; không được ⇒ 409 SHOP_OWNER_UNAVAILABLE), ghi lý do/thời điểm quyết định. Controller công khai KHÔNG dùng ShopContextGuard. Ngành hàng lấy từ
+│                    CatalogQueryApi qua ModuleRef lười (CatalogModule đã import ShopModule ⇒ import ngược là vòng). Bảng `shop.shop_registrations` (schema riêng file shop-registration.prisma)
 ├── security/        ShopContextGuard + @RequireShopPermission + @CurrentShop + @AllowAnyShopStatus — guard dùng CHUNG cho mọi controller `/shop/**` của các module khác (dependency-cruiser cho phép import `security/`)
 │                    thứ tự: JWT → ShopMember active của actor (shopId CHỈ từ đây, không từ URL/body) → đọc THẲNG Shop.status (khác approved ⇒ 403 SHOP_NOT_APPROVED, trừ route AnyShopStatus)
 │                    → mã quyền `shop.*` của ShopMember.roleId (qua IdentityQueryApi.shopRoleContext). Một user thuộc nhiều shop ⇒ lấy membership active CŨ NHẤT
-├── gateway/         ShopCodGatewayImpl (SHOP_COD_GATEWAY: payment bật/tắt Shop.codEnabled theo số dư ví)
 ├── queryapi/        ShopQueryApi (findBrief/findManyBrief, findPublicBySlug, listPublic, nonApprovedShopIds, findOfficialShopId, existsApproved, activeMemberUserIds, bankAccountOf)
 ├── shop-worker.module.ts   relay outbox shop (3s) · ShopEventListeners: REVIEW_CREATED / REVIEW_RATING_CHANGED ⇒ tính lại Shop.ratingAvg (trung bình đánh giá approved của mọi sản phẩm của shop,
 │                    ghi đè nên idempotent; SQL thô JOIN review×product là ngoại lệ ranh giới có chủ đích, chờ ReviewQueryApi/ProductQueryApi có hàm tương ứng)
@@ -305,7 +304,7 @@ shop                                  schema shop (Shop · ShopMember · audit/o
 
 Bất biến: vendor KHÔNG BAO GIỜ truyền `shopId` qua URL/body/query; mọi repository/service vendor lọc thêm theo shopId của phiên, dữ liệu shop khác ⇒ 404 (không lộ tồn tại);
 mã quyền `shop.*` (vendor, tự quản shop mình) KHÁC mã `supplier.*` (nhân viên sàn, thao tác mọi shop) — không dùng chung một mã cho hai phạm vi.
-Hoa hồng, TK ngân hàng, ví, đối soát KHÔNG lộ ra web bán hàng (`/shops/:slug` chỉ trả hồ sơ công khai).
+Hoa hồng, TK ngân hàng, đối soát KHÔNG lộ ra web bán hàng (`/shops/:slug` chỉ trả hồ sơ công khai).
 
 ## 13. Sự kiện outbox (ai phát · ai nghe)
 
@@ -320,13 +319,12 @@ Listener ghi tiền/thông báo dùng `suppressErrors:false` (lỗi ném lên re
 | `PRODUCT_STOCK_LOW` | product (kho) | system (thông báo thành viên shop, dedupe theo biến thể + ngày) |
 | `ORDER_CREATED` | order (mỗi ĐƠN CON; payload có orderGroupCode, shopId) | order (mail khách) · system (báo thành viên shop) |
 | `ORDER_PAID` | order | order (mail) · system (báo shop — đơn online) |
-| `ORDER_STATUS_CHANGED` · `ORDER_DELIVERED` · `ORDER_CANCELLED` | order | order (mail khách) · payment (`→ completed` + COD ⇒ ghi hoa hồng vào ví COD) |
+| `ORDER_STATUS_CHANGED` · `ORDER_DELIVERED` · `ORDER_CANCELLED` | order | order (mail khách) · (payment: không còn listener ví COD) |
 | `RETURN_REQUESTED` · `RETURN_PROCESSED` | order | chưa có listener |
 | `PAYMENT_PAID` | payment | chưa có listener (đơn được báo qua OrderPaymentGateway.onPaid trong cùng transaction) |
-| `PAYMENT_REFUNDED` | payment (payload: refundId, orderCode, amount, methodCode, shopId) | payment (đơn COD ⇒ ghi nợ hoàn tiền + đảo hoa hồng, loại sổ `cod_refund`) |
+| `PAYMENT_REFUNDED` | payment (payload: refundId, orderCode, amount, methodCode, shopId) | chưa có listener (hoàn tiền vào đối soát qua dòng REFUND) |
 | `PAYOUT_CREATED` · `PAYOUT_PROCESSING` · `PAYOUT_PAID` · `PAYOUT_FAILED` | payment (đối soát) | chưa có listener |
-| `WALLET_COD_DISABLED` · `WALLET_COD_ENABLED` · `WALLET_DEPOSIT_APPROVED` · `WALLET_DEPOSIT_REJECTED` | payment (ví COD) | chưa có listener |
-| `SHOP_APPROVED` | shop | payment (tạo ví COD cho shop) |
+| `SHOP_APPROVED` | shop | chưa có listener |
 | `SHOP_SUSPENDED` · `SHOP_REJECTED` | shop | chưa có listener (sản phẩm bị ẩn bằng cách lọc theo trạng thái shop lúc đọc, không qua sự kiện) |
 | `SHOP_BANK_CHANGED` | shop | system (báo mọi thành viên, chỉ 4 số cuối TK) |
 | `SHOP_MEMBER_LEFT` | shop | chưa có listener |
@@ -345,13 +343,13 @@ Relay: `order` + `payment` ở OrderWorkerModule (payment còn được relay th
 |---|---|---|---|
 | common | — | — | — |
 | identity | — | TokenValidation · PermissionAuthorization · UserDirectory | USER_REGISTERED · USER_LOCKED |
-| shop | identity (queryapi + applicationapi; enum trạng thái user) · product (queryapi, ở worker) · review (enums, ở worker) | ShopCod | SHOP_APPROVED · SHOP_SUSPENDED · SHOP_REJECTED · SHOP_BANK_CHANGED · SHOP_MEMBER_LEFT · SHOP_MEMBER_JOINED |
+| shop | identity (queryapi + applicationapi; enum trạng thái user) · product (queryapi, ở worker) · review (enums, ở worker) | — | SHOP_APPROVED · SHOP_SUSPENDED · SHOP_REJECTED · SHOP_BANK_CHANGED · SHOP_MEMBER_LEFT · SHOP_MEMBER_JOINED |
 | catalog | shop (security — guard `/shop/catalog`) | CategoryStats (+ CatalogUsageRegistry do product đăng ký) | CATEGORY_CHANGED |
 | product | catalog · shop (queryapi + security) | Inventory · ProductStats | PRODUCT_PUBLISHED · PRODUCT_UPDATED · PRODUCT_HIDDEN · PRODUCT_STOCK_LOW |
 | cart | product · shop · system | Cart | — |
 | promotion | cart · shop (queryapi + security) | Promotion | — |
 | order | product · cart · promotion · identity · system · payment (queryapi) · shop (queryapi + security) | OrderPayment · OrderActions | ORDER_CREATED · ORDER_STATUS_CHANGED · ORDER_CANCELLED · ORDER_PAID · ORDER_DELIVERED · RETURN_REQUESTED · RETURN_PROCESSED |
-| payment (PaymentModule) | shop (queryapi + security + enums) · system · (order qua ORDER_PAYMENT_GATEWAY — lười, không import OrderModule) | Payment | PAYMENT_PAID · PAYMENT_REFUNDED · WALLET_* |
+| payment (PaymentModule) | shop (queryapi + security + enums) · system · (order qua ORDER_PAYMENT_GATEWAY — lười, không import OrderModule) | Payment | PAYMENT_PAID · PAYMENT_REFUNDED |
 | payment (PaymentSettlementModule) | order (queryapi) · shop · system · PaymentModule | — | PAYOUT_CREATED · PAYOUT_PROCESSING · PAYOUT_PAID · PAYOUT_FAILED |
 | review | product · order · shop (queryapi + security) | — | REVIEW_CREATED |
 | system | identity (UserDirectory) · shop · order · product (listener thông báo shop) | Notification | — |

@@ -1,5 +1,6 @@
 @startuml 18-dbwf-jobs-retention
 title Database Workflow 9 — Tiến trình nền (worker) tác động DB theo lịch: huỷ đơn quá hạn, tự hoàn tất, tổng hợp báo cáo, dọn dữ liệu theo retention, AI
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam shadowing false
 skinparam ActivityBackgroundColor #FFFFFF

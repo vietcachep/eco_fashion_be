@@ -51,7 +51,7 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('order', 'return.process', 'Duyệt / từ chối / hoàn tất đổi trả'),
   // payment
   p('payment', 'payment.read', 'Xem giao dịch thanh toán'),
-  p('payment', 'transfer.confirm', 'Xác nhận chuyển khoản (đối soát)'),
+  p('payment', 'transfer.confirm', 'Xác nhận chuyển khoản (LỊCH SỬ — PLAN-0018 đã bỏ chuyển khoản tay, không còn endpoint dùng mã này)'),
   p('payment', 'refund.create', 'Tạo yêu cầu hoàn tiền'),
   p('payment', 'refund.process', 'Duyệt / thực hiện hoàn tiền'),
   p('payment', 'method.manage', 'Bật / tắt phương thức thanh toán'),
@@ -107,12 +107,8 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('shop', 'promotion.read', 'Xem mã giảm giá của gian hàng mình'),
   p('shop', 'promotion.manage', 'Tạo / sửa / bật tắt mã giảm giá của gian hàng mình'),
   p('shop', 'report.read', 'Xem báo cáo doanh thu / đơn / tồn của gian hàng mình'),
-  p('shop', 'wallet.read', 'Xem ví quỹ COD của gian hàng mình'),
-  p('shop', 'wallet.deposit_request', 'Gửi yêu cầu nộp thêm quỹ vào ví COD'),
   p('shop', 'payout.read', 'Xem các kỳ đối soát / chi trả của gian hàng mình'),
-  // PLAN-0017 — nhân viên SÀN xem/chỉnh ví + chạy đối soát cho MỌI gian hàng (khác mã với shop.wallet.*/shop.payout.*)
-  p('supplier', 'wallet.read', 'Xem ví quỹ COD và yêu cầu nộp quỹ của mọi gian hàng'),
-  p('supplier', 'wallet.adjust', 'Điều chỉnh ví / duyệt nộp quỹ của gian hàng'),
+  // PLAN-0017/0018 — nhân viên SÀN xem + chạy đối soát chi trả cho MỌI gian hàng (khác mã với shop.payout.*); PLAN-0018 bỏ ví quỹ COD nên không còn mã wallet
   p('supplier', 'payout.read', 'Xem các kỳ đối soát / chi trả của mọi gian hàng'),
   p('supplier', 'payout.process', 'Chạy kỳ đối soát và chi trả cho gian hàng'),
 ];
@@ -188,7 +184,6 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
         'supplier.shop.suspend',
         'supplier.shop.reject',
         'supplier.shop.commission',
-        'supplier.wallet.read',
         'supplier.payout.read',
       ),
     ],
@@ -224,8 +219,8 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
   },
   accountant: {
     name: 'Kế toán',
-    description: 'Thanh toán, đối soát chuyển khoản, hoàn tiền, doanh thu',
-    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.wallet.read', 'supplier.wallet.adjust', 'supplier.payout.read', 'supplier.payout.process'),
+    description: 'Thanh toán, hoàn tiền, đối soát chi trả shop, doanh thu',
+    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.payout.read', 'supplier.payout.process'),
     scope: 'platform',
   },
   marketing: {

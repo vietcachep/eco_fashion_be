@@ -6,7 +6,7 @@ export const IS_PUBLIC_KEY = 'ef:public';
 export const OPTIONAL_AUTH_KEY = 'ef:optional-auth';
 export const PERMISSIONS_KEY = 'ef:permissions';
 
-/* Route công khai — JwtAuthGuard bỏ qua (danh sách sản phẩm, đăng nhập, IPN VNPay…). */
+/* Route công khai — JwtAuthGuard bỏ qua (danh sách sản phẩm, đăng nhập, webhook PayOS…). */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
 /* Route cho cả khách vãng lai lẫn người đăng nhập: có token hợp lệ thì gắn actor, không có cũng cho qua. */

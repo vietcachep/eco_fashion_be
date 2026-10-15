@@ -1,3 +1,4 @@
+// THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động chi trả shop. Nguồn đúng: docs/database/eco_fashion.dbml.
 // FITLY (EcoFashion) — sơ đồ DB đầy đủ + delta SePay (dán nguyên file vào https://dbdiagram.io).
 // Quy ước: schema = module; KHÔNG FK vật lý xuyên schema (tham chiếu chéo bằng id + code + snapshot);
 // các Ref ở cuối file đánh dấu "(logic)" chỉ để vẽ, không tạo constraint.
@@ -878,7 +879,7 @@ Table payment.payments {
   order_id uuid [not null]
   order_code varchar(30) [not null]
   user_id uuid [not null]
-  method_code varchar(20) [not null, note: 'cod · bank_transfer (SePay) · vnpay (tắt)']
+  method_code varchar(20) [not null, note: 'cod · payos (PLAN-0018; bank_transfer/vnpay đã bỏ)']
   amount numeric(14,0) [not null]
   status varchar(20) [not null, default: 'pending', note: 'pending · processing · paid · failed · expired · cancelled · partially_refunded · refunded']
   transaction_code varchar(64) [null]

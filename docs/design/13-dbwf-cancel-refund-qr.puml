@@ -1,5 +1,6 @@
 @startuml 13-dbwf-cancel-refund-qr
 title Database Workflow 4 — Huỷ đơn đã thanh toán → yêu cầu hoàn tiền → kế toán quét QR chuyển khoản → SePay xác nhận tiền ra → cập nhật DB
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam shadowing false
 skinparam ActivityBackgroundColor #FFFFFF

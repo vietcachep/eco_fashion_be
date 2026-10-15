@@ -4,7 +4,7 @@ Model: `prisma/schema/{cart,order,payment,promotion,review,system,reporting,ai}.
 (+ `20260915111000_ai_drop_hnsw`). Sơ đồ: `docs/database/eco_fashion.dbml`. Không FK xuyên schema — tham chiếu bằng id + code + snapshot.
 
 Từ PLAN-0014/0017 sàn là ĐA GIAN HÀNG: các bảng order/cart/payment/promotion/review có thêm `shop_id` (id trần trỏ `shop.shops.id`),
-thêm `order_groups`, ví COD và đối soát (payout) — các dòng ghi chú `PLAN-0014/0017` trong bảng dưới và mục "Marketplace" cuối file.
+thêm `order_groups` và đối soát (payout; ví COD đã bỏ ở PLAN-0018) — các dòng ghi chú `PLAN-0014/0017` trong bảng dưới và mục "Marketplace" cuối file.
 Schema `shop` (gian hàng + thành viên) mô tả ở `docs/database/eco_fashion.dbml` và `docs/03_DATABASE_RULES.md`.
 
 ## cart
@@ -32,13 +32,12 @@ Schema `shop` (gian hàng + thành viên) mô tả ở `docs/database/eco_fashio
 
 | Bảng | Vai trò | Ghi chú |
 |---|---|---|
-| `payment_methods` | cod / bank_transfer / vnpay / payos | `code` pk, bật/tắt; `payos` bật trong DB nhưng khách chỉ thấy khi backend có khoá PayOS (`isMethodActive`) |
-| `payments` | một thanh toán sống / đơn | `uq_payments_order_live` (order_id WHERE status IN pending/processing/paid); `transfer_content` = mã đơn (VietQR); `card_last4/card_brand` chỉ từ VNPay trả về — KHÔNG lưu số thẻ; `refunded_amount`; `expires_at`; payment gắn từng đơn CON (không phải `order_groups`); `gateway_response` giữ payload webhook gốc (PayOS: có `counterAccount*` để hoàn tiền tự động) |
+| `payment_methods` | cod / payos (vnpay + bank_transfer tắt `is_active=false`, chỉ còn là lịch sử — PLAN-0018) | `code` pk, bật/tắt; `payos` bật trong DB nhưng khách chỉ thấy khi backend có khoá PayOS (`isMethodActive`) |
+| `payments` | một thanh toán sống / đơn | `uq_payments_order_live` (order_id WHERE status IN pending/processing/paid); `transfer_content`/`card_last4`/`card_brand` là cột LỊCH SỬ (VietQR/VNPay cũ) — KHÔNG lưu số thẻ; `refunded_amount`; `expires_at`; payment gắn từng đơn CON (không phải `order_groups`); `gateway_response` giữ payload webhook gốc (PayOS: có `counterAccount*` để hoàn tiền tự động) |
 | `payment_transactions` | nhật ký gọi cổng | `uq_payment_transactions_provider_ref` (type, provider_ref) → IPN/return/webhook gửi lại không ghi đôi; `type` create_url · ipn · payos_webhook · return · query · refund · manual_confirm · cod_collect; PayOS: `provider_ref` = orderCode PayOS (số, `Date.now()*1000 + random(1000)`); `raw_*` json đã che |
-| `bank_transfer_confirmations` | đối soát chuyển khoản tay | `confirmed_by` kế toán, `bank_ref` |
-| `refunds` | hoàn tiền | status requested→processing→done\|failed; `method` gateway\|manual_transfer; `return_request_id` khi từ đổi trả; `shop_id` (PLAN-0017) snapshot gian hàng của đơn để đối soát trừ hoàn tiền đúng shop (NULL nếu không gắn được); `kind` order\|duplicate_payment (khoản trùng không đảo doanh thu/hoa hồng); `gateway_attempted_at` dấu gọi cổng VNPay để không gọi lại mù |
-| `shop_wallets` + `shop_wallet_transactions` + `shop_wallet_deposit_requests` | ví quỹ COD theo shop (PLAN-0017) | ví 1-1 với shop (`shop_id` unique), `balance` CÓ THỂ ÂM — `balance ≤ 0` thì tắt `shop.shops.cod_enabled`; sổ cái APPEND-ONLY `type` cod_commission\|deposit\|adjust\|cod_refund (CHECK `chk_shop_wallet_tx_type`), unique (shop_id, type, order_code) chống ghi trùng; `deposit_requests` pending→approved\|rejected (CHECK status + `amount > 0`), duyệt thì cộng ví |
-| `shop_payouts` + `shop_payout_lines` | đối soát định kỳ theo shop (PLAN-0017) | kỳ unique (shop_id, period_start, period_end), số liệu đóng băng; `net_payout = gross_revenue − commission − refund_amount − carried_debt` (có thể âm); `status` pending\|processing\|paid\|failed\|carried (net < 0, mang nợ)\|settled (net = 0) — CHECK `chk_shop_payouts_status`; `bank_snapshot` chụp tài khoản nhận; dòng `kind` sale\|refund, unique (order_code, kind) toàn bảng ⇒ một đơn/hoàn tiền không vào hai kỳ |
+| `bank_transfer_confirmations` | (LỊCH SỬ — chuyển khoản tay đã bỏ ở PLAN-0018) | `confirmed_by` kế toán, `bank_ref` |
+| `refunds` | hoàn tiền | status requested→processing→done\|failed; `method` gateway\|manual_transfer; `return_request_id` khi từ đổi trả; `shop_id` (PLAN-0017) snapshot gian hàng của đơn để đối soát trừ hoàn tiền đúng shop (NULL nếu không gắn được); `kind` order\|duplicate_payment (khoản trùng không đảo doanh thu/hoa hồng); `gateway_attempted_at` dấu gọi cổng hoàn tiền để không gọi lại mù |
+| `shop_payouts` + `shop_payout_lines` | đối soát theo shop (PLAN-0017; PLAN-0018: gom cả đơn PayOS + COD đã thu, cron tự chạy hằng ngày) | kỳ unique (shop_id, period_start, period_end), số liệu đóng băng; `net_payout = gross_revenue − commission − refund_amount − carried_debt` (có thể âm); `status` pending\|processing\|paid\|failed\|carried (net < 0, mang nợ)\|settled (net = 0) — CHECK `chk_shop_payouts_status`; `bank_snapshot` chụp tài khoản nhận; dòng `kind` sale\|refund, unique (order_code, kind) toàn bảng ⇒ một đơn/hoàn tiền không vào hai kỳ |
 
 ## promotion
 
@@ -101,13 +100,12 @@ CREATE UNIQUE INDEX uq_payments_order_live ON payment.payments (order_id) WHERE 
 
 Migration: `20260928014536_shop_init` (schema `shop`), `20260929084708_cart_item_shop_id`, `20260929084709_review_shop_id`,
 `20260929100000_order_group_shop_split`, `20261003100000_marketplace_completion`, `20261003120000_order_voucher_split`,
-`20261003130000_payout_status_carried_settled`, `20261003160000_wallet_cod_refund_type`, `20261004090000_shop_invitations` (chốt `uq_shop_members_one_active_per_user`; bảng lời mời của nó đã bỏ ở
+`20261003130000_payout_status_carried_settled`, `20261003160000_wallet_cod_refund_type` (lịch sử — bảng ví bị PLAN-0018 DROP), `20261004090000_shop_invitations` (chốt `uq_shop_members_one_active_per_user`; bảng lời mời của nó đã bỏ ở
 `20261013090000_drop_shop_invitations`) (module product/catalog/identity xem `catalog-product-database-design.md`). Chi tiết cột ở `eco_fashion.dbml`.
 
-- `shop_id` ở cart_items / orders / order_items / reviews / refunds / promotions / ví / payout là id TRẦN trỏ `shop.shops.id`; dữ liệu
+- `shop_id` ở cart_items / orders / order_items / reviews / refunds / promotions / payout là id TRẦN trỏ `shop.shops.id`; dữ liệu
   cũ backfill về gian hàng FITLY Official (`00000000-0000-0000-0000-000000000001`).
-- Luồng tiền: đơn online → đối soát (`shop_payouts`: gross − hoa hồng − hoàn tiền − nợ mang); đơn COD → shop giữ tiền mặt nên sàn trừ
-  hoa hồng khỏi ví (`shop_wallet_transactions`); hoàn tiền đơn COD ghi `cod_refund`. Hoa hồng tính theo `orders.commission_rate_snapshot`;
+- Luồng tiền (PLAN-0018, sàn thu MỌI khoản): đơn PayOS VÀ đơn COD (sàn thu COD, `Payment=paid`) đi cùng một đường → đối soát (`shop_payouts`: gross − hoa hồng − hoàn tiền − nợ mang) → cron worker tự chi PayOS. KHÔNG còn ví quỹ COD (3 bảng `shop_wallets`/`shop_wallet_transactions`/`shop_wallet_deposit_requests` và cột `shops.cod_enabled` đã DROP bởi migration `payment_platform_collects_all`); hoàn tiền đơn COD đã đối soát vào dòng `refund` của kỳ sau. Hoa hồng tính theo `orders.commission_rate_snapshot`;
   phần giảm do voucher sàn (`platform_discount`) sàn chịu và hoàn cho shop.
 
 ```sql
@@ -116,10 +114,7 @@ ALTER TABLE promotion.promotions ADD CONSTRAINT chk_promotions_scope
   CHECK ((scope = 'platform' AND shop_id IS NULL) OR (scope = 'shop' AND shop_id IS NOT NULL));
 ALTER TABLE payment.shop_payouts ADD CONSTRAINT chk_shop_payouts_status
   CHECK (status IN ('pending','processing','paid','failed','carried','settled'));            -- carried/settled: 20261003130000
-ALTER TABLE payment.shop_wallet_transactions ADD CONSTRAINT chk_shop_wallet_tx_type
-  CHECK (type IN ('cod_commission','deposit','adjust','cod_refund'));                          -- cod_refund: 20261003160000
-ALTER TABLE payment.shop_wallet_deposit_requests ADD CONSTRAINT chk_shop_wallet_deposit_status
-  CHECK (status IN ('pending','approved','rejected') AND amount > 0);
+-- (2 CHECK của ví COD — chk_shop_wallet_tx_type, chk_shop_wallet_deposit_status — đã mất cùng bảng ở PLAN-0018)
 ALTER TABLE payment.shop_payout_lines ADD CONSTRAINT chk_shop_payout_lines_kind CHECK (kind IN ('sale','refund'));
 -- migration 20260928014536 / 20260928014603
 ALTER TABLE shop.shops ADD CONSTRAINT ck_shops_status CHECK (status IN ('pending','approved','suspended','rejected'));

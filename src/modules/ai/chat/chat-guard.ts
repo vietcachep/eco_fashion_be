@@ -57,7 +57,7 @@ export function suspectInjection(text: string): boolean {
 
 export function checkInput(text: string): GuardResult {
   if (looksLikeCardNumber(text)) {
-    return { blocked: true, code: 'AI_CHAT_CARD_DATA', message: 'Vui lòng không gửi số thẻ ngân hàng trong chat. Thanh toán thẻ được thực hiện an toàn trên cổng VNPay.', injection: false };
+    return { blocked: true, code: 'AI_CHAT_CARD_DATA', message: 'Vui lòng không gửi số thẻ ngân hàng trong chat. Thanh toán online được thực hiện an toàn trên cổng PayOS.', injection: false };
   }
   return { blocked: false, code: null, message: null, injection: suspectInjection(text) };
 }

@@ -1,5 +1,5 @@
 // EcoFashion — sơ đồ DB (dán vào https://dbdiagram.io). Cập nhật sau mỗi plan có migration.
-// Phản ánh trạng thái tới migration 20261013090000_drop_shop_invitations (12 schema: thêm `shop` — sàn đa gian hàng, PLAN-0014/0016/0017).
+// Phản ánh trạng thái tới migration payment_platform_collects_all của PLAN-0018 (bỏ 3 bảng ví quỹ COD + shops.cod_enabled) (12 schema: thêm `shop` — sàn đa gian hàng, PLAN-0014/0016/0017).
 // Quy ước: schema = module; không FK xuyên schema (tham chiếu chéo bằng id + code + snapshot).
 // Cột chuẩn (+base): created_at, created_by, updated_at, updated_by, version, is_deleted.
 // Mỗi bảng viết nhiều dòng (DBML không cho nhiều cột trên một dòng). CHECK / partial unique index / trigger mà Prisma không
@@ -198,7 +198,6 @@ Table shop.shops {
   description varchar(2000) [null]
   status varchar(20) [not null, default: 'pending', note: 'pending | approved | suspended | rejected — CHECK ck_shops_status; lưới chuyển ở SHOP_TRANSITIONS (foundation/shop.constants.ts). Sàn quản status/commission_rate/cod_enabled, vendor tự sửa hồ sơ']
   commission_rate numeric(5,2) [not null, default: 10.00, note: '% hoa hồng sàn thu — CHECK ck_shops_commission_rate 0..100; đóng băng vào order.orders.commission_rate_snapshot lúc đặt hàng']
-  cod_enabled boolean [not null, default: true, note: 'tự tắt khi ví COD (payment.shop_wallets) về <= 0']
   bank_code varchar(20) [null, note: 'PLAN-0017 (migration 20261003100000): BIN ngân hàng Napas/PayOS (6 số) — toBin khi chi tiền đối soát']
   bank_account_number varchar(30) [null]
   bank_account_name varchar(120) [null]
@@ -658,6 +657,7 @@ Table system.settings {
   is_public bool [not null, default: false]
   updated_at timestamptz [not null, default: `now()`]
   updated_by uuid [null]
+  Note: 'PLAN-0018: key payout.auto_enabled (mặc định true) bật/tắt cron chi trả shop tự động'
 }
 
 Table system.provinces {
@@ -1040,7 +1040,7 @@ Ref: order.return_request_items.return_id > order.return_requests.id
 // ===================================================== payment (PLAN-0007, PLAN-0017)
 
 Table payment.payment_methods {
-  code varchar(20) [pk, note: 'cod | bank_transfer | vnpay | payos. `payos` bật trong DB nhưng khách chỉ thấy khi backend có khoá PayOS (isMethodActive)']
+  code varchar(20) [pk, note: 'cod | payos (PLAN-0018: vnpay/bank_transfer đã tắt `is_active=false`, dòng cũ giữ làm lịch sử). `payos` bật trong DB nhưng khách chỉ thấy khi backend có khoá PayOS (isMethodActive)']
   name varchar(120) [not null]
   description varchar(300) [null]
   kind varchar(20) [not null]
@@ -1082,7 +1082,7 @@ Table payment.payment_transactions {
   type varchar(20) [not null, note: 'create_url | ipn | payos_webhook | return | query | refund | manual_confirm | cod_collect']
   status varchar(20) [not null]
   amount numeric(14,0) [null]
-  provider_ref varchar(120) [null, note: 'VNPay: vnp_TxnRef; PayOS: orderCode PayOS (số, Date.now()*1000 + random(1000)) — cùng (type, provider_ref) là khoá chống ghi đôi']
+  provider_ref varchar(120) [null, note: 'PayOS: orderCode PayOS (số, Date.now()*1000 + random(1000)) — cùng (type, provider_ref) là khoá chống ghi đôi']
   raw_request jsonb [null]
   raw_response jsonb [null]
   created_at timestamptz [not null, default: `now()`]
@@ -1090,6 +1090,7 @@ Table payment.payment_transactions {
 }
 
 Table payment.bank_transfer_confirmations {
+  // LỊCH SỬ: chuyển khoản tay đã bỏ ở PLAN-0018 (bảng giữ để đọc dữ liệu cũ, không ghi mới)
   id uuid [pk, default: `gen_random_uuid()`]
   payment_id uuid [not null]
   amount numeric(14,0) [not null]
@@ -1114,55 +1115,14 @@ Table payment.refunds {
   processed_by uuid [null]
   processed_at timestamptz [null]
   kind varchar(20) [not null, default: 'order', note: 'order = hoàn theo đơn | duplicate_payment = hoàn khoản khách trả trùng (không đổi payment_status của đơn, không đảo hoa hồng, không vào báo cáo hoàn). CHECK chk_refunds_kind']
-  gateway_attempted_at timestamptz [null, note: 'Ghi TRƯỚC khi gọi cổng VNPay (không có idempotency-key). Còn dấu mà chưa có provider_ref = chưa rõ cổng đã hoàn chưa => failed + needsReconcile, người xử lý đối chiếu rồi mới gọi lại']
+  gateway_attempted_at timestamptz [null, note: 'Ghi TRƯỚC khi gọi cổng hoàn tiền (không có idempotency-key). Còn dấu mà chưa có provider_ref = chưa rõ cổng đã hoàn chưa => failed + needsReconcile, người xử lý đối chiếu rồi mới gọi lại']
   shop_id uuid [null, note: 'PLAN-0017: snapshot gian hàng của đơn bị hoàn (đối soát payout trừ hoàn tiền đúng shop); backfill từ order.orders theo order_code, đơn không tìm thấy = NULL. Index shop_id']
   version int [not null, default: 0]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
 }
 
-// ----- PLAN-0017 (migration 20261003100000): ví quỹ COD + đối soát (payout) theo gian hàng. shop_id = shop.shops.id (id trần).
-
-Table payment.shop_wallets {
-  id uuid [pk, default: `gen_random_uuid()`]
-  shop_id uuid [unique, not null, note: '1-1 với shop. Migration tạo sẵn ví số dư 0 cho mọi shop đã duyệt']
-  balance numeric(14,0) [not null, default: 0, note: 'CÓ THỂ ÂM. balance <= 0 thì service tắt shop.shops.cod_enabled (qua gateway sang module shop)']
-  version int [not null, default: 0]
-  created_at timestamptz [not null, default: `now()`]
-  updated_at timestamptz [not null, default: `now()`]
-  Note: 'Ví quỹ COD: mỗi đơn COD hoàn tất trừ đúng hoa hồng khỏi ví'
-}
-
-Table payment.shop_wallet_transactions {
-  id uuid [pk, default: `gen_random_uuid()`]
-  wallet_id uuid [not null]
-  shop_id uuid [not null]
-  type varchar(20) [not null, note: 'cod_commission | deposit | adjust | cod_refund — CHECK chk_shop_wallet_tx_type (cod_refund thêm ở migration 20261003160000: hoàn tiền đơn COD đã thu, ghi nợ ví số hoàn và hoàn lại hoa hồng tương ứng)']
-  order_code varchar(30) [null, note: 'mã đơn; với cod_refund là khoá RF-<26 ký tự đầu của refund id> (chống ghi hai lần); NULL với deposit/adjust']
-  amount numeric(14,0) [not null, note: 'âm = trừ khỏi ví (hoa hồng; cod_refund = hoa hồng hoàn lại - số hoàn), dương = cộng (nộp quỹ / điều chỉnh; cod_commission cũng có thể dương khi sàn hoàn voucher sàn lớn hơn hoa hồng)']
-  balance_after numeric(14,0) [not null]
-  note varchar(500) [null]
-  created_by uuid [null]
-  created_at timestamptz [not null, default: `now()`]
-  Note: 'SỔ CÁI APPEND-ONLY (không update/xoá; điều chỉnh = thêm dòng bù). UQ (shop_id, type, order_code) — gọi completed hai lần không trừ hoa hồng hai lần (order_code NULL thì unique không ràng). Index (shop_id, created_at DESC)'
-}
-
-Table payment.shop_wallet_deposit_requests {
-  id uuid [pk, default: `gen_random_uuid()`]
-  shop_id uuid [not null]
-  amount numeric(14,0) [not null, note: 'CHECK chk_shop_wallet_deposit_status: amount > 0']
-  status varchar(20) [not null, default: 'pending', note: 'pending | approved | rejected — CHECK chk_shop_wallet_deposit_status; sàn duyệt thì cộng ví']
-  proof_url varchar(500) [null]
-  note varchar(500) [null]
-  decided_by uuid [null]
-  decided_at timestamptz [null]
-  decide_note varchar(500) [null]
-  created_by uuid [null]
-  version int [not null, default: 0]
-  created_at timestamptz [not null, default: `now()`]
-  updated_at timestamptz [not null, default: `now()`]
-  Note: 'Shop xin nộp thêm quỹ khi ví về 0/âm bị khoá COD. Index (shop_id, status), (status, created_at DESC)'
-}
+// ----- PLAN-0017 (migration 20261003100000): đối soát (payout) theo gian hàng; PLAN-0018: gom cả đơn PayOS lẫn COD, cron chi trả tự động; 3 bảng ví quỹ COD (shop_wallets, shop_wallet_transactions, shop_wallet_deposit_requests) đã DROP. shop_id = shop.shops.id (id trần).
 
 Table payment.shop_payouts {
   id uuid [pk, default: `gen_random_uuid()`]
@@ -1242,7 +1202,6 @@ Table payment.processed_events {
 Ref: payment.payment_transactions.payment_id > payment.payments.id
 Ref: payment.bank_transfer_confirmations.payment_id > payment.payments.id
 Ref: payment.refunds.payment_id > payment.payments.id
-Ref: payment.shop_wallet_transactions.wallet_id > payment.shop_wallets.id
 Ref: payment.shop_payout_lines.payout_id > payment.shop_payouts.id
 
 

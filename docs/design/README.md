@@ -1,5 +1,7 @@
 # docs/design — Use case & Database Workflow (PlantUML)
 
+> **LƯU Ý (2026-10-15, PLAN-0018):** luồng tiền hiện hành chỉ còn **PayOS + COD** — sàn thu mọi khoản rồi tự động trừ hoa hồng và chi trả shop (cron); VNPay, chuyển khoản VietQR/SePay, ví quỹ COD đã bỏ. Các sơ đồ SePay/VietQR dưới đây chỉ là thiết kế lịch sử (đã gắn `header` cảnh báo trong từng file).
+>
 > **LƯU Ý (2026-10-03):** phần **SePay** trong bộ sơ đồ này (file `11`, `12`, `13`, `14`, `18`, `19`, `20`, `eco_fashion-sepay.dbml`, `erd/07-erd-payment-sepay.puml`) là thiết kế CŨ,
 > **chưa từng có trong mã nguồn** (grep `sepay` trong `src/` `prisma/` `scripts/` không ra gì) và đã được thay bằng **PayOS** (PLAN-0015/0017: payment link + webhook thu tiền, "Lệnh chi" hoàn tiền/chi trả shop).
 > Bộ sơ đồ cũng dừng ở mô hình **một cửa hàng** — chưa có module `shop`, đơn cha `OrderGroup`, ví quỹ COD, đối soát chi trả shop, ngành hàng thuộc tính động.
@@ -81,7 +83,7 @@ Current Diagram`. Ảnh kết xuất để trong `docs/design/out/` (gitignore n
 | `payment.payments` | + `qr_url` · `transfer_content` (`DH…`) · `sepay_transaction_id`; `payment_transactions.type` thêm `sepay_in`, `sepay_out` |
 | `order.return_requests` | + `refund_bank_code` · `refund_account_no` · `refund_account_name` (khách nhập khi gửi yêu cầu) |
 | `order.orders` | Huỷ bởi khách khi đã thanh toán: body nhận `refundBankCode/AccountNo/AccountName` → chép sang `refunds.bank_*` |
-| `payment.payment_methods` | `bank_transfer` bật (SePay), `vnpay` `is_active = false` (giữ code cũ, không dùng) |
+| `payment.payment_methods` | (thiết kế SePay cũ: `bank_transfer` bật; THỰC TẾ PLAN-0018: chỉ `cod` + `payos` bật, `vnpay`/`bank_transfer` `is_active = false`) |
 
 Retention: `sepay_transactions`, `refunds`, `payments`, `stock_movements`, `audit_logs` **không bao giờ xoá**.
 

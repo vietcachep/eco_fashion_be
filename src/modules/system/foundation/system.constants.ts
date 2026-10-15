@@ -35,12 +35,12 @@ export const SETTING_DEFAULTS: Record<string, { value: unknown; group: string; d
   [SETTING_KEY.SHOP_ADDRESS]: { value: '12 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh', group: 'shop', description: 'Địa chỉ cửa hàng', isPublic: true },
   [SETTING_KEY.SHIPPING_FREE_THRESHOLD]: { value: 500000, group: 'shipping', description: 'Miễn phí ship từ (VND)', isPublic: true },
   [SETTING_KEY.SHIPPING_DEFAULT_FEE]: { value: 30000, group: 'shipping', description: 'Phí ship mặc định khi không khớp tỉnh (VND)', isPublic: true },
-  [SETTING_KEY.ORDER_VNPAY_TIMEOUT_MINUTES]: { value: 30, group: 'order', description: 'Đơn VNPay chưa thanh toán quá hạn (phút) → huỷ, nhả kho', isPublic: false },
-  [SETTING_KEY.ORDER_BANK_TRANSFER_TIMEOUT_HOURS]: { value: 24, group: 'order', description: 'Đơn chuyển khoản chưa xác nhận quá hạn (giờ) → huỷ', isPublic: false },
+  [SETTING_KEY.ORDER_ONLINE_PAYMENT_TIMEOUT_MINUTES]: { value: 30, group: 'order', description: 'Đơn PayOS chưa thanh toán quá hạn (phút) → huỷ, nhả kho', isPublic: false },
   [SETTING_KEY.ORDER_COD_MAX_AMOUNT]: { value: 5000000, group: 'order', description: 'Giá trị đơn tối đa cho COD (VND)', isPublic: true },
   [SETTING_KEY.ORDER_AUTO_COMPLETE_DAYS]: { value: 7, group: 'order', description: 'Đã giao N ngày không khiếu nại → hoàn tất', isPublic: false },
   [SETTING_KEY.RETURN_WINDOW_DAYS]: { value: 7, group: 'order', description: 'Số ngày sau khi giao được yêu cầu đổi trả', isPublic: true },
   [SETTING_KEY.CART_MAX_QTY_PER_LINE]: { value: 10, group: 'cart', description: 'Số lượng tối đa mỗi dòng giỏ', isPublic: true },
+  [SETTING_KEY.PAYOUT_AUTO_ENABLED]: { value: true, group: 'payout', description: 'Tự động đối soát + chi trả shop hằng ngày lúc 02:00 (Asia/Ho_Chi_Minh); chỉ chạy khi PayOS chi đã cấu hình', isPublic: false },
 };
 
 export const NOTIFICATION_TYPE = { ORDER: 'order', PAYMENT: 'payment', PROMOTION: 'promotion', REVIEW: 'review', SUPPORT: 'support', SYSTEM: 'system', AI: 'ai', INVENTORY: 'inventory' } as const;

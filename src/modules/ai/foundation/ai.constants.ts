@@ -89,7 +89,7 @@ export const RULE = {
   HUMAN: ['gặp nhân viên', 'gặp người', 'nhân viên hỗ trợ', 'tư vấn viên', 'người thật', 'hotline', 'khiếu nại'],
   /* Chỉ khi hỏi về ĐƠN cụ thể — từ chung như 'ship', 'giao hàng' để LLM/kho tri thức trả lời chính sách. */
   ORDER: ['đơn hàng của tôi', 'đơn của tôi', 'đơn của mình', 'kiểm tra đơn', 'tra đơn', 'trạng thái đơn', 'theo dõi đơn', 'mã đơn', 'đơn mình đặt', 'đơn tôi đặt', 'đơn đã đặt', 'dhdemo', 'dh26'],
-  POLICY: ['đổi trả', 'hoàn tiền', 'bảo hành', 'chính sách', 'phí ship', 'miễn phí', 'thanh toán', 'chuyển khoản', 'vnpay', 'cod', 'size', 'kích cỡ', 'bảng size', 'giặt'],
+  POLICY: ['đổi trả', 'hoàn tiền', 'bảo hành', 'chính sách', 'phí ship', 'miễn phí', 'thanh toán', 'chuyển khoản', 'payos', 'cod', 'size', 'kích cỡ', 'bảng size', 'giặt'],
   GREETING: ['xin chào', 'chào', 'hello', 'hi ', 'alo'],
   CATEGORY: [
     { slugs: ['ao-thun'], words: ['áo thun', 'ao thun', 'tee', 't-shirt', 'polo', 'croptop'] },

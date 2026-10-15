@@ -7,6 +7,7 @@ import { money } from '@common/response/money-response';
 import { NOTIFICATION_GATEWAY, NotificationGateway, NotifyCommand } from '@common/gateway/notification.gateway';
 import { ORDER_EVENT, ORDER_MODULE } from '../order/enums/order-events';
 import { OrderQueryApi } from '../order/queryapi/order.queryapi';
+import { PAYMENT_MODULE_NAME, PAYOUT_EVENT } from '../payment/enums/payment-events';
 import { PRODUCT_EVENT, PRODUCT_MODULE } from '../product/enums/product-events';
 import { SHOP_EVENT, SHOP_MODULE } from '../shop/enums/shop-events';
 import { ShopQueryApi } from '../shop/queryapi/shop.queryapi';
@@ -27,15 +28,17 @@ export function startOfVnDay(now: Date = new Date()): Date {
 }
 
 /* Nhãn phương thức thanh toán online hiển thị cho vendor (COD không đi qua đây). */
-const PAYMENT_METHOD_LABEL: Record<string, string> = { vnpay: 'VNPay', bank_transfer: 'chuyển khoản' };
+const PAYMENT_METHOD_LABEL: Record<string, string> = { payos: 'PayOS' };
 
 /*
  * Listener thông báo thành viên gian hàng (WP: B5 shop-notify, B10/B12 bổ sung). Nghe sự kiện outbox của order/product/shop:
  * - ORDER_CREATED: báo TẤT CẢ thành viên active của shop (deep link /vendor/orders/CODE)
- * - ORDER_PAID: đơn ONLINE (VNPay/chuyển khoản) vừa nhận được tiền → báo shop có thể xác nhận/đóng gói (COD bỏ qua:
+ * - ORDER_PAID: đơn ONLINE (PayOS) vừa nhận được tiền → báo shop có thể xác nhận/đóng gói (COD bỏ qua:
  *   tiền thu lúc giao). Payload ORDER_PAID không có shopId → tra qua OrderQueryApi.shopIdOfOrder
  * - STOCK_LOW: báo thành viên shop, dedupe theo biến thể + ngày VN (link /vendor/inventory)
  * - SHOP_BANK_CHANGED: báo TẤT CẢ thành viên khi tài khoản ngân hàng nhận tiền đổi (chỉ 4 số cuối) để phát hiện đổi trái phép
+ * - PAYOUT_PROCESSING / PAYOUT_PAID / PAYOUT_FAILED (PLAN-0018): báo TẤT CẢ thành viên active (cùng quy ước thông báo tiền như đổi TK ngân hàng)
+ *   khi kỳ chi trả đang chuyển tiền / đã trả / thất bại (kèm lý do ngắn, đã cắt)
  *
  * Idempotent + không nuốt lỗi (system KHÔNG có bảng processed_events nên dedupe bằng chính bảng notifications):
  * - Mỗi thông báo mang `payload.eventId` = id outbox event; trước khi gửi, kiểm (userId, payload.eventId) đã có chưa.
@@ -161,6 +164,47 @@ export class ShopNotificationListeners {
     this.logger.log({ shopId, recipients: sent }, 'Đã gửi thông báo đổi tài khoản ngân hàng');
   }
 
+  /* Kỳ chi trả đã gửi lệnh chi sang PayOS (đang chuyển tiền). */
+  @OnEvent(`outbox.${PAYMENT_MODULE_NAME}.${PAYOUT_EVENT.PROCESSING}`, { suppressErrors: false })
+  async onPayoutProcessing(msg: OutboxEventMessage): Promise<void> {
+    await this.notifyPayout(msg, 'PAYOUT_PROCESSING', (code, amount) => ({
+      title: `Đang chuyển tiền đối soát ${code}`,
+      content: `Sàn đang chuyển ${amount} về tài khoản ngân hàng nhận tiền của gian hàng. Tiền thường về trong vài phút.`,
+    }));
+  }
+
+  /* Kỳ chi trả đã trả xong (PayOS xác nhận hoặc kế toán đánh dấu đã trả). */
+  @OnEvent(`outbox.${PAYMENT_MODULE_NAME}.${PAYOUT_EVENT.PAID}`, { suppressErrors: false })
+  async onPayoutPaid(msg: OutboxEventMessage): Promise<void> {
+    await this.notifyPayout(msg, 'PAYOUT_PAID', (code, amount) => ({
+      title: `Đã chi trả đối soát ${code}`,
+      content: `Sàn đã chi trả ${amount} cho gian hàng của bạn.`,
+    }));
+  }
+
+  /* Kỳ chi trả thất bại → báo shop kèm lý do ngắn để sửa (vd chưa khai tài khoản ngân hàng). */
+  @OnEvent(`outbox.${PAYMENT_MODULE_NAME}.${PAYOUT_EVENT.FAILED}`, { suppressErrors: false })
+  async onPayoutFailed(msg: OutboxEventMessage): Promise<void> {
+    const reason = String((msg.payload as { failReason?: string }).failReason ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    await this.notifyPayout(msg, 'PAYOUT_FAILED', (code, amount) => ({
+      title: `Chi trả đối soát ${code} thất bại`,
+      content: `Sàn chưa chuyển được ${amount}${reason ? ` (${reason})` : ''}. Vui lòng kiểm tra tài khoản ngân hàng nhận tiền của gian hàng; sàn sẽ chi lại sau.`,
+    }));
+  }
+
+  /* Dùng chung cho 3 sự kiện chi trả: tra thành viên active của shop rồi gửi một lần (dedupe theo eventId). */
+  private async notifyPayout(msg: OutboxEventMessage, eventName: string, render: (code: string, amount: string) => { title: string; content: string }): Promise<void> {
+    const { payoutId, payoutCode, shopId, netPayout } = msg.payload as { payoutId?: string; payoutCode?: string; shopId?: string; netPayout?: string };
+    if (!payoutCode || !shopId) {
+      this.logger.warn({ eventId: msg.id }, `${eventName} thiếu payoutCode/shopId — bỏ qua thông báo`);
+      return;
+    }
+    const userIds = await this.shops.activeMemberUserIds(shopId);
+    const { title, content } = render(payoutCode, money(netPayout ?? 0).display);
+    const sent = await this.notifyOnce(msg, userIds, { type: 'payment', title, content, link: '/vendor/payouts' }, { shopId, payoutId, payoutCode });
+    this.logger.log({ shopId, payoutCode, recipients: sent }, `Đã gửi thông báo ${eventName}`);
+  }
+
   /*
    * Gửi `base` + `payload` tới từng user CHƯA có thông báo của event này (payload.eventId = msg.id) — và, nếu có `alsoSkip`,
    * chưa có thông báo khớp điều kiện đó (vd cùng biến thể trong ngày). Tách theo từng user nên retry giữa chừng vẫn đúng.
@@ -188,7 +232,7 @@ export class ShopNotificationListeners {
 
 /*
  * Phần worker của system: listener thông báo thành viên gian hàng cho sự kiện từ order/product/shop module.
- * Chỉ WorkerModule import. Nghe ORDER_CREATED + ORDER_PAID + STOCK_LOW + SHOP_BANK_CHANGED từ outbox relay của module nguồn.
+ * Chỉ WorkerModule import. Nghe ORDER_CREATED + ORDER_PAID + STOCK_LOW + SHOP_BANK_CHANGED + PAYOUT_PROCESSING/PAID/FAILED từ outbox relay của module nguồn.
  */
 @Module({
   imports: [SystemModule, OrderModule, ProductModule, ShopModule],

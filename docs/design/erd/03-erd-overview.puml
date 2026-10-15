@@ -1,5 +1,6 @@
 @startuml 03-erd-overview
 title ERD tổng quan — 11 schema PostgreSQL (schema-per-module, KHÔNG FK xuyên module)
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam linetype polyline
 skinparam shadowing false

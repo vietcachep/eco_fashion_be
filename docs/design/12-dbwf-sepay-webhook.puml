@@ -1,5 +1,6 @@
 @startuml 12-dbwf-sepay-webhook
 title Database Workflow 3 — Xử lý webhook SePay: idempotent, khớp tiền VÀO (thanh toán) và tiền RA (hoàn tiền), lệch/không khớp
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam shadowing false
 skinparam ActivityBackgroundColor #FFFFFF

@@ -1,5 +1,6 @@
 @startuml 15-dbwf-fulfillment-cod-stock
 title Database Workflow 6 — Xử lý đơn: xác nhận (trừ kho SALE) → đóng gói → giao → đã giao (thu COD) → hoàn tất; job huỷ đơn quá hạn thanh toán
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam shadowing false
 skinparam ActivityBackgroundColor #FFFFFF

@@ -5,7 +5,7 @@
 ```text
 identity   users, roles (scope platform|shop), permissions, role_permissions, user_permissions, refresh_tokens, login_histories,
            addresses, audit_logs, outbox_events, processed_events   (OTP đặt lại mật khẩu nằm ở Redis, không có bảng)
-shop       shops, shop_members, audit_logs, outbox_events, processed_events   (gian hàng + chủ/nhân viên gian hàng — PLAN-0014/0017; chủ shop thêm nhân viên trực tiếp, bảng lời mời đã bỏ ở 20261013090000;
+shop       shops, shop_members, shop_registrations, audit_logs, outbox_events, processed_events   (gian hàng + chủ/nhân viên gian hàng — PLAN-0014/0017; chủ shop thêm nhân viên trực tiếp, bảng lời mời đã bỏ ở 20261013090000;
            gian hàng chính chủ "FITLY Official" id cố định 00000000-0000-0000-0000-000000000001)
 catalog    categories (attribute_mode), collections, attributes, attribute_values, dynamic_attributes, dynamic_attribute_values,
            category_attributes, audit_logs, outbox_events   (không brands; danh mục DÙNG CHUNG toàn sàn — gian hàng sở hữu
@@ -16,9 +16,9 @@ cart       carts, cart_items (shop_id), wishlists   (không audit/outbox — d�
 order      order_groups, order_group_sequences, orders (shop_id, order_group_id), order_items (shop_id), order_status_histories,
            return_requests, return_request_items, order_sequences, audit_logs, outbox_events, processed_events, idempotency_keys
            (phí ship nằm ở system.provinces; 1 lần checkout = 1 order_groups + N orders, mỗi shop một đơn con)
-payment    payment_methods, payments, payment_transactions, refunds (shop_id), bank_transfer_confirmations,
-           shop_wallets, shop_wallet_transactions, shop_wallet_deposit_requests (ví quỹ COD), shop_payouts, shop_payout_lines (đối soát),
-           audit_logs, outbox_events, processed_events   (PLAN-0017)
+payment    payment_methods, payments, payment_transactions, refunds (shop_id), bank_transfer_confirmations (LỊCH SỬ — chuyển khoản tay đã bỏ),
+           shop_payouts, shop_payout_lines (đối soát PayOS + COD, chi trả tự động),
+           audit_logs, outbox_events, processed_events   (PLAN-0017; PLAN-0018 bỏ 3 bảng ví quỹ COD)
 promotion  promotions (scope platform|shop, shop_id), promotion_targets, promotion_usages, audit_logs
 review     reviews (shop_id; media json), review_replies, audit_logs, outbox_events, processed_events
 system     settings, provinces, banners, notifications, contact_messages, faqs, pages, audit_logs
@@ -45,7 +45,7 @@ ai         product_embeddings, documents, document_chunks, chat_sessions, chat_m
 4. Khoá chính `uuid` (`gen_random_uuid()`); cột chuẩn: `created_at timestamptz`, `created_by uuid`,
    `updated_at`, `updated_by`, `version int` (optimistic), `is_deleted bool` (soft delete) — chép khuôn Base
    Columns vào từng model (Prisma không có kế thừa model; `src/prisma-boundaries.spec.ts` gác model đúng schema). Bảng nối / sổ cái /
-   dữ liệu dẫn xuất được miễn một phần (`role_permissions`, `shop_members`, `order_groups`, `shop_wallet_transactions`… — ghi rõ ở comment model).
+   dữ liệu dẫn xuất được miễn một phần (`role_permissions`, `shop_members`, `order_groups`… — ghi rõ ở comment model).
 5. Tiền `numeric(14,0)` VND; tỉ lệ `numeric(5,2)`; số lượng `int`.
 6. Unique index là chốt cuối chống trùng (partial index cho bản ghi sống: `WHERE is_deleted = false`).
 7. Tồn kho, lượt mã giảm giá, số đơn: đọc-sửa-ghi trong transaction có `SELECT ... FOR UPDATE`.
@@ -59,7 +59,7 @@ ai         product_embeddings, documents, document_chunks, chat_sessions, chat_m
 11. Reporting là module DUY NHẤT được `SELECT` thẳng bảng schema khác (raw SQL chỉ đọc, ghi rõ trong service); mọi module khác
     đi qua queryapi/gateway.
 12. Gian hàng (PLAN-0014/0017): mọi cột `shop_id` (product, cart_items, orders, order_items, reviews, refunds, stock_receipts,
-    promotions, ví/đối soát…) là id TRẦN trỏ `shop.shops.id` — không FK xuyên schema; ghi lúc tạo bản ghi (denormalize/snapshot
+    promotions, đối soát…) là id TRẦN trỏ `shop.shops.id` — không FK xuyên schema; ghi lúc tạo bản ghi (denormalize/snapshot
     từ product/order) để lọc theo shop không phải JOIN. Thêm `shop_id` vào bảng đã có dữ liệu = migration nhiều bước: thêm cột
     nullable → backfill (JOIN từ bảng gốc, mặc định về FITLY Official `00000000-0000-0000-0000-000000000001`) → `SET NOT NULL`
     → index (xem `product_shop_id`, `cart_item_shop_id`, `order_group_shop_split`). Ngoại lệ có chủ đích: `stock_receipts.shop_id`,
@@ -77,12 +77,12 @@ ai         product_embeddings, documents, document_chunks, chat_sessions, chat_m
     thêm `uq_shop_invitations_pending_shop_email` + bảng `shop_invitations` (lời mời có chấp nhận) — chủ dự án chuyển sang luồng "chủ shop thêm nhân viên trực tiếp"
     nên `20261013090000_drop_shop_invitations` chỉ `DROP TABLE` bảng đó (kéo theo index/CHECK/FK của nó); `uq_shop_members_one_active_per_user` được GIỮ NGUYÊN.
 14. "Enum bằng string" (status/type/kind/scope…) có CHECK viết tay trong migration (vd `ck_shops_status`, `ck_roles_scope`, `ck_shop_members_status`,
-    `chk_promotions_scope`, `chk_shop_payouts_status`, `chk_shop_wallet_tx_type`). Thêm giá trị mới = migration `DROP CONSTRAINT` +
+    `chk_promotions_scope`, `chk_shop_payouts_status`). Thêm giá trị mới = migration `DROP CONSTRAINT` +
     `ADD CONSTRAINT` CÙNG LÚC với code ghi giá trị đó (CHECK quá hẹp làm INSERT bị Postgres từ chối — đã xảy ra ở
-    `payout_status_carried_settled`; `wallet_cod_refund_type` cũng là sửa CHECK). Tiền tố tên hiện có hai kiểu: `ck_` (các migration đến
+    `payout_status_carried_settled`). Tiền tố tên hiện có hai kiểu: `ck_` (các migration đến
     `shop_init`/`identity_role_scope`) và `chk_` (PLAN-0017, kể cả `chk_promotions_scope` cạnh `ck_promotions_used_le_limit`) —
-    khi sửa giữ nguyên tên cũ. Sổ cái ví (`shop_wallet_transactions`)
-    APPEND-ONLY, chống ghi trùng bằng unique `(shop_id, type, order_code)`.
+    khi sửa giữ nguyên tên cũ. Dòng đối soát (`shop_payout_lines`)
+    chống ghi trùng bằng unique `(order_code, kind)`; ví quỹ COD (sổ cái `shop_wallet_transactions`) đã bị PLAN-0018 gỡ.
 
 ## Migration đã có
 
@@ -102,19 +102,21 @@ ai         product_embeddings, documents, document_chunks, chat_sessions, chat_m
 | `20260929093500_product_variant_shop_sku_unique_fix` | product | đổi tên SKU trùng trong cùng shop (hậu tố `-DUPn`, không xoá dữ liệu); tạo lại unique (shop_id, sku) + index `shop_id` có kiểm tồn tại (idempotent) |
 | `20260929100000_order_group_shop_split` | order | `order_groups` + `order_group_sequences`; `orders.shop_id`, `orders.order_group_id` (FK RESTRICT), `orders.commission_rate_snapshot`; `order_items.shop_id`; backfill đơn cũ thành nhóm 1-đơn (mã nhóm = `DHN` + phần sau `DH` của mã đơn) |
 | `20260929120000_multi_category_attributes` | catalog, product | `categories.attribute_mode` (mặc định `dynamic`; backfill category cũ = `legacy_fashion`); `dynamic_attributes`, `dynamic_attribute_values`, `category_attributes`; `product_variants.color_code/color_name/size_code` thành NULLABLE; `product_attribute_values`, `product_variant_options` |
-| `20261003100000_marketplace_completion` | promotion, shop, payment | `promotions.scope/shop_id` + CHECK `chk_promotions_scope`; `shops.bank_code/bank_account_number/bank_account_name`; `refunds.shop_id` (backfill từ `orders`); ví COD (`shop_wallets`, `shop_wallet_transactions`, `shop_wallet_deposit_requests`) + đối soát (`shop_payouts`, `shop_payout_lines`) kèm CHECK status/type/kind (`chk_*`); backfill ví số dư 0 cho shop đã duyệt; đổi tên `idx_*`/`uc_*` cũ về quy ước Prisma |
+| `20261003100000_marketplace_completion` | promotion, shop, payment | `promotions.scope/shop_id` + CHECK `chk_promotions_scope`; `shops.bank_code/bank_account_number/bank_account_name`; `refunds.shop_id` (backfill từ `orders`); ví COD (`shop_wallets`, `shop_wallet_transactions`, `shop_wallet_deposit_requests` — SAU NÀY BỊ DROP bởi PLAN-0018) + đối soát (`shop_payouts`, `shop_payout_lines`) kèm CHECK status/type/kind (`chk_*`); backfill ví số dư 0 cho shop đã duyệt; đổi tên `idx_*`/`uc_*` cũ về quy ước Prisma |
 | `20261003110000_stock_receipt_shop_id` | product | `stock_receipts.shop_id` nullable (NULL = phiếu của sàn) + index (shop_id, created_at DESC); backfill phiếu cũ = FITLY Official |
 | `20261003120000_order_voucher_split` | order | `orders.shop_discount`, `platform_discount`, `shop_promotion_code`, `shop_promotion_name` (đơn con mang tối đa 1 voucher sàn + 1 voucher shop); backfill `platform_discount = discount` cho đơn có `promotion_code` |
 | `20261003130000_payout_status_carried_settled` | payment | sửa CHECK `chk_shop_payouts_status`: thêm `carried` (net < 0, không chi, mang nợ) và `settled` (net = 0) |
 | `20261003140000_product_variant_sku_per_shop` | product | gỡ `uq_product_variants_sku_active` (unique(sku) toàn sàn) và unique (shop_id, sku) tính cả xoá mềm; tạo partial unique `uq_product_variants_shop_sku_active (shop_id, sku) WHERE is_deleted = false` |
-| `20261003160000_wallet_cod_refund_type` | payment | sửa CHECK `chk_shop_wallet_tx_type`: thêm loại sổ cái `cod_refund` (hoàn tiền đơn COD đã thu) |
+| `20261003160000_wallet_cod_refund_type` | payment | (lịch sử) sửa CHECK `chk_shop_wallet_tx_type`: thêm loại sổ cái `cod_refund` — bảng này bị PLAN-0018 DROP |
 | `20261004090000_shop_invitations` | shop | bảng `shop_invitations` (email chữ thường, status `pending`/`accepted`/`declined`/`cancelled`, hạn 7 ngày, FK CASCADE về `shops`) + CHECK `ck_shop_invitations_status`/`ck_shop_invitations_email_lower`; partial unique `uq_shop_invitations_pending_shop_email` **(bảng `shop_invitations` và các index/CHECK của nó đã bỏ ở `20261013090000_drop_shop_invitations`)**; partial unique `uq_shop_members_one_active_per_user (user_id) WHERE status = 'active'` (kiểm trùng dữ liệu cũ trước, dừng rõ nếu có) — phần này còn hiệu lực |
 | `20261004100000_review_reply_author_kind` | review | `review_replies.author_kind` (`shop`\|`platform`, NOT NULL DEFAULT `platform`, CHECK `ck_review_replies_author_kind`); backfill `shop` khi người trả lời từng là thành viên của shop sở hữu đánh giá hoặc `staff_name` trùng tên shop (đọc chéo schema `shop` CHỈ trong câu backfill một lần); `staff_name` cũ giữ nguyên nhưng KHÔNG còn ra API |
-| `20261004120000_payment_refund_hardening` | payment | `refunds.kind` (`order`\|`duplicate_payment`, NOT NULL DEFAULT `order`, CHECK `chk_refunds_kind`; backfill theo lý do "Thanh toán trùng%") + `refunds.gateway_attempted_at` (dấu ghi TRƯỚC khi gọi cổng VNPay — còn dấu mà chưa có `provider_ref` = chưa rõ cổng đã hoàn hay chưa) |
+| `20261004120000_payment_refund_hardening` | payment | `refunds.kind` (`order`\|`duplicate_payment`, NOT NULL DEFAULT `order`, CHECK `chk_refunds_kind`; backfill theo lý do "Thanh toán trùng%") + `refunds.gateway_attempted_at` (dấu ghi TRƯỚC khi gọi cổng hoàn tiền — còn dấu mà chưa có `provider_ref` = chưa rõ cổng đã hoàn hay chưa) |
 | `20261013090000_drop_shop_invitations` | shop | `DROP TABLE IF EXISTS shop.shop_invitations` (kéo theo index/CHECK/FK của bảng) — chủ dự án chọn luồng chủ shop THÊM nhân viên trực tiếp thay cho lời mời có chấp nhận; GIỮ NGUYÊN `uq_shop_members_one_active_per_user`; dữ liệu lời mời cũ mất theo bảng, dòng audit `SHOP_INVITATION_*` trong `shop.audit_logs` vẫn giữ làm lịch sử |
+| `20261015120000_shop_registrations` | shop | PLAN-0019 (người bán tự đăng ký): bảng `shop_registrations` — hồ sơ 1–1 với `shops` qua `shop_id` UNIQUE, KHÔNG FK (model nằm file riêng `prisma/schema/shop-registration.prisma`, không khai `@relation`); trạng thái duyệt vẫn là `shops.status`; luật "một hồ sơ chờ/người" do advisory lock + kiểm trong transaction ở service, không có chốt DB |
+| `<timestamp>_payment_platform_collects_all` | payment, shop | PLAN-0018 (sàn thu mọi khoản tiền): DROP `shop_wallets`, `shop_wallet_transactions`, `shop_wallet_deposit_requests` + cột `shops.cod_enabled`; `UPDATE payment.payment_methods SET is_active=false WHERE code IN ('vnpay','bank_transfer')`; thêm setting `payout.auto_enabled` (mặc định true — cron chi trả tự động) |
 
 Đặt tên `<timestamp>_<module>_<slug>` — Prisma sắp theo timestamp, tên có module để đọc lịch sử dễ.
 Sau migration mới của module nào, **phải chạy `perms:sync`/seed tương ứng** qua compose (`docs/05`).
 
-Sơ đồ: `docs/database/eco_fashion.dbml` (dán vào dbdiagram.io; phản ánh tới migration `20261013090000_drop_shop_invitations`). Thiết kế từng module:
+Sơ đồ: `docs/database/eco_fashion.dbml` (dán vào dbdiagram.io; phản ánh tới migration `payment_platform_collects_all` của PLAN-0018). Thiết kế từng module:
 `docs/database/<m>-database-design.md`.

@@ -1,5 +1,6 @@
 @startuml 06-erd-cart-order
 title ERD — schema cart (giỏ, yêu thích) và order (đơn hàng, đổi trả)
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam linetype polyline
 skinparam shadowing false
@@ -42,7 +43,7 @@ package "order" {
     * code : varchar(20) <<U>>  DHyymmddNNNN (= nội dung chuyển khoản)
     * user_id : uuid
     * status : varchar(20)  pending | confirmed | packing | shipping | delivered | completed | cancelled | returned
-    * payment_method_code : varchar(30)  cod | bank_transfer (SePay) | vnpay
+    * payment_method_code : varchar(30)  cod | payos (PLAN-0018; thiết kế cũ: bank_transfer/vnpay)
     * payment_status : varchar(30)  unpaid | processing | paid | refunded | partially_refunded
     * recipient_name, recipient_phone
     province_code : varchar(10)

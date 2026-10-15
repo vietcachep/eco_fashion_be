@@ -36,7 +36,7 @@ export interface DailyPoint {
 export interface DashboardResponse {
   today: DailyPoint;
   month: { revenue: MoneyResponse; orderCount: number; paidCount: number; itemsSold: number; newCustomers: number; refunded: MoneyResponse };
-  pending: { awaitingConfirm: number; awaitingPayment: number; packing: number; shipping: number; returnsRequested: number; transfersToConfirm: number; refundsRequested: number; contactsNew: number; supportOpen: number; lowStock: number };
+  pending: { awaitingConfirm: number; awaitingPayment: number; packing: number; shipping: number; returnsRequested: number; refundsRequested: number; contactsNew: number; supportOpen: number; lowStock: number };
   last7Days: DailyPoint[];
   topProducts: TopProductRow[];
   orderStatus: Array<{ status: string; count: number }>;
@@ -131,7 +131,6 @@ export class ReportingService {
           (SELECT count(*) FROM "order"."orders" WHERE is_deleted = false AND status IN ('confirmed', 'packing')) AS packing,
           (SELECT count(*) FROM "order"."orders" WHERE is_deleted = false AND status = 'shipping') AS shipping,
           (SELECT count(*) FROM "order"."return_requests" WHERE status = 'requested') AS returns_requested,
-          (SELECT count(*) FROM "payment"."payments" WHERE method_code = 'bank_transfer' AND status = 'pending' AND (expires_at IS NULL OR expires_at > now())) AS transfers_to_confirm,
           (SELECT count(*) FROM "payment"."refunds" WHERE status = 'requested') AS refunds_requested,
           (SELECT count(*) FROM "system"."contact_messages" WHERE status = 'new') AS contacts_new,
           (SELECT count(*) FROM "ai"."support_requests" WHERE status = 'open') AS support_open,
@@ -157,7 +156,7 @@ export class ReportingService {
     return {
       today: ReportingService.toPoint(today, byDay.get(today) ?? null),
       month: { revenue: money(sumMoney((r) => r.revenue)), orderCount: sum((r) => r.orderCount), paidCount: sum((r) => r.paidCount), itemsSold: sum((r) => r.itemsSold), newCustomers: sum((r) => r.newCustomers), refunded: money(sumMoney((r) => r.refunded)) },
-      pending: { awaitingConfirm: n('awaiting_confirm'), awaitingPayment: n('awaiting_payment'), packing: n('packing'), shipping: n('shipping'), returnsRequested: n('returns_requested'), transfersToConfirm: n('transfers_to_confirm'), refundsRequested: n('refunds_requested'), contactsNew: n('contacts_new'), supportOpen: n('support_open'), lowStock: n('low_stock') },
+      pending: { awaitingConfirm: n('awaiting_confirm'), awaitingPayment: n('awaiting_payment'), packing: n('packing'), shipping: n('shipping'), returnsRequested: n('returns_requested'), refundsRequested: n('refunds_requested'), contactsNew: n('contacts_new'), supportOpen: n('support_open'), lowStock: n('low_stock') },
       last7Days: last7,
       topProducts: top,
       orderStatus: statusRows.map((r) => ({ status: r.status, count: Number(r.n) })),

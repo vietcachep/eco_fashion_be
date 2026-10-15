@@ -6,10 +6,12 @@ export const SETTING_KEY = {
   SHOP_ADDRESS: 'shop.address',
   SHIPPING_FREE_THRESHOLD: 'shipping.free_threshold',
   SHIPPING_DEFAULT_FEE: 'shipping.default_fee',
-  ORDER_VNPAY_TIMEOUT_MINUTES: 'order.vnpay_timeout_minutes',
-  ORDER_BANK_TRANSFER_TIMEOUT_HOURS: 'order.bank_transfer_timeout_hours',
+  /* Hạn thanh toán đơn online (PayOS). Khoá DB giữ nguyên tên lịch sử `order.vnpay_timeout_minutes` để không phải đổi dữ liệu đang chạy. */
+  ORDER_ONLINE_PAYMENT_TIMEOUT_MINUTES: 'order.vnpay_timeout_minutes',
   ORDER_COD_MAX_AMOUNT: 'order.cod_max_amount',
   ORDER_AUTO_COMPLETE_DAYS: 'order.auto_complete_days',
   RETURN_WINDOW_DAYS: 'return.window_days',
   CART_MAX_QTY_PER_LINE: 'cart.max_qty_per_line',
+  /* PLAN-0018: bật/tắt cron chi trả tự động hằng ngày (02:00 Asia/Ho_Chi_Minh). */
+  PAYOUT_AUTO_ENABLED: 'payout.auto_enabled',
 } as const;

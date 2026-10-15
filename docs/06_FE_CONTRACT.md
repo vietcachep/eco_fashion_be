@@ -13,7 +13,7 @@ Quyết định chung (đã chốt với `features/identity/api/auth-api.ts` c�
 | id | `number` | `string` uuid | FE type `id: number \| string`; Orval sinh lại là xong |
 | Tiền | `MoneyResponse{amount,display,currency,symbol}` | `MoneyResponse{amount: "159000", display: "159.000 ₫", currency:"VND", symbol:"₫"}` | BE tính mọi số tiền (Money Rule của FE) |
 | Body có cả `full_name` lẫn `fullName` | — | `ValidationPipe whitelist: true, forbidNonWhitelisted: false` | key lạ bị BỎ, không 400 |
-| Thẻ quốc tế (`card` + số thẻ) | form mô phỏng | **VNPay** redirect (`paymentUrl`), BE KHÔNG nhận số thẻ | FE gửi `paymentMethodCode: "vnpay"` (hoặc `card` → BE hiểu là VNPay thẻ quốc tế) |
+| Thanh toán online | form mô phỏng | **PayOS** redirect (`paymentUrl`), BE KHÔNG nhận số thẻ | FE gửi `paymentMethodCode: "payos"`; chỉ có 2 giá trị `cod`\|`payos` (PLAN-0018 đã bỏ `vnpay`/`bank_transfer`/`card`) |
 | Địa chỉ | nhập tay tỉnh/huyện/xã (chuỗi) | `provinceName` bắt buộc, `provinceCode` tuỳ chọn (BE tự khớp theo tên với `system.provinces` để tính phí ship) | |
 
 ## identity (PLAN-0002 + 0002b)
@@ -58,11 +58,11 @@ Quyết định chung (đã chốt với `features/identity/api/auth-api.ts` c�
 ## order / payment / promotion (PLAN-0006/0007/0008) ✅
 
 - `GET /checkout/summary?voucherCode=` → `CheckoutSummaryResponse{subtotal,shippingFee,discount,total,promotionCode,promotionError,itemCount}`.
-- `POST /orders` (header `Idempotency-Key`) body `{addressId? | address{recipientName,phone,provinceName,districtName,wardName,street}, paymentMethodCode: cod|bank_transfer|vnpay|payos, note?, voucherCode?}`
-  → `OrderResponse{code,status,paymentMethodCode,paymentStatus,recipientName,recipientPhone,shippingAddress,customerNote,items[...],subtotal,shippingFee,discount,promotion{code,name},total,paymentIntent{bankCode,accountNumber,accountName,transferContent,qrUrl} | null, paymentUrl (VNPay) | null,history[{toStatus,createdAt,note}],createdAt}`.
+- `POST /orders` (header `Idempotency-Key`) body `{addressId? | address{recipientName,phone,provinceName,districtName,wardName,street}, paymentMethodCode: cod|payos, note?, voucherCode?}`
+  → `OrderResponse{code,status,paymentMethodCode,paymentStatus,recipientName,recipientPhone,shippingAddress,customerNote,items[...],subtotal,shippingFee,discount,promotion{code,name},total,paymentUrl (PayOS) | null,history[{toStatus,createdAt,note}],createdAt}`.
 - `GET /orders?page&size&status` (tóm tắt `OrderSummaryResponse`) · `GET /orders?full=true` → `PageResponse<OrderResponse>` đầy đủ items/history (size ≤ 20, cho màn "Đơn của tôi" hiện món + nút hành động không cần gọi từng đơn), `GET /orders/{code}`, `POST /orders/{code}/cancel {reason}`, `POST /orders/{code}/returns {reason,detail,items,evidence[]}`, `GET /returns`.
 - `GET /promotions/offers` → `PromotionOfferResponse[]` (giảm thật cho giỏ hiện tại, `eligible`, `displayMissingAmount`).
-- VNPay: `GET /payments/vnpay/return` (FE trang `/checkout/vnpay-return` gọi lại với query VNPay), `GET /payments/vnpay/ipn` (server-to-server), `POST /payments/vnpay/retry/{code}` (lấy URL mới khi còn hạn). `GET /payment-methods` → `{code,name,description,kind,isActive}` (chỉ cái đang bật; `payos` chỉ có mặt khi backend có khoá PayOS — xem mục "marketplace" bên dưới).
+- **Sàn thu mọi khoản tiền (PLAN-0018)**: `payos` = khách trả qua link PayOS vào tài khoản sàn; `cod` = đơn vị vận chuyển thu hộ tiền mặt rồi nộp về sàn (sàn ghi nhận đã thu khi đơn giao thành công ⇒ `paymentStatus=paid`; vendor KHÔNG có nút thu COD). Sau hạn đổi trả, sàn TỰ ĐỘNG trừ hoa hồng và chi trả shop (cron worker 02:00 Asia/Ho_Chi_Minh, cả đơn PayOS lẫn COD) — FE không cần gọi gì. Đã GỠ: VNPay (`/payments/vnpay/*`, trang `/checkout/vnpay-return`, `bankCode`), chuyển khoản VietQR (`bank_transfer`, `paymentIntent`, confirm-transfer), ví COD. `GET /payment-methods` → `{code,name,description,kind,isActive}` (chỉ cái đang bật: `cod` luôn có; `payos` chỉ có mặt khi backend có khoá PayOS — khoá do chủ dự án cung cấp sau, khi trống FE chỉ thấy `cod`; xem mục "marketplace" bên dưới).
 
 ## review (PLAN-0009) ✅
 
@@ -105,13 +105,13 @@ Thay đổi hợp đồng cho web bán hàng (cộng thêm lên các mục trên
 
 - **Checkout nhiều shop**: `GET /checkout/summary?voucherCode=&voucherCodes=A,B` → thêm `vouchers[{code,scope(platform|shop),shopId,shopName,ok,error,discount}]` (mỗi mã khách nhập: nhận hay bị từ chối + lý do + số giảm THỰC áp) và `shopGroups[{shopId,shopName,itemCount,subtotal,shippingFee,discount,total}]`.
   `promotionCode`/`promotionError` giữ cho FE cũ (mã đầu được nhận / lỗi đầu tiên). Luật: tối đa **1 mã sàn + 1 mã gian hàng cho mỗi shop trong giỏ**; mã shop không có trong giỏ bị từ chối; mã sàn do SÀN chịu, mã shop do SHOP chịu.
-- `POST /orders` thêm `voucherCodes?: string[]` (gộp với `voucherCode`). Trả `OrderGroupResponse{code (DHN…),recipientName,recipientPhone,shippingAddress,subtotal,shippingFee,discount,total,orders[OrderResponse],createdAt}` (đơn cha + `orders[]` đơn con theo shop, mỗi đơn con thanh toán riêng; giỏ 1 shop vẫn trả đúng dạng này — nhóm 1 đơn; nhóm KHÔNG có `status` riêng, đọc ở từng đơn con). Chọn VNPay thì body có thêm `bankCode?` (`VNBANK`\|`INTCARD`\|`VNPAYQR`). Mã bị từ chối ⇒ 400 `ORDER_PROMOTION_INVALID` với message `<MÃ>: <lý do>`;
-  đơn con bị giảm hết (total = 0) ⇒ 409 `ORDER_PROMOTION_INVALID`; thành viên shop mua hàng shop mình ⇒ 409 `ORDER_SHOP_NOT_AVAILABLE`; shop tắt COD ⇒ 409 `ORDER_SHOP_COD_DISABLED`.
+- `POST /orders` thêm `voucherCodes?: string[]` (gộp với `voucherCode`). Trả `OrderGroupResponse{code (DHN…),recipientName,recipientPhone,shippingAddress,subtotal,shippingFee,discount,total,orders[OrderResponse],createdAt}` (đơn cha + `orders[]` đơn con theo shop, mỗi đơn con thanh toán riêng; giỏ 1 shop vẫn trả đúng dạng này — nhóm 1 đơn; nhóm KHÔNG có `status` riêng, đọc ở từng đơn con). Mã bị từ chối ⇒ 400 `ORDER_PROMOTION_INVALID` với message `<MÃ>: <lý do>`;
+  đơn con bị giảm hết (total = 0) ⇒ 409 `ORDER_PROMOTION_INVALID`; thành viên shop mua hàng shop mình ⇒ 409 `ORDER_SHOP_NOT_AVAILABLE`; (không còn `ORDER_SHOP_COD_DISABLED` — shop không còn tắt/bật COD, COD chỉ bị chặn bởi hạn mức hệ thống `ORDER_COD_LIMIT`).
 - `OrderResponse` thêm `shopId`, `shopName` (mỗi đơn thuộc ĐÚNG 1 shop), `shopPromotion{code,name}`, `shopDiscount`, `platformDiscount` (giảm của shop / giảm do sàn chịu), `promotion` là voucher SÀN.
 - Đơn của tôi theo nhóm: `GET /orders/groups?page&size` → `PageResponse<OrderGroupResponse>` · `GET /orders/groups/{code}` (`code` = mã đơn CHA `DHN…`). Các route `GET /orders` (kể cả `?full=true`), `GET /orders/{code}`, `POST /orders/{code}/cancel`, `POST /orders/{code}/returns` làm việc theo mã đơn CON (`orders[].code`), không gộp nhóm.
 - `GET /promotions/offers` → mỗi phần tử thêm `scope`, `shopId`, `shopName` (voucher sàn + voucher của từng shop CÓ TRONG GIỎ; số giảm tính trên riêng hàng của shop đó).
 - **PayOS** (`paymentMethodCode: "payos"`, chỉ hiện ở `GET /payment-methods` khi backend có khoá): `paymentUrl` = link thanh toán (hết hạn 30 phút). Trang `/checkout/payos-return` gọi `GET /payments/payos/return?orderCode=<orderCode PayOS trong query>` → `{success,orderCode,status,message}`
-  (BE hỏi lại PayOS rồi ghi nhận, idempotent). Thử lại link: `POST /payments/payos/retry/{orderCode}` → `{paymentUrl}` (`{orderCode}` = mã đơn CON của FITLY, KHÁC `orderCode` PayOS ở `/return`; đơn phải còn chờ thanh toán; 10 lần/10 phút/người; VNPay `POST /payments/vnpay/retry/{orderCode}` cũng theo mã đơn CON). `POST /payments/payos/webhook` là server-to-server (công khai, xác minh chữ ký) — FE không gọi. Mỗi đơn con có link riêng — FE thanh toán lần lượt từng đơn con.
+  (BE hỏi lại PayOS rồi ghi nhận, idempotent). Thử lại link: `POST /payments/payos/retry/{orderCode}` → `{paymentUrl}` (`{orderCode}` = mã đơn CON của FITLY, KHÁC `orderCode` PayOS ở `/return`; đơn phải còn chờ thanh toán; 10 lần/10 phút/người). `POST /payments/payos/webhook` là server-to-server (công khai, xác minh chữ ký) — FE không gọi. Mỗi đơn con có link riêng — FE thanh toán lần lượt từng đơn con.
 - **Thanh toán đến muộn / trả trùng** do BE tự hoàn (không cần FE làm gì); khách thấy thông báo "Đơn đã huỷ — khoản thanh toán sẽ được hoàn".
 - **Sản phẩm ngành động**: biến thể có `options[{attributeId,attributeValueId,displayValue,attributeName?}]` (attributeName = tên trục, vd "Màu sắc"; có từ 2026-10-04) thay vì chỉ `color/size` (ở ngành động `variants[].color/colorCode/size` là `null`); dòng giỏ/đơn của biến thể động có `color`/`size` là chuỗi tuỳ chọn ghép sẵn (vd "Đen" / "128GB") để UI cũ không hiện trống. Ngành lá có mẫu thuộc tính riêng: vendor đọc ở `GET /shop/catalog/categories/{slug}/attribute-template`, sàn ở `/admin/categories/{categoryId}/attributes` (xem hai mục dưới). Web bán hàng CHƯA có route công khai `GET /categories/{slug}`, và `GET /products/filters` CHƯA lọc theo thuộc tính động (chỉ màu/size/khoảng giá). Chi tiết sản phẩm (`GET /products/{slug}`) thêm `attributeValues[{attributeId,attributeName,attributeValueId (null nếu nhập tay),value}]` (thuộc tính cấp sản phẩm); `GET /categories` thêm `parentId` (dựng menu theo nhóm ngành) và `attributeMode` (`legacy_fashion`\|`dynamic` — chỉ `legacy_fashion` dùng bộ lọc màu/size/giới).
 - **Gắn gian hàng vào thẻ**: `ProductCardResponse` (và chi tiết) thêm `shop{id,slug,name,logoUrl,ratingAvg}` (`ratingAvg` có thể null); dòng giỏ `GET /cart` thêm `shopSlug`, `shopName` (FE nhóm giỏ theo shop), kèm `sku` và `status` (`ok`\|`low_stock`\|`unavailable`) — dòng giỏ thực tế KHÔNG có `isSellable` như bảng cart ở trên. Ở `/admin/products` và `/shop/products` trường `shop` luôn `null`.
@@ -119,7 +119,7 @@ Thay đổi hợp đồng cho web bán hàng (cộng thêm lên các mục trên
 - **Trang gian hàng công khai** (chỉ shop ĐÃ DUYỆT; chờ duyệt/khoá/từ chối ⇒ 404):
   `GET /shops?q=&page=&pageSize=` (`pageSize` ≤ 48, mặc định 12; điểm đánh giá cao trước) và `GET /shops/{slug}` → `{slug,name,logoUrl,bannerUrl,description,ratingAvg|null,reviewCount,productCount}`
   (`reviewCount` = tổng lượt đánh giá của sản phẩm đang bán; `productCount` = số sản phẩm đang bán). Sản phẩm của shop: `GET /products?shop=<slug>` (shop không tồn tại/chưa duyệt ⇒ danh sách rỗng).
-  Hoa hồng, tài khoản ngân hàng, chủ shop, ví, đối soát KHÔNG lộ ra web bán hàng. Sản phẩm của shop bị khoá/chờ duyệt bị ẩn khỏi danh sách, gợi ý, `by-ids`, liên quan và chi tiết (404) — cache công khai có thể trễ (danh sách 60s, chi tiết 2 phút, liên quan 5 phút, bộ lọc 10 phút; BE KHÔNG xoá cache khi sàn đổi trạng thái shop, chỉ chờ hết hạn).
+  Hoa hồng, tài khoản ngân hàng, chủ shop, đối soát KHÔNG lộ ra web bán hàng. Sản phẩm của shop bị khoá/chờ duyệt bị ẩn khỏi danh sách, gợi ý, `by-ids`, liên quan và chi tiết (404) — cache công khai có thể trễ (danh sách 60s, chi tiết 2 phút, liên quan 5 phút, bộ lọc 10 phút; BE KHÔNG xoá cache khi sàn đổi trạng thái shop, chỉ chờ hết hạn).
 - Sửa lỗi lọc giá: `GET /products?minPrice=&maxPrice=` giờ áp CẢ HAI đầu (trước đây `maxPrice` đè mất `minPrice`).
 - Thông báo cho khách: hoàn tiền, thanh toán đến muộn, đơn huỷ… qua `GET /notifications` như cũ (`type: order|payment`).
 
@@ -131,15 +131,15 @@ Cho web quản trị (route `(vendor)`): chủ/nhân viên gian hàng tự vận
 - `shopId` KHÔNG BAO GIỜ nhận từ URL/query/body — chỉ suy từ phiên thành viên (mỗi người chỉ thuộc MỘT gian hàng active). `{id}`/`{code}` trên URL chỉ có nghĩa TRONG shop của mình; thuộc shop khác ⇒ 404 (không lộ có/không tồn tại).
 - Mã `shop.*` kiểm bằng `@RequireShopPermission` (ShopContextGuard), KHÔNG phải `@RequirePermission`/PermissionGuard toàn cục: vai scope=shop (`shop_owner`, `shop_staff`) không gán vào `User.roleId` nên `GET /auth/me` → `permissionCodes` KHÔNG chứa `shop.*` — FE lấy mã ở `GET /shop/session` → `permissions[]`. Ngược lại tài khoản nhân viên sàn không là thành viên shop ⇒ `/shop/**` trả 403 `SHOP_NOT_MEMBER`.
 - Ngoại lệ trạng thái: `GET /shop/session` và `POST /shop/members/leave` có `@AllowAnyShopStatus` — chạy cả khi shop `pending`/`suspended`/`rejected` (vẫn phải là thành viên active) để FE hiện màn "chờ duyệt"/"đã bị khoá". MỌI route khác yêu cầu shop `approved`.
-- Vai (preset ban đầu ở `identity/permission/catalog.ts`): `shop_owner` = toàn bộ `shop.*`; `shop_staff` = `shop.profile.read`, `shop.staff.read`, `shop.product.read`, `shop.product.manage`, `shop.order.read`, `shop.order.update`, `shop.inventory.read`, `shop.review.read`, `shop.review.reply` (không nhân sự, kho-ghi, khuyến mãi, báo cáo, ví, đối soát, sửa hồ sơ).
-- Vendor KHÔNG làm được: đổi `code`/`slug`/`status`/hoa hồng của shop; đặt `isFeatured`/`isNew`/`tags` cho sản phẩm (body tạo/sửa riêng — key lạ bị bỏ); chuyển đơn sang `completed`; thấy thông tin thanh toán của khách, `userId` thành viên. Hiện KHÔNG có route đăng ký/tạo gian hàng và KHÔNG có route vendor xử lý đổi trả (chỉ `/admin/returns`) — hiện shop chỉ được tạo bằng seed (`scripts/seed/marketplace.seed.ts`); nhân viên vào shop do chủ shop THÊM TRỰC TIẾP bằng `POST /shop/members` (tạo tài khoản cho nhân viên, có hiệu lực ngay, không mời/không chờ chấp nhận — mục "thêm nhân viên gian hàng" bên dưới).
+- Vai (preset ban đầu ở `identity/permission/catalog.ts`): `shop_owner` = toàn bộ `shop.*`; `shop_staff` = `shop.profile.read`, `shop.staff.read`, `shop.product.read`, `shop.product.manage`, `shop.order.read`, `shop.order.update`, `shop.inventory.read`, `shop.review.read`, `shop.review.reply` (không nhân sự, kho-ghi, khuyến mãi, báo cáo, đối soát, sửa hồ sơ).
+- Vendor KHÔNG làm được: đổi `code`/`slug`/`status`/hoa hồng của shop; đặt `isFeatured`/`isNew`/`tags` cho sản phẩm (body tạo/sửa riêng — key lạ bị bỏ); chuyển đơn sang `completed`; thấy thông tin thanh toán của khách, `userId` thành viên. Shop mới vào sàn bằng luồng người bán TỰ ĐĂNG KÝ (`POST /shop/registrations` → sàn duyệt — mục "đăng ký gian hàng" bên dưới, PLAN-0019) hoặc bằng seed (`scripts/seed/marketplace.seed.ts`); hiện KHÔNG có route vendor xử lý đổi trả (chỉ `/admin/returns`); nhân viên vào shop do chủ shop THÊM TRỰC TIẾP bằng `POST /shop/members` (tạo tài khoản cho nhân viên, có hiệu lực ngay, không mời/không chờ chấp nhận — mục "thêm nhân viên gian hàng" bên dưới).
 - Ghi có `@RateLimit` theo user (số lần ghi ở cột ý nghĩa). Danh sách phân trang `page`/`size` (riêng `/shop/products`: `page`/`pageSize`).
 
 | Route | Mã quyền | Ý nghĩa |
 |---|---|---|
 | **session · hồ sơ** | | |
 | `GET /shop/session` | — (chỉ cần là thành viên active; `@AllowAnyShopStatus`) | Khởi động phiên: `{shop: ShopResponse, roleCode, roleName, permissions[]}` — FE dựng menu/ẩn nút theo `permissions`, hiện màn trạng thái nếu `shop.status` ≠ `approved` |
-| `GET /shop/me` | `shop.profile.read` | Hồ sơ shop: `code, slug, name, logoUrl, bannerUrl, description, status, commissionRate, codEnabled, ratingAvg, totalProducts, ownerUserId, bankCode, bankAccountName, bankAccountNumberMasked` |
+| `GET /shop/me` | `shop.profile.read` | Hồ sơ shop: `code, slug, name, logoUrl, bannerUrl, description, status, commissionRate, ratingAvg, totalProducts, ownerUserId, bankCode, bankAccountName, bankAccountNumberMasked` |
 | `PATCH /shop/me` | `shop.profile.update` | Sửa `name/logoUrl/bannerUrl/description` (`null` = xoá) và tài khoản ngân hàng `bankCode` (BIN 6 số) + `bankAccountNumber` (6–20 số) + `bankAccountName` — gửi đủ cả ba hoặc không gửi; số tài khoản trả về luôn che `••••1234`; đổi ngân hàng được ghi audit và báo cho mọi thành viên shop |
 | **members** | | |
 | `GET /shop/members` | `shop.staff.read` | Nhân viên của shop (không có `userId`) |
@@ -158,11 +158,6 @@ Cho web quản trị (route `(vendor)`): chủ/nhân viên gian hàng tự vận
 | `GET /shop/reports/revenue?from&to&granularity=day\|month` | `shop.report.read` | Doanh thu theo ngày/tháng (tối đa 400 ngày hoặc 60 tháng) |
 | `GET /shop/reports/top-products?from&to&limit` | `shop.report.read` | Sản phẩm bán chạy của shop (`limit` ≤ 50, mặc định 10; tối đa 400 ngày) |
 | `GET /shop/reports/low-stock?threshold&limit` | `shop.report.read` | Biến thể sắp hết (khả dụng ≤ `threshold`, mặc định 5; `limit` ≤ 500, mặc định 100) |
-| **wallet** (ví quỹ COD) | | |
-| `GET /shop/wallet` | `shop.wallet.read` | `{shopId, balance, codEnabled, pendingDeposit{id,amount}\|null}` — ví ≤ 0 thì COD bị khoá |
-| `GET /shop/wallet/transactions` | `shop.wallet.read` | Sổ cái ví, mới nhất trước |
-| `GET /shop/wallet/deposit-requests?status=pending\|approved\|rejected` | `shop.wallet.read` | Lịch sử yêu cầu nộp quỹ của shop |
-| `POST /shop/wallet/deposit-requests` | `shop.wallet.deposit_request` | Xin nộp thêm quỹ `{amount ≥ 10.000, proofUrl?, note?}` → 201; mỗi lúc chỉ một yêu cầu chờ duyệt |
 | **payouts** (đối soát/chi trả) | | |
 | `GET /shop/payouts?status` | `shop.payout.read` | Các kỳ đối soát của shop (`status`: pending·processing·paid·failed·carried·settled); số TK chỉ `****1234`; lỗi cổng chi của kỳ `failed` bị thay bằng lời nhắn chung |
 | `GET /shop/payouts/{id}` | `shop.payout.read` | `{payout, lines[{id,orderCode,kind,gross,commission}]}`; kỳ của shop khác ⇒ 404 |
@@ -228,9 +223,30 @@ Luồng "lời mời → chấp nhận" (2026-10-04) đã **BỎ HẲN** theo qu
 - **Phía SÀN** (nhân viên sàn, không liên quan gian hàng): đã có sẵn, không đổi — `POST /admin/users` (quyền `identity.user.create`, xem bảng identity) + màn web quản trị `/identity/users` nút "Tạo nhân viên".
 - **Đổi so với luồng lời mời (2026-10-04 → 2026-10-13) — FE cần làm theo**: `POST /shop/members` đổi body từ `{email, roleCode}` sang `{email, fullName, password, roleCode}` và response từ `ShopInvitationResponse` sang `AddShopMemberResponse`; GỠ màn "Lời mời" ở cổng vendor và route `/account/invitations` + mục thông báo "Lời mời tham gia gian hàng" ở web bán hàng; mã lỗi `SHOP_INVITATION_*` · `SHOP_MEMBER_EXISTS` · `SHOP_ALREADY_IN_SHOP` · `SHOP_MEMBER_NOT_ADDABLE` đã gỡ khỏi BE; `GET /me/shop-invitations` và `/shop/invitations` không còn (404).
 
+## đăng ký gian hàng — người bán tự đăng ký (PLAN-0019, 2026-10-15)
+
+Người bán mới vào sàn bằng form tự đăng ký (storefront `/sell`): nộp hồ sơ → shop `pending` → nhân viên sàn duyệt/từ chối → khi duyệt người nộp THÀNH CHỦ SHOP. Đảo quyết định #6 của PLAN-0017 ("shop chỉ do admin tạo").
+
+| Route | Quyền | Ghi chú |
+|---|---|---|
+| `POST /shop/registrations` | chỉ cần đăng nhập (KHÔNG cần là thành viên shop; không dùng `ShopContextGuard`) | Body `{shopName 3–100, representativeName 2–120, phone (di động VN `0[35789]xxxxxxxx` hoặc `+84…`/`84…`/`0084…`, có dấu cách/chấm/gạch; server chuẩn hoá về `0xxxxxxxxx`), categoryId (uuid ngành đang hoạt động, lấy từ `GET /categories`; không bắt buộc ngành lá), description? ≤ 1000, acceptTerms: true}`. 201 → `ShopRegistrationResponse`. Giới hạn 15 lần/ngày/người (tính cả lần lỗi) ⇒ 429 `COMMON_RATE_LIMITED`. Trường lạ (`userId`, `status`…) bị bỏ |
+| `GET /shop/registrations/me` | đăng nhập | Hồ sơ MỚI NHẤT của chính tôi; chưa từng đăng ký ⇒ HTTP 200 với `data: null` |
+| `GET /admin/shops/{id}/registration` | `supplier.shop.read` | `ShopRegistrationDetailResponse` = `ShopRegistrationResponse` + `applicant {userId, fullName, email}`; shop không có hồ sơ (seed/sàn tạo) ⇒ `data: null`; shop không tồn tại ⇒ 404 `SHOP_NOT_FOUND` |
+| `PATCH /admin/shops/{id}/approve` · `/reject` | `supplier.shop.approve` · `reject` | CÓ SẴN, đổi hành vi với shop có hồ sơ: DUYỆT lần đầu (pending→approved) tạo `ShopMember{shop_owner, active}` cho người nộp trong CÙNG transaction (lỗi ⇒ 409 `SHOP_OWNER_UNAVAILABLE`: người nộp đã vào shop khác / bị khoá / không còn là khách — sàn nên từ chối hồ sơ đó); mở khoá `suspended→approved` và shop seed KHÔNG tạo thêm chủ; từ chối/duyệt lần đầu ghi lý do + thời điểm vào hồ sơ |
+
+`ShopRegistrationResponse`: `{id, shopId, shopCode, shopName, status: 'pending'|'approved'|'rejected'|'suspended' (= Shop.status — nguồn sự thật duy nhất), representativeName, phone, category: {id, name} | null (snapshot lúc nộp), description | null, submittedAt, decidedAt | null, rejectReason | null (CHỈ khi rejected), canReapply (= đang rejected)}`.
+
+Mã lỗi `POST`: 403 `SHOP_REGISTRATION_NOT_ELIGIBLE` (vai ≠ `customer` hoặc tài khoản không active) · 400 `SHOP_REGISTRATION_CATEGORY_INVALID` · 400 `COMMON_VALIDATION_ERROR` · 409 `SHOP_REGISTRATION_ALREADY_MEMBER` (đã thuộc một gian hàng) · 409 `SHOP_REGISTRATION_PENDING` (đã có hồ sơ chờ) · 409 `SHOP_NAME_TAKEN` (trùng tên không phân biệt hoa/thường với shop pending/approved/suspended; shop `rejected` nhả tên) · 409 `SHOP_CODE_EXISTS` (đua hiếm khi sinh mã/slug — gửi lại) · 429. Lưu ý FE: `error.details` của lỗi validate lấy KHOÁ là từ đầu của câu thông báo (hành vi chung của repo) — hiện giá trị/`message`, đừng ánh xạ theo tên trường.
+
+Hành vi cần biết:
+* Nộp ⇒ tạo `Shop` (`status=pending`, `ownerUserId` = người nộp, mã `SHOP-######` tuần tự, slug từ tên, hoa hồng mặc định 10% — sàn đổi bằng `PATCH /admin/shops/{id}/commission` sau khi duyệt) + hồ sơ `shop.shop_registrations`. KHÔNG tạo `ShopMember` lúc nộp ⇒ người nộp chưa vào được cổng vendor (`/shop/session` ⇒ 403 `SHOP_NOT_MEMBER`) và shop pending không có sản phẩm.
+* Bị từ chối (`rejected` là trạng thái cuối) ⇒ nộp lại = TẠO shop + hồ sơ mới (`canReapply`). Mỗi người chỉ có MỘT hồ sơ đang chờ (advisory lock theo user trong transaction).
+* Sau khi duyệt người nộp đăng nhập web quản trị (cổng vendor) bằng chính tài khoản khách đó — `GET /shop/session` trả shop như mọi chủ shop.
+* Outbox `SHOP_REGISTRATION_SUBMITTED` (chưa có listener); `SHOP_APPROVED/SUSPENDED/REJECTED` thêm `ownerUserId` + `viaRegistration` trong payload. Chưa gửi thông báo/email cho người nộp — FE nhắc "Kiểm tra lại trạng thái" (xem PLAN-0019 §10).
+
 ## sàn — route quản trị marketplace `/admin/*` mới
 
-Nhân viên SÀN (vai nền tảng admin/manager/kế toán…) thao tác XUYÊN mọi gian hàng. Gác bằng PermissionGuard toàn cục + `@RequirePermission` (mã `supplier.*` cho tài nguyên mới) — KHÔNG qua ShopContextGuard, nhân viên sàn không là thành viên shop nào. Thiếu quyền ⇒ 403 `COMMON_FORBIDDEN` kèm `error.details.required`. Preset: `admin` có tất cả; `manager` có `supplier.shop.*` + `supplier.wallet.read` + `supplier.payout.read`; `accountant` có `supplier.wallet.read/adjust` + `supplier.payout.read/process`.
+Nhân viên SÀN (vai nền tảng admin/manager/kế toán…) thao tác XUYÊN mọi gian hàng. Gác bằng PermissionGuard toàn cục + `@RequirePermission` (mã `supplier.*` cho tài nguyên mới) — KHÔNG qua ShopContextGuard, nhân viên sàn không là thành viên shop nào. Thiếu quyền ⇒ 403 `COMMON_FORBIDDEN` kèm `error.details.required`. Preset: `admin` có tất cả; `manager` có `supplier.shop.*` + `supplier.payout.read`; `accountant` có `supplier.payout.read/process`. (Bốn mã ví `shop.wallet.*`/`supplier.wallet.*` đã gỡ ở PLAN-0018 — catalog còn 79 mã.)
 
 | Route | Mã quyền | Ý nghĩa |
 |---|---|---|
@@ -241,17 +257,9 @@ Nhân viên SÀN (vai nền tảng admin/manager/kế toán…) thao tác XUYÊN
 | `PATCH /admin/shops/{id}/suspend` | `supplier.shop.suspend` | Khoá shop vi phạm (approved→suspended) `{reason 3–500}`; từ lúc này mọi `/shop/**` của shop 403 |
 | `PATCH /admin/shops/{id}/reject` | `supplier.shop.reject` | Từ chối đăng ký (pending→rejected) `{reason 3–500}` |
 | `PATCH /admin/shops/{id}/commission` | `supplier.shop.commission` | Sửa % hoa hồng `{commissionRate 0–100, tối đa 2 số lẻ}`, không hồi tố đơn cũ |
-| **wallet** (ví quỹ COD của shop) | | |
-| `GET /admin/wallets?lowOnly` | `supplier.wallet.read` | Ví của các shop `{shopId,shopName,balance,codEnabled,updatedAt}`; `lowOnly=true` = ví ≤ 0 (COD đang khoá) |
-| `GET /admin/shops/{id}/wallet` | `supplier.wallet.read` | Ví một shop `{shopId,balance,codEnabled,pendingDeposit}` |
-| `GET /admin/shops/{id}/wallet/transactions` | `supplier.wallet.read` | Sổ cái ví của một shop |
-| `POST /admin/shops/{id}/wallet/adjust` | `supplier.wallet.adjust` | Điều chỉnh ví `{amount (VND nguyên, dương = cộng / âm = trừ), note ≥ 5 ký tự}` — vào sổ cái + nhật ký |
-| `GET /admin/wallet-deposits?status=pending\|approved\|rejected` | `supplier.wallet.read` | Yêu cầu nộp quỹ của mọi shop |
-| `POST /admin/wallet-deposits/{id}/approve` | `supplier.wallet.adjust` | Duyệt `{note?}` → cộng ví, mở lại COD khi ví > 0 |
-| `POST /admin/wallet-deposits/{id}/reject` | `supplier.wallet.adjust` | Từ chối `{note}` (bắt buộc lý do) |
 | **payouts** (đối soát/chi trả shop) | | |
 | `GET /admin/payouts/payos-balance` | `supplier.payout.read` | Số dư tài khoản chi PayOS (chỉ đọc) |
-| `POST /admin/payouts/run` | `supplier.payout.process` | Chạy kỳ đối soát toàn sàn `{periodStart, periodEnd}` (ISO; `periodEnd` không muộn hơn hiện tại); idempotent — chạy lại cùng kỳ không tạo trùng; trả các kỳ vừa tạo |
+| `POST /admin/payouts/run` | `supplier.payout.process` | Chạy kỳ đối soát toàn sàn (bù tay — kỳ hằng ngày đã TỰ CHẠY bằng cron khi `payout.auto_enabled`=true; gom cả đơn PayOS lẫn COD đã thu) `{periodStart, periodEnd}` (ISO; `periodEnd` không muộn hơn hiện tại); idempotent — chạy lại cùng kỳ không tạo trùng; trả các kỳ vừa tạo |
 | `GET /admin/payouts?status&shopId` | `supplier.payout.read` | Danh sách kỳ đối soát (`status`: pending·processing·paid·failed·carried·settled) |
 | `GET /admin/payouts/{id}` | `supplier.payout.read` | `{payout, lines[{id,orderCode,kind,gross,commission}]}` |
 | `POST /admin/payouts/{id}/retry` | `supplier.payout.process` | Gửi lại lệnh chi PayOS (kỳ `failed`; `pending` khi đã có khoá payout; `processing` treo > 10 phút). Bị chặn trong 24 giờ sau khi shop đổi tài khoản ngân hàng; cần có khoá payout (không thì dùng `mark-paid`) |
@@ -270,9 +278,9 @@ Route admin CÓ SẴN nhưng nay chạy xuyên mọi shop (route không đổi, 
 - `/admin/inventory*` (`product.inventory.read/receive/adjust`): kho của MỌI shop, bảng tồn không có thông tin/lọc theo shop (SKU chỉ duy nhất TRONG shop nên có thể trùng giữa các shop).
 - `/admin/promotions*` (`promotion.promotion.read/manage`): `GET` có thêm lọc `scope` (`platform` hoặc `shop`) và `shopId`; `POST` luôn tạo mã SÀN (`scope=platform`); `PATCH/DELETE` áp được cả cho mã của shop (sàn bật/tắt).
 - `/admin/reports/*` (`reporting.*`) tính trên TOÀN SÀN, không lọc theo shop. `/admin/reviews*` (`review.review.*`) kiểm duyệt/trả lời thay shop mọi đánh giá.
-- `GET /admin/payments?methodCode=` (`cod`/`bank_transfer`/`vnpay`/`payos`; `payment.payment.read`), `POST /admin/refunds/{id}/process` (`payment.refund.process`): hoàn tiền của đơn con kéo theo đảo hoa hồng/ghi nợ ví COD của shop qua sự kiện (không có route riêng).
-  - `RefundResponse` có thêm `kind` (`order` | `duplicate_payment` — khoản khách trả trùng: KHÔNG đổi `payment_status` của đơn, KHÔNG đảo hoa hồng, KHÔNG tính vào `refunded` của báo cáo) và `needsReconcile` (refund VNPay `failed` mà cổng từng được gọi nhưng không rõ kết quả).
-  - `POST /admin/refunds/{id}/process` body `{providerRef?, note?, confirmGatewayNotRefunded?}`: hoàn tay cần `providerRef`; `needsReconcile` ⇒ người xử lý đối chiếu trên cổng VNPay rồi gửi `providerRef` (ĐÃ hoàn ⇒ chỉ ghi sổ, không gọi cổng) hoặc `confirmGatewayNotRefunded: true` (CHƯA hoàn ⇒ gọi lại cổng); thiếu cả hai ⇒ 409 `PAYMENT_REFUND_RECONCILE_REQUIRED`.
+- `GET /admin/payments?methodCode=` (`cod`/`payos`; `payment.payment.read`; dữ liệu cũ có thể còn `vnpay`/`bank_transfer` ở phần lịch sử), `POST /admin/refunds/{id}/process` (`payment.refund.process`): hoàn tiền của đơn con của đơn đã đối soát được trừ vào kỳ chi trả sau qua dòng REFUND/nợ mang sang (không có route riêng; đơn COD hoàn tay).
+  - `RefundResponse` có thêm `kind` (`order` | `duplicate_payment` — khoản khách trả trùng: KHÔNG đổi `payment_status` của đơn, KHÔNG đảo hoa hồng, KHÔNG tính vào `refunded` của báo cáo) và `needsReconcile` (refund qua cổng `failed` mà cổng từng được gọi nhưng không rõ kết quả).
+  - `POST /admin/refunds/{id}/process` body `{providerRef?, note?, confirmGatewayNotRefunded?}`: hoàn tay cần `providerRef`; `needsReconcile` ⇒ người xử lý đối chiếu trên cổng PayOS rồi gửi `providerRef` (ĐÃ hoàn ⇒ chỉ ghi sổ, không gọi cổng) hoặc `confirmGatewayNotRefunded: true` (CHƯA hoàn ⇒ gọi lại cổng); thiếu cả hai ⇒ 409 `PAYMENT_REFUND_RECONCILE_REQUIRED`.
   - `POST /admin/refunds/{id}/retry-finalize` (`payment.refund.process`, không body, trả `RefundResponse`): cổng ĐÃ chi (refund `processing` + có `providerRef`) nhưng ghi sổ lỗi ⇒ chỉ ghi sổ nốt, KHÔNG gọi cổng; idempotent. Worker cũng tự phục hồi mỗi 5 phút (`recoverStuckRefunds`).
 
 Khi BE thêm/đổi route: cập nhật bảng này TRƯỚC, rồi báo FE chạy `api:sync`.

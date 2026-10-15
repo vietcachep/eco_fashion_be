@@ -45,6 +45,10 @@ function stockLowEvent(payload: { variantId: string; productId: string; sku: str
   };
 }
 
+function payoutEvent(eventType: string, payload: Record<string, unknown>): OutboxEventMessage {
+  return { id: 'evt-4', module: 'payment', eventType, eventVersion: 'v1', aggregateType: 'ShopPayout', aggregateId: 'po-1', payload, requestId: null, createdAt: new Date().toISOString() };
+}
+
 function bankChangedEvent(payload: Record<string, unknown>): OutboxEventMessage {
   return {
     id: 'evt-3',
@@ -98,7 +102,7 @@ describe('ShopNotificationListeners', () => {
 
   describe('cấu hình listener', () => {
     /* Nuốt lỗi (suppressErrors mặc định true) khiến relay đánh DONE và MẤT thông báo → mọi listener phải để lỗi nổi lên. */
-    it.each(['onOrderCreated', 'onOrderPaid', 'onStockLow', 'onShopBankChanged'] as const)('%s đăng ký với suppressErrors=false', (name) => {
+    it.each(['onOrderCreated', 'onOrderPaid', 'onStockLow', 'onShopBankChanged', 'onPayoutProcessing', 'onPayoutPaid', 'onPayoutFailed'] as const)('%s đăng ký với suppressErrors=false', (name) => {
       const handler = Object.getOwnPropertyDescriptor(ShopNotificationListeners.prototype, name)?.value as object;
       const meta = Reflect.getMetadata('EVENT_LISTENER_METADATA', handler) as Array<{ event: string; options?: { suppressErrors?: boolean } }> | undefined;
 
@@ -107,7 +111,7 @@ describe('ShopNotificationListeners', () => {
     });
 
     it('đăng ký đúng tên sự kiện outbox', () => {
-      const eventOf = (name: 'onOrderCreated' | 'onOrderPaid' | 'onStockLow' | 'onShopBankChanged') => {
+      const eventOf = (name: 'onOrderCreated' | 'onOrderPaid' | 'onStockLow' | 'onShopBankChanged' | 'onPayoutProcessing' | 'onPayoutPaid' | 'onPayoutFailed') => {
         const handler = Object.getOwnPropertyDescriptor(ShopNotificationListeners.prototype, name)?.value as object;
         return (Reflect.getMetadata('EVENT_LISTENER_METADATA', handler) as Array<{ event: string }>)[0].event;
       };
@@ -116,6 +120,9 @@ describe('ShopNotificationListeners', () => {
       expect(eventOf('onOrderPaid')).toBe('outbox.order.ORDER_PAID');
       expect(eventOf('onStockLow')).toBe('outbox.product.PRODUCT_STOCK_LOW');
       expect(eventOf('onShopBankChanged')).toBe('outbox.shop.SHOP_BANK_CHANGED');
+      expect(eventOf('onPayoutProcessing')).toBe('outbox.payment.PAYOUT_PROCESSING');
+      expect(eventOf('onPayoutPaid')).toBe('outbox.payment.PAYOUT_PAID');
+      expect(eventOf('onPayoutFailed')).toBe('outbox.payment.PAYOUT_FAILED');
     });
   });
 
@@ -231,10 +238,10 @@ describe('ShopNotificationListeners', () => {
       orderTotalsOf.mockResolvedValue(new Map([['ORD-001', { total: { toString: () => '1030000' }, platformDiscount: { toString: () => '0' } }]]) as unknown as OrderTotals);
     }
 
-    it('đơn VNPay đã thanh toán → báo mọi thành viên shop (type payment, link tới đơn, tiền + phương thức)', async () => {
+    it('đơn PayOS đã thanh toán → báo mọi thành viên shop (type payment, link tới đơn, tiền + phương thức)', async () => {
       givenPaidOrder();
 
-      await listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'vnpay' }));
+      await listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'payos' }));
 
       expect(shopIdOfOrder).toHaveBeenCalledWith('ORD-001');
       expect(activeMemberUserIds).toHaveBeenCalledWith('shop-123');
@@ -247,15 +254,7 @@ describe('ShopNotificationListeners', () => {
         payload: { shopId: 'shop-123', orderCode: 'ORD-001', eventId: EVENT_ID },
       });
       expect(cmds[0].content).toContain('1.030.000 ₫');
-      expect(cmds[0].content).toContain('VNPay');
-    });
-
-    it('chuyển khoản cũng được báo', async () => {
-      givenPaidOrder();
-
-      await listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'bank_transfer' }));
-
-      expect(sentCommands(notifyMany)[0].content).toContain('chuyển khoản');
+      expect(cmds[0].content).toContain('PayOS');
     });
 
     it('đơn COD KHÔNG báo (tiền thu lúc giao) và không tra DB', async () => {
@@ -268,7 +267,7 @@ describe('ShopNotificationListeners', () => {
     it('không tìm thấy shop của đơn → bỏ qua, không ném', async () => {
       shopIdOfOrder.mockResolvedValue(null);
 
-      await expect(listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-404', methodCode: 'vnpay' }))).resolves.toBeUndefined();
+      await expect(listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-404', methodCode: 'payos' }))).resolves.toBeUndefined();
       expect(notifyMany).not.toHaveBeenCalled();
     });
 
@@ -276,7 +275,7 @@ describe('ShopNotificationListeners', () => {
       givenPaidOrder();
       notificationFindMany.mockResolvedValue([{ userId: 'user-1' }]);
 
-      await listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'vnpay' }));
+      await listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'payos' }));
 
       expect(sentCommands(notifyMany).map((c) => c.userId)).toEqual(['user-2']);
     });
@@ -284,7 +283,7 @@ describe('ShopNotificationListeners', () => {
     it('lỗi hạ tầng → ném lên để relay retry', async () => {
       shopIdOfOrder.mockRejectedValue(new Error('db down'));
 
-      await expect(listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'vnpay' }))).rejects.toThrow('db down');
+      await expect(listeners.onOrderPaid(orderPaidEvent({ orderCode: 'ORD-001', methodCode: 'payos' }))).rejects.toThrow('db down');
     });
   });
 
@@ -413,6 +412,62 @@ describe('ShopNotificationListeners', () => {
       notifyMany.mockRejectedValue(new Error('db down'));
 
       await expect(listeners.onShopBankChanged(bankChangedEvent(payload))).rejects.toThrow('db down');
+    });
+  });
+  describe('thông báo chi trả shop (PLAN-0018)', () => {
+    const base = { payoutId: 'po-1', payoutCode: 'PO-001', shopId: 'shop-123', netPayout: '1500000' };
+
+    it('PAYOUT_PROCESSING: báo mọi thành viên active, có mã kỳ + số tiền VND', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1', 'user-2']);
+
+      await listeners.onPayoutProcessing(payoutEvent('PAYOUT_PROCESSING', { ...base, status: 'processing' }));
+
+      const cmds = sentCommands(notifyMany);
+      expect(cmds.map((c) => c.userId)).toEqual(['user-1', 'user-2']);
+      expect(cmds[0]).toMatchObject({ type: 'payment', link: '/vendor/payouts', payload: { shopId: 'shop-123', payoutCode: 'PO-001', eventId: 'evt-4' } });
+      expect(cmds[0].title).toContain('PO-001');
+      expect(cmds[0].content).toMatch(/1\.500\.000/);
+    });
+
+    it('PAYOUT_PAID: nội dung đã chi trả', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1']);
+
+      await listeners.onPayoutPaid(payoutEvent('PAYOUT_PAID', { ...base, status: 'paid' }));
+
+      expect(sentCommands(notifyMany)[0].title).toContain('Đã chi trả');
+    });
+
+    it('PAYOUT_FAILED: kèm lý do đã cắt ngắn', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1']);
+
+      await listeners.onPayoutFailed(payoutEvent('PAYOUT_FAILED', { ...base, status: 'failed', failReason: `E1: ${'x'.repeat(300)}` }));
+
+      const [cmd] = sentCommands(notifyMany);
+      expect(cmd.title).toContain('thất bại');
+      expect(cmd.content).toContain('E1: ');
+      expect(cmd.content.length).toBeLessThan(300);
+    });
+
+    it('idempotent: người đã nhận không nhận lại', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1', 'user-2']);
+      notificationFindMany.mockResolvedValue([{ userId: 'user-1' }]);
+
+      await listeners.onPayoutPaid(payoutEvent('PAYOUT_PAID', base));
+
+      expect(sentCommands(notifyMany).map((c) => c.userId)).toEqual(['user-2']);
+    });
+
+    it('thiếu payoutCode/shopId: không ném, không gửi', async () => {
+      await expect(listeners.onPayoutPaid(payoutEvent('PAYOUT_PAID', { netPayout: '1' }))).resolves.toBeUndefined();
+
+      expect(notifyMany).not.toHaveBeenCalled();
+    });
+
+    it('lỗi gateway → ném lên để relay retry', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1']);
+      notifyMany.mockRejectedValue(new Error('db down'));
+
+      await expect(listeners.onPayoutFailed(payoutEvent('PAYOUT_FAILED', base))).rejects.toThrow('db down');
     });
   });
 });

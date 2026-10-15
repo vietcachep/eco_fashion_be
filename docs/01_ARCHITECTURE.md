@@ -14,13 +14,13 @@ module khác. Ranh giới được gác bằng `dependency-cruiser` (`npm run ch
                   └──────────────┬───────────────────────────────┘
                                  │ BullMQ (default · mail · ai)
                   ┌──────────────▼───────────────────────────────┐
-                  │  Worker (Nest, cùng code): outbox relay,     │──► OpenAI · Cloudinary · SMTP · VNPay · PayOS
-                  │  mail, embedding, AI nền, job định kỳ,       │
-                  │  listener ví COD/thông báo shop              │
+                  │  Worker (Nest, cùng code): outbox relay,     │──► OpenAI · Cloudinary · SMTP · PayOS
+                  │  mail, embedding, AI nền, job định kỳ        │
+                  │  (cron chi trả shop), listener thông báo shop│
                   └──────────────────────────────────────────────┘
 ```
 
-Hệ thống là **sàn đa gian hàng, đa ngành hàng** (PLAN-0014/0015/0016/0017): `common` + 12 module nghiệp vụ (identity · catalog · product · cart · order · payment · promotion · review · system · reporting · ai · shop), bản đồ chi tiết ở `docs/02_MODULE_MAP.md`.
+Hệ thống là **sàn đa gian hàng, đa ngành hàng** (PLAN-0014/0015/0016/0017/0018): `common` + 12 module nghiệp vụ (identity · catalog · product · cart · order · payment · promotion · review · system · reporting · ai · shop), bản đồ chi tiết ở `docs/02_MODULE_MAP.md`.
 
 ## Vì sao không tách microservice
 
@@ -46,9 +46,9 @@ enums/event → hằng số, tên sự kiện outbox
 | Cần | Dùng | Ví dụ |
 |---|---|---|
 | Đọc dữ liệu module khác | `queryapi` của module đó (DTO) | order đọc `ProductQueryApi.variantSnapshots`, `ShopQueryApi.findBrief` |
-| Ghi vào module khác trong cùng transaction | gateway ở `common/gateway`, module chủ cài đặt | order gọi `InventoryGateway.reserve`; payment gọi `ShopCodGateway.setCodEnabled` khi ví COD đổi dấu |
+| Ghi vào module khác trong cùng transaction | gateway ở `common/gateway`, module chủ cài đặt | order gọi `InventoryGateway.reserve`; payment/order đọc `ShopQueryApi.findBrief` (tài khoản ngân hàng nhận tiền) khi đối soát |
 | Ghi vào module khác bằng một use case công khai của module đó (hiếm, trong transaction của người gọi) | `applicationapi` của module đó (`<m>/applicationapi/`, dependency-cruiser cho phép) | shop gọi `IdentityApplicationApi.hashPassword` + `createCustomerAccount(actor, input, tx)` để chủ shop tạo tài khoản nhân viên cùng transaction với dòng `ShopMember` |
-| Báo cáo cho module khác sau commit | outbox → worker relay → listener idempotent | `ORDER_CREATED` → system báo thành viên shop; `ORDER_STATUS_CHANGED→completed` → payment ghi hoa hồng COD vào ví (danh sách đầy đủ: `02_MODULE_MAP.md` §13) |
+| Báo cáo cho module khác sau commit | outbox → worker relay → listener idempotent | `ORDER_CREATED` → system báo thành viên shop; `ORDER_STATUS_CHANGED→completed` → system báo khách/shop; COD thu ở `markCodCollected` (danh sách đầy đủ: `02_MODULE_MAP.md` §13) |
 | Guard dùng chung cho route `/shop/**` | `<module>/security/` của module shop (dependency-cruiser cho phép) | product/order/review/… gắn `ShopContextGuard` + `@RequireShopPermission` |
 | Module chủ cần hỏi module khác "cái này còn được dùng không?" mà không import ngược | module kia đăng ký provider vào registry của module chủ lúc khởi động | product đăng ký `CatalogUsageRegistry` để catalog chặn đổi `attributeMode`/xoá giá trị thuộc tính đang dùng |
 
@@ -57,11 +57,11 @@ enums/event → hằng số, tên sự kiện outbox
 - JWT access 15' + refresh 14 ngày băm trong `identity.refresh_tokens`, rotation + phát hiện dùng lại.
 - `PermissionGuard` đọc quyền hiệu lực (cache Redis theo `permission_version`), `@RequirePermission`.
 - Helmet, CORS theo `EF_CORS_ORIGINS` (mặc định dev gồm 3000/3001/3100 — cổng dev của storefront), throttler Redis, `X-Request-Id` gắn vào log/audit/outbox.
-- Thanh toán: chữ ký HMAC-SHA512 VNPay; webhook PayOS kiểm chữ ký HMAC-SHA256 bằng checksum key (khoá trống ⇒ từ chối); IPN/webhook idempotent; không lưu dữ liệu thẻ.
+- Thanh toán: webhook PayOS kiểm chữ ký HMAC-SHA256 bằng checksum key (khoá trống ⇒ từ chối); webhook idempotent; không lưu dữ liệu thẻ.
 - Phân quyền 2 tầng: nhân viên sàn dùng `PermissionGuard` + mã `module.resource.action` (gồm `supplier.*`); chủ/nhân viên gian hàng dùng `ShopContextGuard` + mã `shop.*` — `shopId`
   suy từ phiên thành viên (`ShopMember` active), KHÔNG BAO GIỜ từ URL/body; guard đọc thẳng `Shop.status` từ DB (shop bị khoá ⇒ mọi route `/shop/**` 403 trừ `GET /shop/session`,
   `POST /shop/members/leave`); dữ liệu shop khác ⇒ 404 để không lộ tồn tại. DTO vendor che dữ liệu khách (userId/email) và thông tin thanh toán của khách.
-- Tiền: sổ cái ví COD append-only; đối soát chi trả idempotent (UNIQUE kỳ + dòng đối soát, idempotency-key chi PayOS); gọi mạng ngoài (PayOS/VNPay) NGOÀI transaction.
+- Tiền: sàn thu mọi khoản (PayOS + COD), không còn ví COD; cron chi trả shop tự động trong worker; đối soát chi trả idempotent (UNIQUE kỳ + dòng đối soát, idempotency-key chi PayOS); gọi mạng ngoài (PayOS) NGOÀI transaction.
 
 ## Vận hành
 

@@ -1,5 +1,6 @@
 @startuml 07-erd-payment-sepay
 title ERD — schema payment (thanh toán VietQR qua SePay, hoàn tiền bằng QR + SePay xác nhận tiền ra)
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
 
 skinparam linetype polyline
 skinparam shadowing false
@@ -14,12 +15,12 @@ skinparam class<<new>> {
 hide circle
 
 entity "payment_methods" as payment_methods {
-  * code : varchar(30) <<PK>>  cod | bank_transfer | vnpay
+  * code : varchar(30) <<PK>>  cod | payos (PLAN-0018)
   --
   * name : varchar(100)
   description : varchar(255)
   * kind : varchar(20)  cash | transfer | gateway
-  * is_active : boolean  (vnpay = false khi dùng SePay)
+  * is_active : boolean  (vnpay/bank_transfer = false từ PLAN-0018)
   * sort_order : int
   config : jsonb  {"provider":"sepay","bankCode","accountNo","accountName"}
 }
@@ -35,7 +36,7 @@ entity "payments" as payments {
   * status : varchar(30)  pending | processing | paid | failed | expired | cancelled | refunded | partially_refunded
   transaction_code : varchar(64)  mã tham chiếu ngân hàng (referenceCode)
   bank_code : varchar(20)
-  card_brand, card_last4  (chỉ VNPay cũ)
+  card_brand, card_last4  (dữ liệu lịch sử, không còn ghi)
   * transfer_content : varchar(40)  = order_code, khách ghi khi CK
   qr_url : varchar(500)  <<mới>> VietQR SePay hiện cho khách
   sepay_transaction_id : bigint  <<mới>> giao dịch SePay đã khớp
@@ -99,7 +100,7 @@ entity "refunds" as refunds {
   return_request_id : uuid  (khi từ đổi trả)
   * amount : numeric(14,0)
   * status : varchar(20)  requested | processing | done | failed
-  * method : varchar(30)  qr_transfer (SePay) | gateway (VNPay cũ) | manual_transfer
+  * method : varchar(30)  gateway (PayOS payout) | manual_transfer
   bank_code : varchar(20)  <<mới>> TK khách nhận tiền
   bank_account_no : varchar(30)  <<mới>>
   bank_account_name : varchar(120)  <<mới>>

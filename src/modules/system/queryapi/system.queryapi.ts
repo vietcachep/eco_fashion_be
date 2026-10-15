@@ -22,6 +22,12 @@ export class SystemQueryApi {
     return this.settings.getNumber(key);
   }
 
+  /* Tham số bật/tắt (boolean); lưu chuỗi 'true' cũng được coi là bật. */
+  async settingBool(key: string): Promise<boolean> {
+    const v = await this.settings.get<unknown>(key);
+    return v === true || v === 'true';
+  }
+
   shippingFeeFor(subtotal: bigint, provinceCodeOrName: string | null | undefined) {
     return this.provinces.shippingFeeFor(subtotal, provinceCodeOrName);
   }
