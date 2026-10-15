@@ -3,7 +3,7 @@ import { OutboxEventInput, writeOutboxEvent } from '@common/outbox/outbox';
 import { PrismaService } from '@common/prisma/prisma.service';
 import type { Tx } from '@common/prisma/types';
 
-/* Outbox payment: shop wallet events (COD_COMMISSION_CHARGED, DEPOSIT_APPROVED, etc). */
+/* Outbox payment: sự kiện thanh toán/hoàn tiền/chi trả shop (PAYMENT_PAID, PAYMENT_REFUNDED, PAYOUT_*). */
 @Injectable()
 export class PaymentOutboxService {
   constructor(private readonly prisma: PrismaService) {}

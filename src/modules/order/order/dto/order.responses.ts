@@ -25,16 +25,6 @@ export class OrderHistoryResponse {
   @ApiProperty() createdAt: string;
 }
 
-export class BankTransferIntentResponse {
-  @ApiProperty() bankCode: string;
-  @ApiProperty() accountNumber: string;
-  @ApiProperty() accountName: string;
-  @ApiProperty({ example: 'DH2609150001' }) transferContent: string;
-  @ApiPropertyOptional({ nullable: true }) qrUrl: string | null;
-  @ApiProperty() amount: string;
-  @ApiPropertyOptional({ nullable: true }) expiresAt: string | null;
-}
-
 /* Đơn hàng (FE `OrderResponse`). Tiền do server tính; FE chỉ hiện. */
 export class OrderResponse {
   @ApiProperty() id: string;
@@ -64,8 +54,7 @@ export class OrderResponse {
   @ApiProperty({ type: MoneyResponse, description: 'Phần giảm do shop chịu' }) shopDiscount: MoneyResponse;
   @ApiProperty({ type: MoneyResponse, description: 'Phần giảm do sàn chịu (sàn hoàn lại cho shop)' }) platformDiscount: MoneyResponse;
   @ApiProperty({ type: MoneyResponse }) total: MoneyResponse;
-  @ApiPropertyOptional({ type: BankTransferIntentResponse, nullable: true }) paymentIntent: BankTransferIntentResponse | null;
-  @ApiPropertyOptional({ nullable: true, description: 'VNPay: URL chuyển hướng để thanh toán' }) paymentUrl: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'PayOS: URL chuyển hướng để thanh toán' }) paymentUrl: string | null;
   @ApiPropertyOptional({ nullable: true }) paymentExpiresAt: string | null;
   @ApiPropertyOptional({ nullable: true }) trackingUrl: string | null;
   @ApiPropertyOptional({ nullable: true }) cancelReason: string | null;

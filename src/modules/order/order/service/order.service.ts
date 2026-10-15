@@ -41,7 +41,6 @@ export interface PlaceOrderInput {
   addressId?: string;
   address?: CheckoutAddress;
   paymentMethodCode: string;
-  bankCode?: string | null;
   note?: string;
   /* Mã khách nhập: tối đa 1 mã SÀN + 1 mã GIAN HÀNG cho mỗi shop trong giỏ (voucherCode + voucherCodes gộp, bỏ trùng). */
   voucherCode?: string | null;
@@ -87,7 +86,7 @@ interface Priced {
 /*
  * Đơn hàng (PLAN-0006). Đặt hàng = MỘT transaction: giỏ (dòng tick, còn bán, đủ tồn) → snapshot dòng → phí ship (tỉnh) →
  * mã KM consume → mã đơn (sequence khoá) → tạo đơn + lịch sử → giữ kho (reserve) → xoá dòng giỏ → khởi tạo thanh toán
- * (COD/VietQR/VNPay URL) → thông báo nhân viên + outbox ORDER_CREATED (mail) → idempotency complete.
+ * (COD/PayOS URL) → thông báo nhân viên + outbox ORDER_CREATED (mail) → idempotency complete.
  * Idempotency-Key: gửi lại cùng key → trả đúng đơn cũ, KHÔNG tạo đơn/giữ kho hai lần. Tiền: server tính toàn bộ.
  */
 @Injectable()
@@ -300,9 +299,8 @@ export class OrderService {
       if (!a) throw new BusinessException(ORDER_ERR.ADDRESS_REQUIRED, 'Vui lòng chọn hoặc nhập địa chỉ giao hàng');
       address = OrderService.fromAddressBrief(a);
     }
-    // 2. Phương thức thanh toán (FE `card` = VNPay thẻ quốc tế) — DÙNG CHUNG cho mọi đơn con trong lần checkout này
-    const methodCode = input.paymentMethodCode === 'card' ? PAYMENT_METHOD.VNPAY : input.paymentMethodCode;
-    const bankCode = input.paymentMethodCode === 'card' ? 'INTCARD' : (input.bankCode ?? null);
+    // 2. Phương thức thanh toán (PLAN-0018: chỉ còn cod · payos) — DÙNG CHUNG cho mọi đơn con trong lần checkout này
+    const methodCode = input.paymentMethodCode;
     if (!(await this.payment.isMethodActive(methodCode))) throw new BusinessException(ORDER_ERR.PAYMENT_METHOD_INVALID, 'Phương thức thanh toán không khả dụng');
 
     const requestHash = IdempotencyService.hashRequest({ userId: actor.userId, address, methodCode, note: input.note ?? null, vouchers: OrderService.normalizeCodes(input).map((c) => c.toUpperCase()).sort() });
@@ -331,7 +329,6 @@ export class OrderService {
         for (const g of p.groups) {
           const shop = await this.shops.findBrief(g.shopId);
           if (!shop || shop.status !== 'approved') throw new BusinessException(ORDER_ERR.SHOP_NOT_AVAILABLE, `Gian hàng "${shop?.name ?? g.shopId}" hiện không thể đặt hàng — vui lòng bỏ sản phẩm này khỏi giỏ`, 409);
-          if (methodCode === PAYMENT_METHOD.COD && !shop.codEnabled) throw new BusinessException(ORDER_ERR.SHOP_COD_DISABLED, `Gian hàng "${shop.name}" tạm ngừng nhận thanh toán khi nhận hàng (COD) — vui lòng chọn chuyển khoản/VNPay hoặc bỏ sản phẩm của gian hàng này`, 409);
           shopBriefs.set(g.shopId, shop);
         }
 
@@ -340,7 +337,7 @@ export class OrderService {
           const max = await this.system.settingNumber(SETTING_KEY.ORDER_COD_MAX_AMOUNT);
           if (max > 0) {
             const over = p.groups.find((g) => g.total > BigInt(max));
-            if (over) throw new BusinessException(ORDER_ERR.COD_LIMIT, `Đơn trên ${money(max).display} vui lòng thanh toán trước (chuyển khoản/VNPay)`);
+            if (over) throw new BusinessException(ORDER_ERR.COD_LIMIT, `Đơn trên ${money(max).display} vui lòng thanh toán trước (PayOS)`);
           }
         }
 
@@ -447,7 +444,7 @@ export class OrderService {
           }
 
           // Khởi tạo thanh toán — MỖI đơn con gọi initiate() ĐỘC LẬP (không đụng payment module/interface)
-          await this.payment.initiate({ orderId: order.id, orderCode, userId: actor.userId, amount: g.total, methodCode, clientIp, bankCode }, tx);
+          await this.payment.initiate({ orderId: order.id, orderCode, userId: actor.userId, amount: g.total, methodCode, clientIp }, tx);
 
           await this.audit.write(tx, actor, { action: ORDER_AUDIT.CREATED, entityType: 'order', entityId: order.id, entityCode: orderCode, after: { total: g.total.toString(), method: methodCode, items: g.lines.length, promotion: platformPromo?.code ?? null, shopPromotion: shopPromo?.code ?? null, discount: g.discount.toString(), shopId: g.shopId } });
           await this.notify.notifyMany(staff.map((userId) => ({ userId, type: 'order', title: `Đơn mới ${orderCode}`, content: `${address.recipientName} · ${money(g.total).display} · ${methodCode}`, link: `/orders/${orderCode}` })), tx);
@@ -477,9 +474,8 @@ export class OrderService {
   }
 
   private async paymentExpiry(methodCode: string): Promise<Date | null> {
-    // PayOS dùng cùng hạn với VNPay (link thanh toán PayOS cũng hết hạn theo mốc này) — thiếu nhánh này đơn PayOS chưa trả giữ kho + voucher vĩnh viễn.
-    if (methodCode === PAYMENT_METHOD.VNPAY || methodCode === PAYMENT_METHOD.PAYOS) return new Date(Date.now() + (await this.system.settingNumber(SETTING_KEY.ORDER_VNPAY_TIMEOUT_MINUTES)) * 60_000);
-    if (methodCode === PAYMENT_METHOD.BANK_TRANSFER) return new Date(Date.now() + (await this.system.settingNumber(SETTING_KEY.ORDER_BANK_TRANSFER_TIMEOUT_HOURS)) * 3_600_000);
+    // Link thanh toán PayOS hết hạn theo mốc này — thiếu nhánh này đơn PayOS chưa trả giữ kho + voucher vĩnh viễn. COD không có hạn.
+    if (methodCode === PAYMENT_METHOD.PAYOS) return new Date(Date.now() + (await this.system.settingNumber(SETTING_KEY.ORDER_ONLINE_PAYMENT_TIMEOUT_MINUTES)) * 60_000);
     return null;
   }
 

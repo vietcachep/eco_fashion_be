@@ -1,5 +1,7 @@
 # PLAN-0015 — Thanh toán PayOS + Ví quỹ COD (ShopWallet) + Đối soát/Payout theo shop
 
+> **Lưu ý (2026-10-15):** luồng ví COD / VNPay bị thay bởi PLAN-0018 — sàn thu mọi khoản (PayOS + COD), không còn ví quỹ COD; nội dung bên dưới là lịch sử thiết kế.
+
 > Status: **BE ✅ đã triển khai — nhưng trong PLAN-0017, không theo đúng bản thiết kế này.** File này giữ làm bản thiết kế + lý do; các điểm LÀM KHÁC (Payment vẫn gắn đơn con, chi PayOS từng khoản, thêm `mark-paid`, thêm loại sổ ví `cod_refund`,
 > giữ chi trả 24 giờ khi đổi TK…) và phần còn dang dở (chữ ký `x-signature` của Lệnh chi chưa xác nhận, chưa có webhook payout, chưa có cron chạy kỳ) ghi ở **§14** (rà soát mã nguồn 2026-10-04). Checklist §7/§8 bên dưới đã tick theo mã nguồn.
 > Owner: Agent

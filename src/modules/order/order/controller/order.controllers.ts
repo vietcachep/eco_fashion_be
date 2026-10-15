@@ -27,10 +27,10 @@ export class OrderController {
 
   @Post('orders') @RateLimit({ name: 'place-order', limit: 10, windowSeconds: 600, by: 'user' })
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Gửi lại cùng key → trả đúng đơn đã tạo, không tạo đôi' })
-  @ApiOperation({ summary: 'Đặt hàng từ giỏ (dòng đã tick) — trả đơn CHA kèm đơn con theo shop (PLAN-0014 bước 7). Không gửi tiền; không gửi số thẻ (card → VNPay redirect)' }) @ApiOkResponse({ type: OrderGroupResponse })
+  @ApiOperation({ summary: 'Đặt hàng từ giỏ (dòng đã tick) — trả đơn CHA kèm đơn con theo shop (PLAN-0014 bước 7). Không gửi tiền; không gửi số thẻ (payos → redirect sang link PayOS)' }) @ApiOkResponse({ type: OrderGroupResponse })
   async place(@CurrentActor() actor: AuthenticatedActor, @Body() body: CreateOrderRequest, @Headers('idempotency-key') key?: string): Promise<ApiResponse<OrderGroupResponse>> {
     const address = body.address ? { ...body.address, provinceCode: null, districtName: body.address.districtName ?? null, wardName: body.address.wardName ?? null } : undefined;
-    return ApiResponse.ok(await this.orders.placeOrder(actor, { addressId: body.addressId, address, paymentMethodCode: body.paymentMethodCode, bankCode: body.bankCode ?? null, note: body.note, voucherCode: body.voucherCode ?? null, voucherCodes: body.voucherCodes }, key ?? null), 'Đặt hàng thành công');
+    return ApiResponse.ok(await this.orders.placeOrder(actor, { addressId: body.addressId, address, paymentMethodCode: body.paymentMethodCode, note: body.note, voucherCode: body.voucherCode ?? null, voucherCodes: body.voucherCodes }, key ?? null), 'Đặt hàng thành công');
   }
 
   @Get('orders') @ApiOkResponse({ type: PageResponse }) @ApiOperation({ summary: 'Đơn của tôi — tóm tắt; `full=true` trả OrderResponse đầy đủ (đơn CON, không gộp nhóm)' })

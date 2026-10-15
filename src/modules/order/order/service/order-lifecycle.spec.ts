@@ -54,7 +54,7 @@ function mkOrder(n: number, over: Partial<OrderState> = {}): OrderState {
     orderGroupId: 'grp-1',
     status: ORDER_STATUS.PENDING,
     paymentStatus: PAYMENT_STATUS.UNPAID,
-    paymentMethodCode: 'vnpay',
+    paymentMethodCode: 'payos',
     total: new Prisma.Decimal(430_000),
     deliveredAt: null,
     paymentExpiresAt: new Date(Date.now() + DAY),
@@ -83,13 +83,12 @@ interface OutboxLike {
 
 const SETTINGS: Record<string, number> = {
   [SETTING_KEY.ORDER_AUTO_COMPLETE_DAYS]: 7,
-  [SETTING_KEY.ORDER_VNPAY_TIMEOUT_MINUTES]: 15,
-  [SETTING_KEY.ORDER_BANK_TRANSFER_TIMEOUT_HOURS]: 24,
+  [SETTING_KEY.ORDER_ONLINE_PAYMENT_TIMEOUT_MINUTES]: 15,
   [SETTING_KEY.ORDER_COD_MAX_AMOUNT]: 0,
   [SETTING_KEY.RETURN_WINDOW_DAYS]: 7,
 };
 
-const brief: ShopBrief = { id: SHOP, code: 'S-A', slug: 'shop-a', name: 'Shop A', logoUrl: null, ratingAvg: null, status: 'approved', commissionRate: '5.00', codEnabled: true };
+const brief: ShopBrief = { id: SHOP, code: 'S-A', slug: 'shop-a', name: 'Shop A', logoUrl: null, ratingAvg: null, status: 'approved', commissionRate: '5.00'  };
 const ADDRESS = { recipientName: 'Nguyễn Văn A', phone: '0901234567', provinceCode: '79', provinceName: 'TP. Hồ Chí Minh', districtName: 'Q.1', wardName: null, street: '12 Nguyễn Huệ' };
 
 function buildFixture(seed: OrderState[] = []) {
@@ -344,16 +343,16 @@ describe('OrderService.onPaid — tiền về', () => {
   });
 
   it('đơn pending bình thường (online): paid + audit + thông báo "Đã nhận thanh toán" + thông báo nhân viên + outbox ORDER_PAID; KHÔNG hoàn', async () => {
-    const f = buildFixture([mkOrder(1, { paymentMethodCode: 'vnpay', total: new Prisma.Decimal(430_000) })]);
-    await f.service.onPaid('DH261001', info({ methodCode: 'vnpay' }), TX);
+    const f = buildFixture([mkOrder(1, { paymentMethodCode: 'payos', total: new Prisma.Decimal(430_000) })]);
+    await f.service.onPaid('DH261001', info({ methodCode: 'payos' }), TX);
     expect(f.state.get('DH261001')).toMatchObject({ status: 'pending', paymentStatus: 'paid', paymentExpiresAt: null });
     expect(f.requestRefund).not.toHaveBeenCalled();
-    expect(f.auditWrite).toHaveBeenCalledWith(TX, null, { action: ORDER_AUDIT.PAID, entityType: 'order', entityId: 'o1', entityCode: 'DH261001', after: { method: 'vnpay', transactionCode: 'T-1' } });
+    expect(f.auditWrite).toHaveBeenCalledWith(TX, null, { action: ORDER_AUDIT.PAID, entityType: 'order', entityId: 'o1', entityCode: 'DH261001', after: { method: 'payos', transactionCode: 'T-1' } });
     expect(f.notifyOne).toHaveBeenCalledTimes(1);
     expect(f.notifyOne.mock.calls[0][0]).toMatchObject({ userId: USER, type: 'payment', title: 'Đã nhận thanh toán đơn DH261001' });
     expect(f.notifyMany).toHaveBeenCalledTimes(1);
-    expect(f.notifyMany.mock.calls[0][0]).toMatchObject([{ userId: 'staff-1', type: 'payment', title: 'Đơn DH261001 đã thanh toán', content: 'vnpay · 430.000 ₫' }]);
-    expect(f.outboxPublish).toHaveBeenCalledWith(TX, { eventType: ORDER_EVENT.PAID, aggregateType: 'order', aggregateId: 'o1', payload: { orderCode: 'DH261001', userId: USER, methodCode: 'vnpay' } });
+    expect(f.notifyMany.mock.calls[0][0]).toMatchObject([{ userId: 'staff-1', type: 'payment', title: 'Đơn DH261001 đã thanh toán', content: 'payos · 430.000 ₫' }]);
+    expect(f.outboxPublish).toHaveBeenCalledWith(TX, { eventType: ORDER_EVENT.PAID, aggregateType: 'order', aggregateId: 'o1', payload: { orderCode: 'DH261001', userId: USER, methodCode: 'payos' } });
   });
 
   it('đơn COD: không thông báo "đã nhận thanh toán" (thu khi giao) nhưng vẫn ghi paid + phát ORDER_PAID', async () => {
@@ -502,36 +501,25 @@ describe('hạn thanh toán (paymentExpiry)', () => {
   const place = (f: Fixture, paymentMethodCode: string) => f.service.placeOrder(actor, { address: ADDRESS, paymentMethodCode }, null);
   const expiresAt = (f: Fixture) => f.create.mock.calls[0][0].paymentExpiresAt as Date | null | undefined;
 
-  it('đơn PayOS có paymentExpiresAt = cùng hạn VNPay (15 phút)', async () => {
+  it('đơn PayOS có paymentExpiresAt theo tham số hạn thanh toán online (15 phút)', async () => {
     const f = buildFixture();
     await place(f, 'payos');
     expect(near(expiresAt(f), 15 * 60_000)).toBe(true);
     expect(f.initiate.mock.calls[0][0]).toMatchObject({ methodCode: 'payos', amount: 430_000n });
   });
 
-  it('VNPay (và thẻ quốc tế "card") 15 phút; chuyển khoản 24 giờ; COD không có hạn', async () => {
-    const vnpay = buildFixture();
-    await place(vnpay, 'vnpay');
-    expect(near(expiresAt(vnpay), 15 * 60_000)).toBe(true);
-    const card = buildFixture();
-    await place(card, 'card');
-    expect(near(expiresAt(card), 15 * 60_000)).toBe(true);
-    expect(card.initiate.mock.calls[0][0]).toMatchObject({ methodCode: 'vnpay', bankCode: 'INTCARD' });
-    const bank = buildFixture();
-    await place(bank, 'bank_transfer');
-    expect(near(expiresAt(bank), 24 * 3_600_000)).toBe(true);
+  it('chỉ còn cod + payos: PayOS 15 phút, COD không có hạn', async () => {
+    const payos = buildFixture();
+    await place(payos, 'payos');
+    expect(near(expiresAt(payos), 15 * 60_000)).toBe(true);
     const cod = buildFixture();
     await place(cod, 'cod');
     expect(expiresAt(cod)).toBeNull();
   });
 
-  it('paymentExpiry trực tiếp: payos = vnpay, bank_transfer = 24h, cod = null', async () => {
+  it('paymentExpiry trực tiếp: payos = 15 phút, cod = null', async () => {
     const f = buildFixture();
-    const payos = await f.service['paymentExpiry']('payos');
-    const vnpay = await f.service['paymentExpiry']('vnpay');
-    expect(near(payos, 15 * 60_000)).toBe(true);
-    expect(near(vnpay, 15 * 60_000)).toBe(true);
-    expect(near(await f.service['paymentExpiry']('bank_transfer'), 24 * 3_600_000)).toBe(true);
+    expect(near(await f.service['paymentExpiry']('payos'), 15 * 60_000)).toBe(true);
     expect(await f.service['paymentExpiry']('cod')).toBeNull();
   });
 });

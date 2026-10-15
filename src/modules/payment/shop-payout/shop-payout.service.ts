@@ -55,12 +55,13 @@ const STUCK_PROCESSING_MS = 10 * 60_000;
 const isUniqueViolation = (e: unknown) => typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002';
 
 /*
- * Đối soát chi trả shop (PLAN-0017): mỗi kỳ gom đơn ONLINE đã qua hạn đổi trả (escrow, tính từ ngày giao) chưa nằm trong kỳ nào,
+ * Đối soát chi trả shop (PLAN-0017/0018): mỗi kỳ gom đơn ĐÃ THU TIỀN VỀ SÀN — cả PayOS lẫn COD (sàn thu hộ qua đơn vị vận chuyển) — đã qua hạn đổi trả (escrow, tính từ ngày giao) chưa nằm trong kỳ nào,
  * trừ hoa hồng sàn (theo snapshot trên đơn) và hoàn tiền đã chi cho khách, trừ nợ mang sang (carriedDebt).
  *   net > 0  → chi PayOS tự động nếu đã có khoá payout + shop có TK ngân hàng; ngược lại để `pending` cho kế toán chuyển tay + mark-paid.
  *   net = 0  → `settled` (không có gì để chi) · net < 0 → `carried` (KHÔNG gọi PayOS, mang sang kỳ sau).
  * Chạy lại không trùng nhờ UNIQUE(shopId, kỳ) và UNIQUE(orderCode, kind) của dòng đối soát. Mã kỳ tất định + idempotency-key
  * = mã kỳ nên retry chi PayOS không bao giờ chi đôi. Mỗi shop một transaction riêng (lỗi một shop không kéo cả kỳ).
+ * `actor` null = HỆ THỐNG (cron chi trả tự động `AutoPayoutJob`): audit ghi actor null, `created_by` NULL.
  * Gọi PayOS NGOÀI transaction (ghi `processing` trước, gọi sau, ghi kết quả sau) — treo giữa chừng vẫn truy ra được qua mã kỳ.
  */
 @Injectable()
@@ -79,7 +80,7 @@ export class ShopPayoutService {
 
   /* ============================== Chạy kỳ ============================== */
 
-  async run(input: ShopPayoutRunInput, actor: AuthenticatedActor) {
+  async run(input: ShopPayoutRunInput, actor: AuthenticatedActor | null) {
     const { periodStart, periodEnd } = input;
     if (!(periodStart.getTime() < periodEnd.getTime())) throw new BusinessException(PAYOUT_ERR.INVALID_PERIOD, 'Ngày bắt đầu kỳ phải trước ngày kết thúc');
     if (periodEnd.getTime() > Date.now()) throw new BusinessException(PAYOUT_ERR.INVALID_PERIOD, 'Kỳ đối soát chưa kết thúc — chọn ngày kết thúc không muộn hơn hiện tại');
@@ -192,6 +193,17 @@ export class ShopPayoutService {
     return { items, total };
   }
 
+  /* Mốc kết thúc kỳ muộn nhất đã chạy (mọi shop) — cron tự động nối kỳ mới ngay sau mốc này; null = chưa chạy kỳ nào. */
+  async latestPeriodEnd(): Promise<Date | null> {
+    const last = await this.prisma.shopPayout.findFirst({ orderBy: { periodEnd: 'desc' }, select: { periodEnd: true } });
+    return last?.periodEnd ?? null;
+  }
+
+  /* PayOS chi đã cấu hình khoá chưa (cron tự động chỉ chạy khi có). */
+  get payoutConfigured(): boolean {
+    return this.payos.isPayoutConfigured;
+  }
+
   /* Số dư tài khoản chi PayOS (chỉ đọc). */
   async payosBalance(): Promise<{ configured: boolean; balance: string | null }> {
     if (!this.payos.isPayoutConfigured) return { configured: false, balance: null };
@@ -283,7 +295,7 @@ export class ShopPayoutService {
   }
 
   /* Một shop một transaction: tạo kỳ + dòng + audit + outbox; chi PayOS (nếu đủ điều kiện) SAU commit. */
-  private async settleShop(shopId: string, lines: DraftLine[], periodStart: Date, periodEnd: Date, actor: AuthenticatedActor) {
+  private async settleShop(shopId: string, lines: DraftLine[], periodStart: Date, periodEnd: Date, actor: AuthenticatedActor | null) {
     const bank = await this.shops.bankAccountOf(shopId);
     const held = bankJustChanged(bank);
     const auto = this.payos.isPayoutConfigured && bank !== null && !held;
@@ -325,7 +337,7 @@ export class ShopPayoutService {
           status,
           failReason,
           bankSnapshot: bank ? ({ bankCode: bank.bankCode, accountNumber: bank.accountNumber, accountName: bank.accountName } satisfies BankSnapshot) : undefined,
-          createdBy: actor.userId,
+          createdBy: actor?.userId ?? null,
         },
       });
       await tx.shopPayoutLine.createMany({ data: lines.map((l) => ({ payoutId: payout.id, orderCode: l.key, kind: l.kind, gross: l.gross, commission: l.commission })) });
@@ -346,7 +358,7 @@ export class ShopPayoutService {
   }
 
   /* Gọi PayOS chi tiền cho kỳ đang `processing` rồi ghi kết quả. Idempotency-key = mã kỳ ⇒ gọi lại không chi đôi. */
-  private async dispatch(payoutId: string, code: string, shopId: string, net: Dec, bank: BankSnapshot, actor: AuthenticatedActor): Promise<void> {
+  private async dispatch(payoutId: string, code: string, shopId: string, net: Dec, bank: BankSnapshot, actor: AuthenticatedActor | null): Promise<void> {
     const res = await this.payos.payout({
       referenceId: code,
       amount: BigInt(net.toFixed(0)),
@@ -366,7 +378,7 @@ export class ShopPayoutService {
       });
       if (r.count === 0) return; // đã bị mark-paid giữa chừng
       await this.audit.write(tx, actor, { action: ok ? PAYOUT_AUDIT.SENT : PAYOUT_AUDIT.FAILED, entityType: 'ShopPayout', entityId: payoutId, entityCode: code, after: { status, providerRef: res.transactionId ?? null, failReason } });
-      await this.outbox.publish(tx, { eventType: ok ? PAYMENT_EVENT.PAYOUT_PROCESSING : PAYMENT_EVENT.PAYOUT_FAILED, aggregateType: 'ShopPayout', aggregateId: payoutId, payload: { payoutId, payoutCode: code, shopId, netPayout: net.toFixed(0), status } });
+      await this.outbox.publish(tx, { eventType: ok ? PAYMENT_EVENT.PAYOUT_PROCESSING : PAYMENT_EVENT.PAYOUT_FAILED, aggregateType: 'ShopPayout', aggregateId: payoutId, payload: { payoutId, payoutCode: code, shopId, netPayout: net.toFixed(0), status, ...(ok ? {} : { failReason }) } });
     });
     if (!ok) this.logger.warn(`Chi PayOS kỳ ${code} thất bại: ${failReason}`);
   }

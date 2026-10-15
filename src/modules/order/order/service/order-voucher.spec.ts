@@ -300,7 +300,7 @@ const VOUCHERS: VoucherDef[] = [
 ];
 
 const SHOP_NAMES: Record<string, string> = { [A]: 'Shop A', [B]: 'Shop B', [C]: 'Shop C', [D]: 'Shop D' };
-const brief = (id: string): ShopBrief => ({ id, code: `S-${id.slice(0, 1)}`, slug: `shop-${id.slice(0, 1)}`, name: SHOP_NAMES[id], logoUrl: null, ratingAvg: null, status: 'approved', commissionRate: '5.00', codEnabled: true });
+const brief = (id: string): ShopBrief => ({ id, code: `S-${id.slice(0, 1)}`, slug: `shop-${id.slice(0, 1)}`, name: SHOP_NAMES[id], logoUrl: null, ratingAvg: null, status: 'approved', commissionRate: '5.00' });
 
 /* Mô phỏng PromotionService.evaluate đủ cho test order: shop-mismatch, đơn tối thiểu, 3 loại giảm. */
 function evalVoucher(defs: VoucherDef[], code: string, basket: BasketForPromotion): PromotionQuote {
@@ -344,7 +344,7 @@ function buildFixture(cfg: { lines?: Basket['lines']; vouchers?: VoucherDef[]; m
     settingNumber: jest.fn((_key: string): Promise<number> => Promise.resolve(0)),
   };
   const shops = {
-    /* `cfg.shops[id]` ghi đè một phần hồ sơ shop (status / codEnabled…); `null` = shop không còn tồn tại. */
+    /* `cfg.shops[id]` ghi đè một phần hồ sơ shop (status…); `null` = shop không còn tồn tại. */
     findBrief: jest.fn((id: string): Promise<ShopBrief | null> => {
       if (cfg.shops && cfg.shops[id] === null) return Promise.resolve(null);
       return Promise.resolve(SHOP_NAMES[id] ? { ...brief(id), ...(cfg.shops?.[id] ?? {}) } : null);
@@ -830,14 +830,14 @@ describe('OrderService.placeOrder — consume voucher & ghi đơn', () => {
       );
     /* Dữ liệu nội bộ của shop (brief) không được xuất hiện trong thông điệp lỗi trả khách. */
     const expectNoInternals = (message: string) => {
-      for (const secret of ['5.00', 'commission', 'hoa hồng', 'suspended', 'rejected', 'pending', 'approved', 'codEnabled', A, B, C, 'S-b', 'shop-b']) expect(message).not.toContain(secret);
+      for (const secret of ['5.00', 'commission', 'hoa hồng', 'suspended', 'rejected', 'pending', 'approved', A, B, C, 'S-b', 'shop-b']) expect(message).not.toContain(secret);
     };
 
     describe('gian hàng không còn approved', () => {
       it.each(['pending', 'suspended', 'rejected'])('shop B ở trạng thái "%s" ⇒ SHOP_NOT_AVAILABLE 409, nêu tên "Shop B", KHÔNG tạo đơn nào (kể cả đơn của shop A, C còn bình thường)', async (status) => {
         const f = buildFixture({ shops: { [B]: { status } } });
 
-        const err = await failure(placeAs(f, 'vnpay'));
+        const err = await failure(placeAs(f, 'payos'));
 
         expect(err).toBeInstanceOf(BusinessException);
         expect(err).toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, httpStatus: 409 });
@@ -847,8 +847,8 @@ describe('OrderService.placeOrder — consume voucher & ghi đơn', () => {
         expect(f.nextGroupCode).not.toHaveBeenCalled(); // chặn trước cả khi cấp mã đơn
       });
 
-      it('chặn bất kể phương thức thanh toán (COD, VNPay, chuyển khoản)', async () => {
-        for (const method of ['cod', 'vnpay', 'bank_transfer', 'payos']) {
+      it('chặn bất kể phương thức thanh toán (COD, PayOS)', async () => {
+        for (const method of ['cod', 'payos']) {
           const f = buildFixture({ shops: { [C]: { status: 'suspended' } } });
           await expect(placeAs(f, method)).rejects.toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, httpStatus: 409 });
           expectNothingWritten(f);
@@ -857,7 +857,7 @@ describe('OrderService.placeOrder — consume voucher & ghi đơn', () => {
 
       it('nhiều shop không đặt được ⇒ báo shop ĐẦU TIÊN theo thứ tự trong giỏ (A trước B trước C), không liệt kê các shop còn lại', async () => {
         const f = buildFixture({ shops: { [B]: { status: 'suspended' }, [C]: { status: 'pending' } } });
-        const err = await failure(placeAs(f, 'vnpay'));
+        const err = await failure(placeAs(f, 'payos'));
         expect(err?.message).toContain('"Shop B"');
         expect(err?.message).not.toContain('Shop C');
         expect(f.shops.findBrief.mock.calls.map((c) => c[0])).toContain(B);
@@ -865,7 +865,7 @@ describe('OrderService.placeOrder — consume voucher & ghi đơn', () => {
 
       it('shop không còn tồn tại (findBrief = null) cũng bị chặn 409 (không để lọt đơn)', async () => {
         const f = buildFixture({ shops: { [C]: null } });
-        await expect(placeAs(f, 'vnpay')).rejects.toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, httpStatus: 409 });
+        await expect(placeAs(f, 'payos')).rejects.toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, httpStatus: 409 });
         expectNothingWritten(f);
       });
 
@@ -877,12 +877,12 @@ describe('OrderService.placeOrder — consume voucher & ghi đơn', () => {
 
       it('shop khoá nhưng KHÔNG có hàng trong giỏ ⇒ không ảnh hưởng (chỉ kiểm shop có trong giỏ)', async () => {
         const f = buildFixture({ shops: { [D]: { status: 'suspended' } } });
-        await expect(placeAs(f, 'vnpay')).resolves.toMatchObject({ code: 'DHN261001' });
+        await expect(placeAs(f, 'payos')).resolves.toMatchObject({ code: 'DHN261001' });
       });
 
       it('kiểm SAU voucher/mua chéo: có mã bị từ chối thì báo mã trước; shop mình là thành viên báo mua chéo trước', async () => {
-        await expect(placeAs(buildFixture({ shops: { [B]: { status: 'suspended' } } }), 'vnpay', ['NOPE'])).rejects.toMatchObject({ errorCode: ORDER_ERR.PROMOTION_INVALID });
-        await expect(placeAs(buildFixture({ shops: { [B]: { status: 'suspended' } }, members: { [A]: [USER] } }), 'vnpay')).rejects.toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, message: 'Bạn không thể mua sản phẩm của chính gian hàng mình' });
+        await expect(placeAs(buildFixture({ shops: { [B]: { status: 'suspended' } } }), 'payos', ['NOPE'])).rejects.toMatchObject({ errorCode: ORDER_ERR.PROMOTION_INVALID });
+        await expect(placeAs(buildFixture({ shops: { [B]: { status: 'suspended' } }, members: { [A]: [USER] } }), 'payos')).rejects.toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, message: 'Bạn không thể mua sản phẩm của chính gian hàng mình' });
       });
 
       it('checkoutSummary KHÔNG chặn (chỉ placeOrder chặn): vẫn tính tiền bình thường dù một shop trong giỏ đã bị khoá', async () => {
@@ -891,55 +891,18 @@ describe('OrderService.placeOrder — consume voucher & ghi đơn', () => {
       });
     });
 
-    describe('gian hàng tắt COD (codEnabled = false) khi khách chọn COD', () => {
-      it('shop C tắt COD + khách chọn COD ⇒ SHOP_COD_DISABLED 409, nêu tên "Shop C" + hướng dẫn đổi phương thức/bỏ sản phẩm, KHÔNG tạo đơn nào (kể cả shop A, B)', async () => {
-        const f = buildFixture({ shops: { [C]: { codEnabled: false } } });
-
-        const err = await failure(placeAs(f, 'cod'));
-
-        expect(err).toBeInstanceOf(BusinessException);
-        expect(err).toMatchObject({ errorCode: ORDER_ERR.SHOP_COD_DISABLED, httpStatus: 409 });
-        expect(err?.message).toBe('Gian hàng "Shop C" tạm ngừng nhận thanh toán khi nhận hàng (COD) — vui lòng chọn chuyển khoản/VNPay hoặc bỏ sản phẩm của gian hàng này');
-        expectNoInternals(err?.message ?? '');
-        expect(err?.message).not.toContain('ví'); // không lộ lý do nội bộ (ví quỹ COD ≤ 0)
-        expectNothingWritten(f);
-      });
-
-      it.each(['vnpay', 'bank_transfer', 'payos'])('cùng shop tắt COD nhưng khách chọn %s ⇒ KHÔNG bị chặn (cờ COD chỉ áp cho COD)', async (method) => {
-        const f = buildFixture({ shops: { [C]: { codEnabled: false } } });
-        await expect(placeAs(f, method)).resolves.toMatchObject({ code: 'DHN261001' });
+    describe('COD (PLAN-0018: sàn thu hộ COD, không còn cờ COD theo shop)', () => {
+      it('khách chọn COD ⇒ đặt được cho mọi shop trong giỏ (không còn chặn theo ví/cờ COD của shop), tạo đủ 3 đơn con', async () => {
+        const f = buildFixture();
+        await expect(placeAs(f, 'cod')).resolves.toMatchObject({ code: 'DHN261001' });
         expect(f.create).toHaveBeenCalledTimes(3);
       });
 
-      it('thẻ quốc tế (FE gửi "card" ⇒ VNPay) không bị chặn bởi cờ COD', async () => {
-        const f = buildFixture({ shops: { [A]: { codEnabled: false } } });
-        await expect(placeAs(f, 'card')).resolves.toMatchObject({ code: 'DHN261001' });
-      });
-
-      it('nhiều shop tắt COD ⇒ báo shop đầu tiên theo thứ tự giỏ', async () => {
-        const f = buildFixture({ shops: { [B]: { codEnabled: false }, [C]: { codEnabled: false } } });
-        const err = await failure(placeAs(f, 'cod'));
-        expect(err).toMatchObject({ errorCode: ORDER_ERR.SHOP_COD_DISABLED });
-        expect(err?.message).toContain('"Shop B"');
-        expect(err?.message).not.toContain('Shop C');
-      });
-
-      it('shop vừa không approved vừa tắt COD ⇒ báo "không thể đặt hàng" (kiểm trạng thái TRƯỚC cờ COD), không lộ cờ COD', async () => {
-        const f = buildFixture({ shops: { [B]: { status: 'suspended', codEnabled: false } } });
-        const err = await failure(placeAs(f, 'cod'));
-        expect(err).toMatchObject({ errorCode: ORDER_ERR.SHOP_NOT_AVAILABLE, httpStatus: 409 });
-        expect(err?.message).not.toContain('COD');
-      });
-
-      it('cờ COD của shop KHÔNG có trong giỏ không ảnh hưởng', async () => {
-        const f = buildFixture({ shops: { [D]: { codEnabled: false } } });
-        await expect(placeAs(f, 'cod')).resolves.toMatchObject({ code: 'DHN261001' });
-      });
-
-      it('kiểm cờ COD đứng TRƯỚC hạn mức COD: shop tắt COD báo SHOP_COD_DISABLED dù đơn cũng vượt hạn mức', async () => {
-        const f = buildFixture({ shops: { [A]: { codEnabled: false } } });
+      it('hạn mức COD vẫn áp theo từng đơn con', async () => {
+        const f = buildFixture();
         f.system.settingNumber.mockResolvedValue(1); // hạn mức COD 1đ ⇒ mọi đơn đều vượt
-        await expect(placeAs(f, 'cod')).rejects.toMatchObject({ errorCode: ORDER_ERR.SHOP_COD_DISABLED });
+        await expect(placeAs(f, 'cod')).rejects.toMatchObject({ errorCode: ORDER_ERR.COD_LIMIT });
+        expectNothingWritten(f);
       });
     });
   });

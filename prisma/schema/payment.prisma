@@ -1,14 +1,14 @@
 // =====================================================================
-// Module payment (PLAN-0007) — schema "payment": phương thức (cod · bank_transfer · vnpay), giao dịch theo đơn,
-// nhật ký gọi cổng (IPN idempotent theo provider_ref unique), đối soát chuyển khoản, hoàn tiền.
-// KHÔNG BAO GIỜ lưu số thẻ / CVV / OTP — VNPay redirect; chỉ giữ thương hiệu + 4 số cuối nếu cổng trả về.
+// Module payment (PLAN-0007/0018) — schema "payment": phương thức (chỉ còn cod · payos; dòng vnpay/bank_transfer cũ đã tắt),
+// giao dịch theo đơn, nhật ký gọi cổng (webhook idempotent theo provider_ref), hoàn tiền, đối soát chi trả shop.
+// KHÔNG BAO GIỜ lưu số thẻ / CVV / OTP. Cột cardBrand/cardLast4/transferContent/bank_transfer_confirmations là DỮ LIỆU LỊCH SỬ (VNPay/VietQR cũ).
 // =====================================================================
 
 model PaymentMethod {
   code        String   @id @db.VarChar(20)
   name        String   @db.VarChar(120)
   description String?  @db.VarChar(300)
-  /* cod | bank_transfer | gateway */
+  /* cod | gateway (lịch sử còn bank_transfer) */
   kind        String   @db.VarChar(20)
   isActive    Boolean  @default(true) @map("is_active")
   sortOrder   Int      @default(0) @map("sort_order")
@@ -30,12 +30,12 @@ model Payment {
   amount          Decimal   @db.Decimal(14, 0)
   /* pending | processing | paid | failed | expired | refunded | partially_refunded */
   status          String    @default("pending") @db.VarChar(20)
-  /* Mã giao dịch phía cổng (vnp_TransactionNo) / mã tham chiếu ngân hàng */
+  /* Mã giao dịch phía cổng (orderCode PayOS) / mã tham chiếu ngân hàng (lịch sử) */
   transactionCode String?   @map("transaction_code") @db.VarChar(64)
   bankCode        String?   @map("bank_code") @db.VarChar(20)
   cardBrand       String?   @map("card_brand") @db.VarChar(20)
   cardLast4       String?   @map("card_last4") @db.VarChar(4)
-  /* Chuyển khoản: nội dung CK để đối soát (= mã đơn) */
+  /* Lịch sử (VietQR cũ): nội dung CK để đối soát (= mã đơn) — không còn ghi mới */
   transferContent String?   @map("transfer_content") @db.VarChar(60)
   refundedAmount  Decimal   @default(0) @map("refunded_amount") @db.Decimal(14, 0)
   gatewayResponse Json?     @map("gateway_response")
@@ -78,6 +78,7 @@ model PaymentTransaction {
   @@schema("payment")
 }
 
+/// BẢNG LỊCH SỬ (PLAN-0018): chuyển khoản VietQR đối soát tay đã bị bỏ — chỉ giữ dữ liệu cũ, code không còn ghi bảng này.
 model BankTransferConfirmation {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   paymentId   String   @map("payment_id") @db.Uuid
@@ -93,7 +94,7 @@ model BankTransferConfirmation {
   @@schema("payment")
 }
 
-/* Hoàn tiền: requested → processing → done | failed. Cổng (VNPay refund API) hoặc chuyển khoản tay (COD/bank). */
+/* Hoàn tiền: requested → processing → done | failed. Cổng (PayOS payout) hoặc chuyển khoản tay (COD/dữ liệu lịch sử). */
 model Refund {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   paymentId       String    @map("payment_id") @db.Uuid
@@ -114,7 +115,7 @@ model Refund {
   /* order = hoàn theo đơn (huỷ / đổi trả / thanh toán đến muộn) · duplicate_payment = hoàn khoản khách trả TRÙNG cho đơn đã có khoản khác thu xong:
      chỉ trả tiền thừa cho khách, KHÔNG đổi trạng thái thanh toán của đơn, không đảo doanh thu/hoa hồng. CHECK chk_refunds_kind. */
   kind            String    @default("order") @db.VarChar(20)
-  /* Dấu "đã/đang gọi cổng" ghi TRƯỚC khi gọi cổng KHÔNG có idempotency-key (VNPay). Còn dấu mà chưa có provider_ref ⇒ chưa rõ cổng đã hoàn hay chưa
+  /* Dấu "đã/đang gọi cổng" ghi TRƯỚC khi gọi cổng KHÔNG có idempotency-key (VNPay cũ — chỉ còn dữ liệu lịch sử). Còn dấu mà chưa có provider_ref ⇒ chưa rõ cổng đã hoàn hay chưa
      (treo/mất kết nối) ⇒ KHÔNG được tự gọi lại cổng, phải đối chiếu tay. Cổng báo từ chối rõ ràng thì xoá dấu (tiền chưa đi). */
   gatewayAttemptedAt DateTime? @map("gateway_attempted_at") @db.Timestamptz
   version         Int       @default(0)
@@ -129,68 +130,7 @@ model Refund {
   @@schema("payment")
 }
 
-/* ===================== PLAN-0017 — ví quỹ COD + đối soát (payout) theo gian hàng ===================== */
-
-/* Ví quỹ COD: mỗi đơn COD *hoàn tất* trừ đúng hoa hồng khỏi ví; balance <= 0 ⇒ Shop.codEnabled=false (service ví tắt
-   qua gateway sang module shop, không FK xuyên schema). balance CÓ THỂ ÂM. 1-1 với shop (shopId unique). */
-model ShopWallet {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shopId    String   @unique @map("shop_id") @db.Uuid
-  balance   Decimal  @default(0) @db.Decimal(14, 0)
-  version   Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-
-  transactions ShopWalletTransaction[]
-
-  @@map("shop_wallets")
-  @@schema("payment")
-}
-
-/* Sổ cái ví — APPEND-ONLY (không update/xoá; điều chỉnh = thêm dòng bù). type: cod_commission | deposit | adjust | cod_refund (hoàn tiền đơn COD đã thu: −số hoàn + hoa hồng hoàn lại).
-   cod_commission unique theo (shopId,type,orderCode) ⇒ gọi `completed` hai lần không trừ hoa hồng hai lần. */
-model ShopWalletTransaction {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  walletId     String   @map("wallet_id") @db.Uuid
-  shopId       String   @map("shop_id") @db.Uuid
-  type         String   @db.VarChar(20)
-  orderCode    String?  @map("order_code") @db.VarChar(30)
-  /* âm = trừ (hoa hồng), dương = cộng (nộp quỹ / điều chỉnh) */
-  amount       Decimal  @db.Decimal(14, 0)
-  balanceAfter Decimal  @map("balance_after") @db.Decimal(14, 0)
-  note         String?  @db.VarChar(500)
-  createdBy    String?  @map("created_by") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
-
-  wallet ShopWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-
-  @@unique([shopId, type, orderCode])
-  @@index([shopId, createdAt(sort: Desc)])
-  @@map("shop_wallet_transactions")
-  @@schema("payment")
-}
-
-/* Shop xin nộp thêm quỹ (khi ví về 0/âm bị khoá COD) → sàn duyệt ⇒ cộng ví. status: pending | approved | rejected. */
-model ShopWalletDepositRequest {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shopId     String    @map("shop_id") @db.Uuid
-  amount     Decimal   @db.Decimal(14, 0)
-  status     String    @default("pending") @db.VarChar(20)
-  proofUrl   String?   @map("proof_url") @db.VarChar(500)
-  note       String?   @db.VarChar(500)
-  decidedBy  String?   @map("decided_by") @db.Uuid
-  decidedAt  DateTime? @map("decided_at") @db.Timestamptz
-  decideNote String?   @map("decide_note") @db.VarChar(500)
-  createdBy  String?   @map("created_by") @db.Uuid
-  version    Int       @default(0)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@index([shopId, status])
-  @@index([status, createdAt(sort: Desc)])
-  @@map("shop_wallet_deposit_requests")
-  @@schema("payment")
-}
+/* ===================== PLAN-0017/0018 — đối soát (payout) theo gian hàng; PLAN-0018 bỏ ví quỹ COD ===================== */
 
 /* Kỳ đối soát (payout) một shop: số liệu ĐÓNG BĂNG lúc chạy kỳ. netPayout = gross − commission − refund − carriedDebt,
    CÓ THỂ ÂM (khi đó không chi, âm sang kỳ sau qua carriedDebt). status: pending | processing | paid | failed (chi được) |

@@ -3,12 +3,6 @@ import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma, type Tx } from '@common/prisma/types';
 import { OrderRepository } from '../order/repository/order.repository';
 
-/* Con trỏ phân trang (completedAt, mã đơn) của completedCodOrderCodesSince. */
-export interface CodScanCursor {
-  completedAt: Date;
-  code: string;
-}
-
 /* QueryAPI của order — review (đã mua chưa?), ai (đơn của tôi cho chatbot), reporting. Thứ DUY NHẤT module khác import. */
 @Injectable()
 export class OrderQueryApi {
@@ -87,12 +81,6 @@ export class OrderQueryApi {
     return o?.shopId ?? null;
   }
 
-  /* Dữ liệu tính hoa hồng COD khi đơn hoàn tất (payment worker): phương thức, tổng đơn (khách trả), phần voucher SÀN chịu,
-     tỷ lệ % đã snapshot, shop. */
-  commissionBasisOf(orderCode: string) {
-    return this.prisma.order.findFirst({ where: { code: orderCode, isDeleted: false }, select: { paymentMethodCode: true, total: true, platformDiscount: true, commissionRateSnapshot: true, shopId: true } });
-  }
-
   /* Tổng khách trả + phần voucher sàn chịu của một nhóm đơn — đối soát dùng để chia hoàn tiền theo tỉ lệ doanh thu của đơn. */
   async orderTotalsOf(orderCodes: string[]): Promise<Map<string, { total: Prisma.Decimal; platformDiscount: Prisma.Decimal }>> {
     if (orderCodes.length === 0) return new Map();
@@ -100,31 +88,9 @@ export class OrderQueryApi {
     return new Map(rows.map((r) => [r.code, { total: r.total, platformDiscount: r.platformDiscount }]));
   }
 
-  /*
-   * Mã đơn COD đã hoàn tất trong N ngày gần nhất — job đối soát bù hoa hồng COD quét. MỚI nhất trước (đơn gần đây cần được ghi hoa hồng sớm nhất), phân trang theo CON TRỎ
-   * (completedAt, mã đơn) để quét hết cửa sổ qua nhiều lô: mã đơn phá thế bằng nhau khi nhiều đơn hoàn tất cùng mili-giây (không bỏ sót, không lặp). `next` = con trỏ truyền cho
-   * lô sau; null khi lô không đầy (đã hết).
-   */
-  async completedCodOrderCodesSince(days: number, limit: number, after: CodScanCursor | null = null): Promise<{ codes: string[]; next: CodScanCursor | null }> {
-    const since = new Date(Date.now() - days * 86_400_000);
-    const rows = await this.prisma.order.findMany({
-      where: {
-        isDeleted: false,
-        status: 'completed',
-        paymentMethodCode: 'cod',
-        completedAt: { gte: since },
-        ...(after ? { OR: [{ completedAt: { lt: after.completedAt } }, { completedAt: after.completedAt, code: { lt: after.code } }] } : {}),
-      },
-      orderBy: [{ completedAt: 'desc' }, { code: 'desc' }],
-      select: { code: true, completedAt: true },
-      take: limit,
-    });
-    const last = rows[rows.length - 1];
-    return { codes: rows.map((r) => r.code), next: rows.length === limit && last?.completedAt ? { completedAt: last.completedAt, code: last.code } : null };
-  }
-
-  /* Đơn online đã thanh toán để tính đối soát (payout): không COD, status=completed, đã qua hạn đổi trả (tính từ ngày giao)
-     tính đến periodEnd — escrow: không đưa đơn còn trong hạn đổi trả vào kỳ. Payment tự loại đơn đã nằm trong kỳ trước. */
+  /* Đơn đã thu tiền để tính đối soát (payout) — PLAN-0018: CẢ PayOS lẫn COD cùng một đường. status=completed, `paymentStatus` paid/partially_refunded
+     (đơn COD chỉ thành `paid` khi sàn xác nhận đã thu COD lúc giao — markCodCollected — nên không dựa vào trạng thái đơn đơn thuần),
+     đã qua hạn đổi trả (tính từ ngày giao) tính đến periodEnd — escrow: không đưa đơn còn trong hạn đổi trả vào kỳ. Payment tự loại đơn đã nằm trong kỳ trước. */
   async settlementOrders(returnWindowDays: number, periodEnd: Date): Promise<Array<{ orderCode: string; shopId: string; total: Prisma.Decimal; platformDiscount: Prisma.Decimal; commissionRateSnapshot: Prisma.Decimal; settleFrom: Date }>> {
     const cutoff = new Date(periodEnd.getTime() - returnWindowDays * 86_400_000);
     const rows = await this.prisma.order.findMany({
@@ -132,7 +98,6 @@ export class OrderQueryApi {
         isDeleted: false,
         status: 'completed',
         paymentStatus: { in: ['paid', 'partially_refunded'] },
-        paymentMethodCode: { not: 'cod' },
         OR: [{ deliveredAt: { lte: cutoff } }, { deliveredAt: null, completedAt: { lte: cutoff } }],
         // Đơn đang có yêu cầu đổi trả CHƯA xử lý xong thì giữ lại (escrow) — chi trước rồi mới hoàn thì shop đã nhận tiền thừa, thành nợ mang sang.
         returns: { none: { status: { in: ['requested', 'approved'] } } },

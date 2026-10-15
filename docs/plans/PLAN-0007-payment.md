@@ -1,5 +1,7 @@
 # PLAN-0007 — Payment: COD, chuyển khoản VietQR, VNPay, hoàn tiền
 
+> **Lưu ý (2026-10-15):** luồng VNPay / chuyển khoản VietQR bị thay bởi PLAN-0018 — chỉ còn COD + PayOS; nội dung bên dưới là lịch sử.
+
 > Status: Done
 > Owner: Agent
 > Related Phase: Phase 3 — Mua hàng

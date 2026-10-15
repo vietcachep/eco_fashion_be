@@ -94,12 +94,11 @@ describe('ShopOrderService', () => {
    * Kết quả "rò" của OrderService (kết thúc bằng getAdmin() có extras thanh toán): service vendor KHÔNG được trả nó ra,
    * mà phải đọc lại đơn và dựng response với extras = null.
    */
-  const orderResponse = { code: CODE, paymentUrl: 'https://pay.vnpay.vn/leak', transactionCode: 'TXN-LEAK', cardBrand: 'VISA', cardLast4: '4242', paymentIntent: { leaked: true } } as unknown as OrderResponse;
+  const orderResponse = { code: CODE, paymentUrl: 'https://pay.payos.vn/leak', transactionCode: 'TXN-LEAK', cardBrand: 'VISA', cardLast4: '4242' } as unknown as OrderResponse;
 
   /* Response vendor không được chứa thông tin thanh toán của khách. */
   function expectNoPaymentLeak(r: OrderResponse): void {
     expect(r.paymentUrl).toBeNull();
-    expect(r.paymentIntent).toBeNull();
     expect(r.transactionCode).toBeNull();
     expect(r.cardBrand).toBeNull();
     expect(r.cardLast4).toBeNull();
@@ -124,7 +123,7 @@ describe('ShopOrderService', () => {
 
     service = new ShopOrderService(prisma, repo, orders, shops, system);
 
-    findBrief.mockResolvedValue({ id: SHOP_ID, code: 'SHOP-1', slug: 'test-shop', name: 'Test Shop', logoUrl: null, ratingAvg: null, status: 'approved', commissionRate: '10.00', codEnabled: true });
+    findBrief.mockResolvedValue({ id: SHOP_ID, code: 'SHOP-1', slug: 'test-shop', name: 'Test Shop', logoUrl: null, ratingAvg: null, status: 'approved', commissionRate: '10.00'  });
     settingNumber.mockResolvedValue(7);
   });
 
@@ -210,13 +209,13 @@ describe('ShopOrderService', () => {
    */
   describe('response không lộ thông tin thanh toán (cả 3 route cùng dạng)', () => {
     it('GET chi tiết: extras = null', async () => {
-      givenOrder({ status: ORDER_STATUS.PENDING, paymentMethodCode: 'vnpay' });
+      givenOrder({ status: ORDER_STATUS.PENDING, paymentMethodCode: 'payos' });
 
       expectNoPaymentLeak(await service.get(SHOP_ID, CODE));
     });
 
     it('PUT status: trả đơn đọc lại, KHÔNG trả kết quả (có paymentUrl/cardLast4) của OrderService', async () => {
-      givenOrder({ status: ORDER_STATUS.PENDING, paymentMethodCode: 'vnpay' });
+      givenOrder({ status: ORDER_STATUS.PENDING, paymentMethodCode: 'payos' });
       updateStatus.mockResolvedValue(orderResponse);
 
       const result = await service.updateStatus(mockActor, SHOP_ID, CODE, 'confirmed', {});
@@ -229,7 +228,7 @@ describe('ShopOrderService', () => {
     });
 
     it('POST cancel: trả đơn đọc lại, KHÔNG trả kết quả của OrderService', async () => {
-      givenOrder({ status: ORDER_STATUS.CONFIRMED, paymentMethodCode: 'vnpay', paymentStatus: 'paid' });
+      givenOrder({ status: ORDER_STATUS.CONFIRMED, paymentMethodCode: 'payos', paymentStatus: 'paid' });
       cancelByStaff.mockResolvedValue(orderResponse);
 
       const result = await service.cancel(mockActor, SHOP_ID, CODE, 'Hết hàng');

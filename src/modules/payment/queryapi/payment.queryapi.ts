@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { PaymentService } from '../payment/payment.service';
 
-/* QueryAPI của payment — order đọc thông tin hiển thị (intent/URL/mã giao dịch); reporting đọc doanh thu đã thu. */
+/* QueryAPI của payment — order đọc thông tin hiển thị (URL/mã giao dịch); reporting đọc doanh thu đã thu. */
 @Injectable()
 export class PaymentQueryApi {
   constructor(
@@ -14,7 +14,7 @@ export class PaymentQueryApi {
     return this.payments.extrasForOrder(orderCode);
   }
 
-  /* Phương thức đang bật + dùng được (VNPay chỉ khi có cấu hình) — chatbot kể cho khách. */
+  /* Phương thức đang bật + dùng được (PayOS chỉ khi có cấu hình khoá) — chatbot kể cho khách. */
   async activeMethods(): Promise<Array<{ code: string; name: string; description: string | null }>> {
     return (await this.payments.listMethods(true)).map((m) => ({ code: m.code, name: m.name, description: m.description }));
   }

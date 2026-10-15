@@ -23,7 +23,6 @@ export const ORDER_ERR = {
   EVIDENCE_REQUIRED: 'ORDER_EVIDENCE_REQUIRED',
   /* PLAN-0014 bước 7 — giỏ nhiều shop: một gian hàng trong giỏ ngừng hoạt động / khoá COD giữa lúc đặt hàng. */
   SHOP_NOT_AVAILABLE: 'ORDER_SHOP_NOT_AVAILABLE',
-  SHOP_COD_DISABLED: 'ORDER_SHOP_COD_DISABLED',
 } as const;
 
 export const ORDER_AUDIT = {
@@ -41,7 +40,7 @@ export const ORDER_STATUS = { PENDING: 'pending', CONFIRMED: 'confirmed', PACKIN
 export type OrderStatus = (typeof ORDER_STATUS)[keyof typeof ORDER_STATUS];
 export const PAYMENT_STATUS = { UNPAID: 'unpaid', PROCESSING: 'processing', PAID: 'paid', REFUNDED: 'refunded', PARTIALLY_REFUNDED: 'partially_refunded' } as const;
 export const RETURN_STATUS = { REQUESTED: 'requested', APPROVED: 'approved', REJECTED: 'rejected', REFUNDED: 'refunded' } as const;
-export const PAYMENT_METHOD = { COD: 'cod', BANK_TRANSFER: 'bank_transfer', VNPAY: 'vnpay', PAYOS: 'payos' } as const;
+export const PAYMENT_METHOD = { COD: 'cod', PAYOS: 'payos' } as const;
 
 /* Lưới chuyển trạng thái do NHÂN VIÊN thao tác (khách chỉ huỷ ở pending). */
 export const STAFF_TRANSITIONS: Record<string, string[]> = {

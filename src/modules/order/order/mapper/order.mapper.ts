@@ -1,11 +1,9 @@
-import type { BankTransferIntent } from '@common/gateway/payment.gateway';
 import { money } from '@common/response/money-response';
 import { ORDER_STATUS, STATUS_LABEL } from '../../foundation/order.constants';
 import { OrderGroupResponse, OrderResponse, OrderSummaryResponse, ReturnRequestResponse } from '../dto/order.responses';
 import type { OrderGroupRow, OrderRow } from '../repository/order.repository';
 
 export interface PaymentExtras {
-  paymentIntent: BankTransferIntent | null;
   paymentUrl: string | null;
   transactionCode: string | null;
   cardBrand: string | null;
@@ -39,7 +37,6 @@ export function toOrderResponse(o: OrderRow, extras: PaymentExtras | null, retur
     shopDiscount: money(o.shopDiscount.toString()),
     platformDiscount: money(o.platformDiscount.toString()),
     total: money(o.total.toString()),
-    paymentIntent: extras?.paymentIntent ? { ...extras.paymentIntent } : null,
     paymentUrl: extras?.paymentUrl ?? null,
     paymentExpiresAt: o.paymentExpiresAt?.toISOString() ?? null,
     trackingUrl: o.trackingUrl,

@@ -388,6 +388,19 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(f.linesOf(p.id)).toEqual([{ payoutId: p.id, orderCode: 'DH-V', kind: 'sale', gross: D(100_000), commission: D(10_000) }]);
     });
 
+    it('PLAN-0018: đơn COD (sàn đã thu hộ, Payment=paid) vào đối soát CÙNG đường với đơn PayOS: một dòng SALE, trừ hoa hồng, ra kỳ chung của shop', async () => {
+      const f = buildFixture();
+      // OrderQueryApi.settlementOrders không còn phân biệt phương thức: đơn COD đã paid và đơn PayOS đều xuất hiện trong danh sách đủ điều kiện
+      f.setEligible([order('DH-COD-1', SHOP_A, 200_000, '10.00'), order('DH-PAYOS-1', SHOP_A, 100_000, '10.00')]);
+
+      await f.run();
+
+      expectNoSwallowedError();
+      const p = f.payoutOf(SHOP_A);
+      expect([p.grossRevenue, p.commission, p.netPayout].map(String)).toEqual(['300000', '30000', '270000']);
+      expect(f.linesOf(p.id).map((l) => `${l.orderCode}:${l.kind}`).sort()).toEqual(['DH-COD-1:sale', 'DH-PAYOS-1:sale']);
+    });
+
     it('voucher sàn + làm tròn: (100 + 5) × 10% = 10.5 ⇒ 11 (làm tròn trên TỔNG doanh thu, không tách từng phần)', async () => {
       const f = buildFixture();
       f.setEligible([order('DH-V', SHOP_A, 100, '10.00', 5)]);
@@ -1874,7 +1887,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     };
     const argOf = (m: jest.Mock<Promise<unknown[]>, [unknown]>) => m.mock.calls[0][0] as { where: Record<string, unknown>; select: Record<string, unknown> };
 
-    it('where đủ mọi điều kiện: chưa xoá, completed, đã thanh toán (paid/partially_refunded), KHÔNG COD, qua hạn đổi trả, KHÔNG có yêu cầu đổi trả đang mở', async () => {
+    it('where đủ mọi điều kiện: chưa xoá, completed, đã thanh toán (paid/partially_refunded), CẢ COD lẫn online (PLAN-0018), qua hạn đổi trả, KHÔNG có yêu cầu đổi trả đang mở', async () => {
       const { prisma, api } = build();
       prisma.order.findMany.mockResolvedValue([]);
       const periodEnd = new Date('2025-03-31T00:00:00.000Z');
@@ -1886,7 +1899,6 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
         isDeleted: false,
         status: 'completed',
         paymentStatus: { in: ['paid', 'partially_refunded'] },
-        paymentMethodCode: { not: 'cod' },
         OR: [{ deliveredAt: { lte: cutoff } }, { deliveredAt: null, completedAt: { lte: cutoff } }],
         // đơn đang có yêu cầu đổi trả CHƯA xử lý xong (requested/approved) thì giữ lại, không đưa vào kỳ
         returns: { none: { status: { in: ['requested', 'approved'] } } },

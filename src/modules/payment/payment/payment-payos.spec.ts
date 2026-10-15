@@ -20,7 +20,6 @@ import { RATE_LIMIT_KEY } from '@common/security/rate-limit.guard';
 import type { Env } from '@config/env';
 import { METHOD, PAY_STATUS, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, REFUND_KIND, REFUND_STATUS, TX_TYPE } from '../foundation/payment.constants';
 import { PayosService } from '../payos/payos.service';
-import type { VnpayService } from '../vnpay/vnpay.service';
 import { AdminPaymentController, PaymentController, PaymentPublicController } from './payment.controllers';
 import { PaymentService } from './payment.service';
 
@@ -498,8 +497,7 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
     markReturnRefunded: jest.fn((_returnRequestId: string, _tx: unknown): Promise<void> => Promise.resolve()),
   };
   const moduleRef = { get: jest.fn((_token: unknown, _options: unknown) => orders) };
-  const vnpay = { isConfigured: false, buildPayUrl: jest.fn(), verify: jest.fn(), refund: jest.fn() };
-  const service = new PaymentService(db as unknown as PrismaService, vnpay as unknown as VnpayService, payos, env, moduleRef as unknown as ModuleRef);
+  const service = new PaymentService(db as unknown as PrismaService, payos, env, moduleRef as unknown as ModuleRef);
 
   /* ---- hạt giống dữ liệu ---- */
   const seedPayment = (o: Partial<PaymentRow> = {}): PaymentRow => {
@@ -586,7 +584,6 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
     orders,
     txOptions,
     moduleRef,
-    vnpay,
     service,
     onPaidDepth,
     onRefundedDepth,
@@ -648,6 +645,31 @@ describe('PaymentService — PayOS', () => {
       expect(await off.service.isMethodActive('payos')).toBe(false);
       // màn admin (onlyActive=false) vẫn thấy để bật/tắt
       expect((await off.service.listMethods(false)).map((m) => m.code)).toContain('payos');
+    });
+
+    it('PLAN-0018: chỉ còn cod + payos — vnpay/bank_transfer (dòng lịch sử, kể cả còn isActive) không bao giờ khả dụng cho đơn mới', async () => {
+      const f = buildFixture();
+      f.state.methods.set('vnpay', { code: 'vnpay', name: 'VNPay', description: null, kind: 'gateway', isActive: true, sortOrder: 3 });
+      f.state.methods.set('bank_transfer', { code: 'bank_transfer', name: 'CK', description: null, kind: 'bank_transfer', isActive: true, sortOrder: 4 });
+      expect((await f.service.listMethods(true)).map((m) => m.code)).toEqual(['cod', 'payos']);
+      expect(await f.service.isMethodActive('vnpay')).toBe(false);
+      expect(await f.service.isMethodActive('bank_transfer')).toBe(false);
+      expect(await f.service.isMethodActive('cod')).toBe(true);
+      expect(Object.values(METHOD)).toEqual(['cod', 'payos']);
+      const err = await thrown(f.initiateInTx(initiateInput({ methodCode: 'vnpay' })));
+      expect(err).toMatchObject({ errorCode: PAYMENT_ERR.METHOD_INACTIVE });
+    });
+
+    it('hoàn payment lịch sử qua cổng cũ (refund method gateway, payment vnpay): không gọi cổng, cần providerRef để ghi sổ tay', async () => {
+      const f = buildFixture();
+      const payment = f.seedPayment({ methodCode: 'vnpay', status: PAY_STATUS.PAID, paidAt: new Date(), version: 1 });
+      const refund = f.seedRefund(payment, { method: 'gateway' });
+      const err = await thrown(f.service.processRefund(actor, refund.id, {}));
+      expect(err).toMatchObject({ errorCode: 'PAYMENT_REFUND_MANUAL_REQUIRED' });
+      expect(f.payout).not.toHaveBeenCalled();
+      const res = await f.service.processRefund(actor, refund.id, { providerRef: 'HT-LEGACY-1' });
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'HT-LEGACY-1' });
+      expect(f.payout).not.toHaveBeenCalled();
     });
 
     it('tắt trong DB ⇒ không khả dụng dù đã cấu hình khoá', async () => {
@@ -729,9 +751,9 @@ describe('PaymentService — PayOS', () => {
       });
     });
 
-    it('orderCode trùng giao dịch thuộc phương thức KHÁC (vnpay) ⇒ coi như lạ, không đụng tới payment đó', async () => {
+    it('orderCode trùng giao dịch thuộc phương thức KHÁC (cod) ⇒ coi như lạ, không đụng tới payment đó', async () => {
       const f = buildFixture();
-      const vn = f.seedPayos({ methodCode: METHOD.VNPAY }, 1790000000999999);
+      const vn = f.seedPayos({ methodCode: METHOD.COD }, 1790000000999999);
       const r = await f.service.handlePayos(signed(webhookData({}, 1790000000999999)));
       expect(r.body.message).toBe('Ignored: unknown order');
       expect(f.payment(vn.id)).toMatchObject({ status: PAY_STATUS.PENDING, version: 0 });
@@ -844,7 +866,7 @@ describe('PaymentService — PayOS', () => {
       const cases: Array<[string, number | undefined, string]> = [
         ['thiếu 1 đồng', 349_999, '349999'],
         ['dư 1 đồng', 350_001, '350001'],
-        ['nhân nhầm 100 như VNPay', 35_000_000, '35000000'],
+        ['nhân nhầm 100', 35_000_000, '35000000'],
         ['số tiền 0', 0, '0'],
         ['không có trường amount', undefined, '0'],
       ];
@@ -1162,7 +1184,7 @@ describe('PaymentService — PayOS', () => {
       const r = await f.initiateInTx(initiateInput());
 
       const expiresAt = new Date(NOW + THIRTY_MIN);
-      expect(r).toEqual({ paymentId: expect.any(String) as string, status: 'unpaid', paymentIntent: null, paymentUrl: LINK_URL, qrCode: QR, expiresAt });
+      expect(r).toEqual({ paymentId: expect.any(String) as string, status: 'unpaid', paymentUrl: LINK_URL, qrCode: QR, expiresAt });
 
       const p = f.payment(r.paymentId);
       expect(p).toMatchObject({ orderId: 'order-1', orderCode: ORDER_CODE, userId: USER, methodCode: METHOD.PAYOS, status: PAY_STATUS.PENDING, expiresAt, transferContent: null, createdBy: USER });
@@ -1313,9 +1335,9 @@ describe('PaymentService — PayOS', () => {
       expect(f.createLink).not.toHaveBeenCalled();
     });
 
-    it('đơn thanh toán bằng phương thức khác (vnpay) ⇒ NOT_FOUND ở nhánh PayOS', async () => {
+    it('đơn thanh toán bằng phương thức khác (cod) ⇒ NOT_FOUND ở nhánh PayOS', async () => {
       const f = buildFixture();
-      f.seedPayment({ methodCode: METHOD.VNPAY });
+      f.seedPayment({ methodCode: METHOD.COD });
       const err = await thrown(f.service.retryPayos(actor_of(USER), ORDER_CODE));
       expect(err).toMatchObject({ errorCode: PAYMENT_ERR.NOT_FOUND });
     });
@@ -1526,56 +1548,11 @@ describe('PaymentService — PayOS', () => {
     });
   });
 
-  // ------------------------------------------------------------------ retry VNPay (cùng cổng canRetryPayment)
-
-  describe('retryVnpay — chặn đơn không còn thanh toán được', () => {
-    function vnpaySetup(o: Partial<PaymentRow> = {}) {
-      const f = buildFixture();
-      f.vnpay.isConfigured = true;
-      f.vnpay.buildPayUrl.mockReturnValue('https://sandbox.vnpayment.test/pay?x=1');
-      const last = f.seedPayment({ methodCode: METHOD.VNPAY, ...o });
-      return { f, last };
-    }
-
-    it('canRetryPayment=false ⇒ INVALID_STATE, không tạo payment/URL mới, payment cũ giữ nguyên', async () => {
-      const { f, last } = vnpaySetup();
-      f.orders.canRetryPayment.mockResolvedValue(false);
-
-      const err = await thrown(f.service.retryVnpay(actor_of(USER), ORDER_CODE));
-
-      expect(err).toBeInstanceOf(BusinessException);
-      expect(err).toMatchObject({ errorCode: PAYMENT_ERR.INVALID_STATE });
-      expect(f.orders.canRetryPayment).toHaveBeenCalledWith(ORDER_CODE);
-      expect(f.vnpay.buildPayUrl).not.toHaveBeenCalled();
-      expect(f.state.payments.size).toBe(1);
-      expect(f.payment(last.id)).toMatchObject({ status: PAY_STATUS.PENDING, version: 0 });
-    });
-
-    it('canRetryPayment=true ⇒ huỷ payment cũ đang pending, tạo payment + URL mới', async () => {
-      const { f, last } = vnpaySetup();
-
-      const r = await f.service.retryVnpay(actor_of(USER), ORDER_CODE);
-
-      expect(r).toEqual({ paymentUrl: 'https://sandbox.vnpayment.test/pay?x=1' });
-      expect(f.orders.canRetryPayment).toHaveBeenCalledTimes(1);
-      expect(f.payment(last.id).status).toBe(PAY_STATUS.CANCELLED);
-      expect(f.state.payments.size).toBe(2);
-    });
-
-    it('đã paid ⇒ ALREADY_PAID, không hỏi order', async () => {
-      const { f } = vnpaySetup({ status: PAY_STATUS.PAID, paidAt: new Date() });
-      expect(await thrown(f.service.retryVnpay(actor_of(USER), ORDER_CODE))).toMatchObject({ errorCode: PAYMENT_ERR.ALREADY_PAID });
-      expect(f.orders.canRetryPayment).not.toHaveBeenCalled();
-    });
-  });
-
-  // ------------------------------------------------------------------ extras (mở lại link)
-
   describe('extrasForOrder — PayOS', () => {
     it('đơn pending chưa hết hạn ⇒ trả lại checkoutUrl đã lưu để khách mở lại link', async () => {
       const f = buildFixture();
       f.seedPayos();
-      expect(await f.service.extrasForOrder(ORDER_CODE)).toEqual({ paymentIntent: null, paymentUrl: LINK_URL, transactionCode: null, cardBrand: null, cardLast4: null });
+      expect(await f.service.extrasForOrder(ORDER_CODE)).toEqual({ paymentUrl: LINK_URL, transactionCode: null, cardBrand: null, cardLast4: null });
     });
 
     it('lấy link của lần tạo GẦN NHẤT khi payment có nhiều create_url', async () => {
@@ -1626,7 +1603,7 @@ describe('PaymentService — PayOS', () => {
 
     it('đơn không có payment ⇒ toàn null', async () => {
       const f = buildFixture();
-      expect(await f.service.extrasForOrder('FT0000000000')).toEqual({ paymentIntent: null, paymentUrl: null, transactionCode: null, cardBrand: null, cardLast4: null });
+      expect(await f.service.extrasForOrder('FT0000000000')).toEqual({ paymentUrl: null, transactionCode: null, cardBrand: null, cardLast4: null });
     });
   });
 
@@ -1657,8 +1634,8 @@ describe('PaymentService — PayOS', () => {
 
     it.each([
       [METHOD.COD, 'manual_transfer'],
-      [METHOD.BANK_TRANSFER, 'manual_transfer'],
-      [METHOD.VNPAY, 'gateway'],
+      ['bank_transfer', 'manual_transfer'], // dữ liệu lịch sử
+      ['vnpay', 'manual_transfer'], // dữ liệu lịch sử: không còn cổng ⇒ hoàn tay
       [METHOD.PAYOS, 'gateway'],
     ])('payment %s ⇒ refund method %s', async (methodCode, method) => {
       const f = buildFixture();
@@ -1872,66 +1849,6 @@ describe('PaymentService — PayOS', () => {
       await f.service.handlePayos(signed(webhookData({ amount: 1000 })));
       expect(f.payment(second.id).status).toBe(PAY_STATUS.PENDING);
       expect(f.state.refunds.size).toBe(0);
-    });
-
-    describe('VNPay (cùng cơ chế)', () => {
-      const vnpayQuery = (o: Record<string, string> = {}): Record<string, string> => ({
-        vnp_TxnRef: `${ORDER_CODE}-2`,
-        vnp_Amount: String(AMOUNT * 100),
-        vnp_ResponseCode: '00',
-        vnp_TransactionStatus: '00',
-        vnp_TransactionNo: 'VN123',
-        vnp_BankCode: 'NCB',
-        vnp_CardType: 'ATM',
-        ...o,
-      });
-
-      it('khoản VNPay đầu tiên (không trùng) ⇒ paid + onPaid + outbox như cũ', async () => {
-        const f = buildFixture();
-        f.vnpay.verify.mockReturnValue(true);
-        const p = f.seedPayment({ methodCode: METHOD.VNPAY });
-
-        const r = await f.service.handleVnpay(vnpayQuery(), 'ipn');
-
-        expect(r).toMatchObject({ rspCode: '00', message: 'Confirm Success' });
-        expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID, transactionCode: 'VN123', bankCode: 'NCB' });
-        expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
-        expect(f.state.outbox.filter((e) => e.eventType === PAYMENT_EVENT.PAID)).toHaveLength(1);
-        expect(f.state.refunds.size).toBe(0);
-      });
-
-      it.each([PAY_STATUS.PAID, PAY_STATUS.PARTIALLY_REFUNDED, PAY_STATUS.REFUNDED])('đơn đã có khoản khác %s ⇒ ghi nhận paid RỒI tạo yêu cầu hoàn; KHÔNG onPaid, KHÔNG outbox PAID', async (otherStatus) => {
-        const f = buildFixture();
-        f.vnpay.verify.mockReturnValue(true);
-        const other = f.seedPayos({ status: otherStatus, paidAt: new Date('2026-10-03T09:00:00.000Z'), version: 1 }, OLD_CODE);
-        const vn = f.seedPayment({ methodCode: METHOD.VNPAY });
-
-        const r = await f.service.handleVnpay(vnpayQuery(), 'return');
-
-        expect(r).toMatchObject({ rspCode: '00', message: 'Confirm Success', result: { success: true } });
-        expect(f.payment(vn.id)).toMatchObject({ status: PAY_STATUS.PAID, transactionCode: 'VN123' });
-        expect(f.state.refunds.size).toBe(1);
-        const [refund] = [...f.state.refunds.values()];
-        expect(refund).toMatchObject({ paymentId: vn.id, orderCode: ORDER_CODE, shopId: null, status: REFUND_STATUS.REQUESTED, method: 'gateway' });
-        expect(refund.amount.toString()).toBe('350000');
-        expect(refund.reason).toContain('Thanh toán trùng');
-        expect(f.orders.onPaid).not.toHaveBeenCalled();
-        expect(f.state.outbox.filter((e) => e.eventType === PAYMENT_EVENT.PAID)).toHaveLength(0);
-        expect(f.payment(other.id)).toMatchObject({ status: otherStatus, version: 1 });
-      });
-
-      it('IPN lặp (return + IPN cùng đến) ⇒ không tạo thêm yêu cầu hoàn', async () => {
-        const f = buildFixture();
-        f.vnpay.verify.mockReturnValue(true);
-        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date() }, OLD_CODE);
-        f.seedPayment({ methodCode: METHOD.VNPAY });
-
-        await f.service.handleVnpay(vnpayQuery(), 'ipn');
-        await f.service.handleVnpay(vnpayQuery(), 'return');
-
-        expect(f.state.refunds.size).toBe(1);
-        expect(f.orders.onPaid).not.toHaveBeenCalled();
-      });
     });
   });
 
@@ -2495,18 +2412,6 @@ describe('PaymentService — PayOS', () => {
       expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
     });
 
-    it('VNPay: khoản trùng cũng được đánh dấu duplicate_payment', async () => {
-      const f = buildFixture();
-      f.vnpay.verify.mockReturnValue(true);
-      f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date('2026-10-03T09:00:00.000Z'), version: 1 }, OLD_CODE);
-      f.seedPayment({ methodCode: METHOD.VNPAY });
-
-      await f.service.handleVnpay({ vnp_TxnRef: `${ORDER_CODE}-2`, vnp_Amount: String(AMOUNT * 100), vnp_ResponseCode: '00', vnp_TransactionStatus: '00', vnp_TransactionNo: 'VN123', vnp_BankCode: 'NCB' }, 'ipn');
-
-      expect([...f.state.refunds.values()].map((r) => r.kind)).toEqual([REFUND_KIND.DUPLICATE_PAYMENT]);
-      expect(f.orders.onPaid).not.toHaveBeenCalled();
-    });
-
     it('khoản trùng: cổng OK + ghi sổ lỗi ⇒ giữ providerRef, retry ghi sổ KHÔNG gọi cổng lần hai và KHÔNG báo order (đơn vẫn paid)', async () => {
       const { f, order, second, refund } = await payTwice();
       f.failNth('payment.update', 1, new Error('db chết'));
@@ -2754,186 +2659,6 @@ describe('PaymentService — PayOS', () => {
       });
     });
 
-    /* ----------------------------------------------------------------------------------------------- VNPay */
-    describe('VNPay (không có idempotency-key): dấu gọi cổng + đối chiếu trước khi gọi lại', () => {
-      const VN_OK = { ok: true, code: '00', message: 'Confirm Success', raw: { vnp_ResponseCode: '00', vnp_TransactionNo: 'RF999' } };
-      const VN_LOST = { ok: false, code: '99', message: 'Không gọi được cổng VNPay', raw: null };
-
-      function setupVnpay(o: { payment?: Partial<PaymentRow>; refund?: Partial<RefundRow> } = {}) {
-        const f = buildFixture();
-        f.vnpay.isConfigured = true;
-        f.vnpay.refund.mockResolvedValue(VN_OK);
-        const payment = f.seedPayment({ methodCode: METHOD.VNPAY, status: PAY_STATUS.PAID, paidAt: new Date('2026-10-03T09:30:00.000Z'), transactionCode: 'VN123', version: 1, ...o.payment });
-        const refund = f.seedRefund(payment, o.refund);
-        return { f, payment, refund };
-      }
-      /* Lần đầu: VNPay không phản hồi ⇒ refund `failed` chưa rõ kết quả. */
-      async function afterLostResponse() {
-        const s = setupVnpay();
-        s.f.vnpay.refund.mockResolvedValueOnce(VN_LOST);
-        const err = await thrown(s.f.service.processRefund(actor, s.refund.id, {}));
-        return { ...s, err };
-      }
-
-      it('ghi DẤU gọi cổng TRƯỚC khi gọi (lúc VNPay chạy: processing + gatewayAttemptedAt, chưa providerRef); thành công ⇒ providerRef "vnpay-refund:<TransactionNo>" → done', async () => {
-        const { f, payment, refund } = setupVnpay();
-        const seen: Array<{ status: string; marker: boolean; providerRef: string | null }> = [];
-        f.vnpay.refund.mockImplementationOnce(() => {
-          const r = f.refund(refund.id);
-          seen.push({ status: r.status, marker: r.gatewayAttemptedAt instanceof Date, providerRef: r.providerRef });
-          return Promise.resolve(VN_OK);
-        });
-
-        const res = await f.service.processRefund(actor, refund.id, {});
-
-        expect(seen).toEqual([{ status: REFUND_STATUS.PROCESSING, marker: true, providerRef: null }]);
-        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'vnpay-refund:RF999', needsReconcile: false });
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-        expect(f.vnpay.refund).toHaveBeenCalledWith(expect.objectContaining({ amount: 100_000n, transactionNo: 'VN123', fullRefund: false, createBy: actor.email }));
-        expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PARTIALLY_REFUNDED });
-        expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
-      });
-
-      it('cổng chi + ghi sổ lỗi ⇒ giữ processing + providerRef; retry-finalize ghi sổ, VNPay chỉ bị gọi MỘT lần', async () => {
-        const { f, payment, refund } = setupVnpay();
-        f.failNth('payment.update', 1, new Error('db chết'));
-
-        await thrown(f.service.processRefund(actor, refund.id, {}));
-        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: 'vnpay-refund:RF999' });
-        const res = await f.service.retryFinalizeRefund(actor, refund.id);
-
-        expect(res.status).toBe(REFUND_STATUS.DONE);
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-        expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
-        expect(refundTxns(f, payment.id)).toHaveLength(1);
-      });
-
-      it('VNPay KHÔNG phản hồi (mất kết nối/timeout) ⇒ failed + GIỮ dấu + giao dịch `unknown` + audit; 502; payment/đơn không đổi; needsReconcile = true', async () => {
-        const { f, payment, refund, err } = await afterLostResponse();
-
-        expect(err).toBeInstanceOf(BusinessException);
-        expect(err).toMatchObject({ errorCode: 'PAYMENT_REFUND_FAILED', httpStatus: HttpStatus.BAD_GATEWAY });
-        expect((err as BusinessException).message).toContain('chưa rõ');
-        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, providerRef: null });
-        expect(f.refund(refund.id).gatewayAttemptedAt).toBeInstanceOf(Date);
-        expect(f.refund(refund.id).note).toContain('chưa rõ cổng đã hoàn');
-        expect(refundTxns(f, payment.id)).toEqual([expect.objectContaining({ status: 'unknown' })]);
-        expect(auditsOf(f, PAYMENT_AUDIT.REFUND_UNCERTAIN)).toHaveLength(1);
-        expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
-        expect(f.orders.onRefunded).not.toHaveBeenCalled();
-        expect((await f.service.getRefund(refund.id)).needsReconcile).toBe(true);
-      });
-
-      it('VNPay ném lỗi (không phải trả về) cũng coi là KHÔNG rõ kết quả — không nhả về requested', async () => {
-        const { f, refund } = setupVnpay();
-        f.vnpay.refund.mockRejectedValueOnce(new Error('socket hang up'));
-
-        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
-
-        expect(err).toMatchObject({ errorCode: 'PAYMENT_REFUND_FAILED' });
-        expect(f.refund(refund.id).status).toBe(REFUND_STATUS.FAILED);
-        expect(f.refund(refund.id).gatewayAttemptedAt).toBeInstanceOf(Date);
-      });
-
-      it('sau đó process KHÔNG kèm đối chiếu ⇒ 409 RECONCILE_REQUIRED, VNPay KHÔNG bị gọi lần hai, refund về failed (giữ dấu)', async () => {
-        const { f, refund } = await afterLostResponse();
-
-        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
-
-        expect(err).toBeInstanceOf(BusinessException);
-        expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_RECONCILE_REQUIRED, httpStatus: HttpStatus.CONFLICT });
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-        expect(f.refund(refund.id).status).toBe(REFUND_STATUS.FAILED);
-        expect(f.refund(refund.id).gatewayAttemptedAt).toBeInstanceOf(Date);
-        // bấm lại nhiều lần vẫn không gọi cổng
-        await thrown(f.service.processRefund(actor, refund.id, {}));
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-      });
-
-      it('đối chiếu: cổng ĐÃ hoàn ⇒ nhập providerRef ⇒ chỉ ghi sổ (KHÔNG gọi cổng), audit ghi "reconciled"', async () => {
-        const { f, payment, refund } = await afterLostResponse();
-
-        const res = await f.service.processRefund(actor, refund.id, { providerRef: 'VNP-RF-777', note: 'Đã đối chiếu portal VNPay' });
-
-        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'VNP-RF-777', note: 'Đã đối chiếu portal VNPay', needsReconcile: false });
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-        expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PARTIALLY_REFUNDED });
-        expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
-        expect(refundTxns(f, payment.id).map((t) => t.status)).toEqual(['unknown', 'ok']);
-        expect(auditsOf(f, PAYMENT_AUDIT.REFUND_PROCESSED)[0]).toMatchObject({ afterSummary: { providerRef: 'VNP-RF-777', reconciled: true } });
-        expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
-      });
-
-      it('đối chiếu: cổng CHƯA hoàn ⇒ confirmGatewayNotRefunded ⇒ gọi lại cổng đúng 1 lần ⇒ done', async () => {
-        const { f, refund } = await afterLostResponse();
-
-        const res = await f.service.processRefund(actor, refund.id, { confirmGatewayNotRefunded: true });
-
-        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'vnpay-refund:RF999' });
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(2);
-        expect(auditsOf(f, PAYMENT_AUDIT.REFUND_PROCESSED)[0]).toMatchObject({ afterSummary: { confirmedNotRefunded: true } });
-      });
-
-      it('đối chiếu xong nhưng ghi sổ lỗi ⇒ nhả về requested (chưa providerRef trong hệ thống); làm lại với providerRef vẫn không gọi cổng', async () => {
-        const { f, refund } = await afterLostResponse();
-        f.failNth('payment.update', 1, new Error('db chết'));
-
-        await thrown(f.service.processRefund(actor, refund.id, { providerRef: 'VNP-RF-777' }));
-        expect(f.refund(refund.id).status).toBe(REFUND_STATUS.REQUESTED);
-        const res = await f.service.processRefund(actor, refund.id, { providerRef: 'VNP-RF-777' });
-
-        expect(res.status).toBe(REFUND_STATUS.DONE);
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-      });
-
-      it('VNPay TỪ CHỐI rõ ràng (có phản hồi, mã 94) ⇒ failed + XOÁ dấu (tiền chưa đi) ⇒ xử lý lại được ngay, không cần đối chiếu', async () => {
-        const { f, refund } = setupVnpay();
-        f.vnpay.refund.mockResolvedValueOnce({ ok: false, code: '94', message: 'Yêu cầu trùng lặp', raw: { vnp_ResponseCode: '94' } });
-
-        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
-
-        expect(err).toMatchObject({ errorCode: 'PAYMENT_REFUND_FAILED' });
-        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayAttemptedAt: null });
-        expect((await f.service.getRefund(refund.id)).needsReconcile).toBe(false);
-        expect(refundTxns(f, refund.paymentId).map((t) => t.status)).toEqual(['failed']);
-
-        const res = await f.service.processRefund(actor, refund.id, {});
-        expect(res.status).toBe(REFUND_STATUS.DONE);
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(2);
-      });
-
-      it('chưa cấu hình VNPay ⇒ ServiceUnavailable, nhả về requested, KHÔNG ghi dấu', async () => {
-        const { f, refund } = setupVnpay();
-        f.vnpay.isConfigured = false;
-
-        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
-
-        expect(err).toBeInstanceOf(ServiceUnavailableException);
-        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.REQUESTED, gatewayAttemptedAt: null });
-        expect(f.vnpay.refund).not.toHaveBeenCalled();
-      });
-
-      it('refund MỚI (chưa từng gọi cổng) ⇒ providerRef / confirmGatewayNotRefunded trong request bị bỏ qua: vẫn gọi VNPay như cũ', async () => {
-        const { f, refund } = setupVnpay();
-        const res = await f.service.processRefund(actor, refund.id, { providerRef: 'IGNORED', confirmGatewayNotRefunded: true });
-        expect(res.providerRef).toBe('vnpay-refund:RF999');
-        expect(f.vnpay.refund).toHaveBeenCalledTimes(1);
-      });
-
-      it('processing treo CÓ dấu (đang gọi cổng thì tiến trình chết): process không kèm đối chiếu ⇒ 409 + failed, KHÔNG gọi cổng; CHƯA có dấu ⇒ chiếm lại và gọi bình thường', async () => {
-        const marked = setupVnpay({ refund: { status: REFUND_STATUS.PROCESSING, gatewayAttemptedAt: minutesAgo(12), updatedAt: minutesAgo(11) } });
-        const err = await thrown(marked.f.service.processRefund(actor, marked.refund.id, {}));
-        expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_RECONCILE_REQUIRED });
-        expect(marked.f.vnpay.refund).not.toHaveBeenCalled();
-        expect(marked.f.refund(marked.refund.id).status).toBe(REFUND_STATUS.FAILED);
-
-        const unmarked = setupVnpay({ refund: { status: REFUND_STATUS.PROCESSING, updatedAt: minutesAgo(11) } });
-        const res = await unmarked.f.service.processRefund(actor, unmarked.refund.id, {});
-        expect(res.status).toBe(REFUND_STATUS.DONE);
-        expect(unmarked.f.vnpay.refund).toHaveBeenCalledTimes(1);
-      });
-    });
-
     /* ----------------------------------------------------------------------------------------------- job phục hồi */
     describe('recoverStuckRefunds (job worker)', () => {
       it('processing quá hạn ĐÃ có providerRef ⇒ ghi sổ nốt (hệ thống, không gọi cổng): processedBy giữ nguyên, audit không actor + via job', async () => {
@@ -2960,9 +2685,9 @@ describe('PaymentService — PayOS', () => {
         expect(auditsOf(f, PAYMENT_AUDIT.REFUND_RECOVERED)).toEqual([expect.objectContaining({ actorUserId: null, entityId: refund.id, beforeSummary: { status: 'processing' }, afterSummary: { status: 'requested', gatewayAttempted: false } })]);
       });
 
-      it('processing quá hạn, CHƯA providerRef nhưng ĐÃ có dấu gọi cổng (VNPay) ⇒ failed kèm lý do, GIỮ dấu ⇒ needsReconcile (không tự gọi lại, không tự chi)', async () => {
+      it('processing quá hạn, CHƯA providerRef nhưng ĐÃ có dấu gọi cổng (dữ liệu VNPay cũ) ⇒ failed kèm lý do, GIỮ dấu ⇒ needsReconcile (không tự gọi lại, không tự chi)', async () => {
         const f = buildFixture();
-        const payment = f.seedPayment({ methodCode: METHOD.VNPAY, status: PAY_STATUS.PAID, paidAt: new Date(), version: 1 });
+        const payment = f.seedPayment({ methodCode: 'vnpay', status: PAY_STATUS.PAID, paidAt: new Date(), version: 1 });
         const refund = f.seedRefund(payment, { status: REFUND_STATUS.PROCESSING, gatewayAttemptedAt: minutesAgo(12), version: 1, updatedAt: minutesAgo(11) });
 
         const out = await f.service.recoverStuckRefunds();
@@ -2972,7 +2697,6 @@ describe('PaymentService — PayOS', () => {
         expect(f.refund(refund.id).gatewayAttemptedAt).toBeInstanceOf(Date);
         expect(f.refund(refund.id).note).toContain('chưa rõ cổng đã hoàn');
         expect((await f.service.getRefund(refund.id)).needsReconcile).toBe(true);
-        expect(f.vnpay.refund).not.toHaveBeenCalled();
         expect(auditsOf(f, PAYMENT_AUDIT.REFUND_RECOVERED)[0]).toMatchObject({ afterSummary: { status: 'failed', gatewayAttempted: true } });
       });
 
@@ -3165,8 +2889,8 @@ describe('AdminPaymentController — hoàn tiền: process + retry-finalize', ()
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler) as unknown).toBeUndefined();
   });
 
-  it('POST admin/refunds/:id/process: body (providerRef, note, confirmGatewayNotRefunded) chuyển NGUYÊN xuống service', async () => {
-    const body = { providerRef: 'VNP-RF-777', note: 'đối chiếu', confirmGatewayNotRefunded: true };
+  it('POST admin/refunds/:id/process: body (providerRef, note) chuyển NGUYÊN xuống service', async () => {
+    const body = { providerRef: 'VNP-RF-777', note: 'đối chiếu' };
     await controller.process(actor, REFUND_ID, body);
     expect(stub.processRefund).toHaveBeenCalledWith(actor, REFUND_ID, body);
   });
@@ -3175,12 +2899,8 @@ describe('AdminPaymentController — hoàn tiền: process + retry-finalize', ()
     const [, , ProcessBody] = Reflect.getMetadata('design:paramtypes', AdminPaymentController.prototype, 'process') as Array<new () => object>;
     const errorsFor = (body: Record<string, unknown>) => validate(plainToInstance(ProcessBody, body));
 
-    it('confirmGatewayNotRefunded: boolean hợp lệ (true/false/bỏ trống); chuỗi/số bị từ chối', async () => {
+    it('body rỗng hợp lệ (PLAN-0018: đã bỏ cờ confirmGatewayNotRefunded của VNPay)', async () => {
       expect(await errorsFor({})).toHaveLength(0);
-      expect(await errorsFor({ confirmGatewayNotRefunded: true })).toHaveLength(0);
-      expect(await errorsFor({ confirmGatewayNotRefunded: false })).toHaveLength(0);
-      expect(await errorsFor({ confirmGatewayNotRefunded: 'true' })).not.toHaveLength(0);
-      expect(await errorsFor({ confirmGatewayNotRefunded: 1 })).not.toHaveLength(0);
     });
 
     it('providerRef ≤ 120 ký tự (vừa cột VarChar(120)), note ≤ 500', async () => {

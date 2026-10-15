@@ -3,33 +3,20 @@ import type { Tx } from '../prisma/types';
 export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');
 export const ORDER_PAYMENT_GATEWAY = Symbol('ORDER_PAYMENT_GATEWAY');
 
-export interface BankTransferIntent {
-  bankCode: string;
-  accountNumber: string;
-  accountName: string;
-  transferContent: string;
-  qrUrl: string | null;
-  amount: string;
-  expiresAt: string | null;
-}
-
 export interface PaymentInitiateInput {
   orderId: string;
   orderCode: string;
   userId: string;
   amount: bigint;
-  /* cod | bank_transfer | vnpay */
+  /* cod | payos (PLAN-0018: chỉ còn hai phương thức) */
   methodCode: string;
   clientIp: string;
-  /* VNPay: mã ngân hàng/loại thẻ FE chọn (VNBANK · INTCARD · VNPAYQR), rỗng = để khách chọn trên cổng */
-  bankCode?: string | null;
 }
 
 export interface PaymentInitiateResult {
   paymentId: string;
-  /* unpaid: chờ khách trả (COD/bank/vnpay) — order giữ hàng; paid chỉ khi cổng trả về ngay (không có) */
+  /* unpaid: chờ khách trả (COD/PayOS) — order giữ hàng; paid chỉ khi cổng trả về ngay (không có) */
   status: 'unpaid';
-  paymentIntent: BankTransferIntent | null;
   paymentUrl: string | null;
   qrCode?: string | null;
   expiresAt: Date | null;

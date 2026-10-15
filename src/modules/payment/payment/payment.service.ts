@@ -6,16 +6,14 @@ import { ORDER_PAYMENT_GATEWAY, OrderPaymentGateway, PaymentGateway, PaymentInit
 import { OutboxEventInput, writeOutboxEvent } from '@common/outbox/outbox';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma, Tx } from '@common/prisma/types';
-import { RequestTraceContext } from '@common/request/request-trace.context';
 import { PageResponse } from '@common/response/api-response';
 import { money, MoneyResponse } from '@common/response/money-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { vnd } from '@common/utils/money';
 import { ENV } from '@config/config.module';
 import type { Env } from '@config/env';
-import { METHOD, PAY_STATUS, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, PAYMENT_MODULE, REFUND_KIND, REFUND_STATUS, REFUND_STUCK_MS, TX_TYPE, VNPAY_RESPONSE } from '../foundation/payment.constants';
+import { METHOD, PAY_STATUS, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, PAYMENT_MODULE, REFUND_KIND, REFUND_STATUS, REFUND_STUCK_MS, TX_TYPE } from '../foundation/payment.constants';
 import { PayosService } from '../payos/payos.service';
-import { VnpayService } from '../vnpay/vnpay.service';
 
 export interface PaymentMethodResponse {
   code: string;
@@ -56,17 +54,8 @@ export interface RefundResponse {
   createdAt: string;
   /* order = hoàn theo đơn · duplicate_payment = hoàn khoản khách trả trùng (không đổi trạng thái thanh toán của đơn). */
   kind: string;
-  /* failed mà cổng (VNPay) từng được gọi không rõ kết quả — phải đối chiếu trên cổng: đã hoàn ⇒ nhập providerRef, chưa hoàn ⇒ confirmGatewayNotRefunded. */
+  /* Dữ liệu LỊCH SỬ: failed mà cổng (VNPay cũ) từng được gọi không rõ kết quả — đối chiếu trên cổng rồi nhập providerRef để ghi sổ (không còn gọi lại cổng). */
   needsReconcile: boolean;
-}
-
-export interface VnpayResult {
-  orderCode: string;
-  success: boolean;
-  message: string;
-  responseCode: string;
-  amount: MoneyResponse;
-  transactionCode: string | null;
 }
 
 type RefundKind = (typeof REFUND_KIND)[keyof typeof REFUND_KIND];
@@ -81,11 +70,12 @@ interface RefundDisbursement {
 }
 
 /*
- * Thanh toán (PLAN-0007). Cài PaymentGateway cho order:
- *  - cod: giao dịch pending, đến khi giao thành công (markCodCollected) → paid.
- *  - bank_transfer: intent VietQR (ảnh QR img.vietqr.io, nội dung = mã đơn); kế toán đối soát (confirmTransfer) → paid.
- *  - vnpay: URL redirect (HMAC); IPN/return xác minh chữ ký + số tiền, IDEMPOTENT theo (type, provider_ref) unique → paid.
- * Mọi chuyển paid/refunded gọi OrderPaymentGateway TRONG CÙNG tx. Hoàn tiền: yêu cầu → kế toán xử lý (VNPay API hoặc chuyển tay).
+ * Thanh toán (PLAN-0007/0018). Cài PaymentGateway cho order. CHỈ CÒN HAI phương thức, mọi khoản tiền đều về SÀN:
+ *  - cod: giao dịch pending, đến khi giao thành công sàn xác nhận đã thu hộ (markCodCollected) → paid; sau đó đối soát/chi trả shop như đơn PayOS.
+ *  - payos: link thanh toán PayOS; webhook/return xác minh chữ ký + số tiền, IDEMPOTENT theo (type, provider_ref) → paid.
+ * Mọi chuyển paid/refunded gọi OrderPaymentGateway TRONG CÙNG tx. Hoàn tiền: yêu cầu → kế toán xử lý (PayOS payout khi đủ số TK, hoặc chuyển tay).
+ * Payment lịch sử có methodCode vnpay/bank_transfer vẫn đọc/hoàn tay được (mapper không phụ thuộc phương thức), nhưng không tạo mới.
+ * Webhook/return luôn qua settlePayos (khoá dòng payment, idempotent).
  */
 @Injectable()
 export class PaymentService implements PaymentGateway {
@@ -93,7 +83,6 @@ export class PaymentService implements PaymentGateway {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly vnpay: VnpayService,
     private readonly payos: PayosService,
     @Inject(ENV) private readonly env: Env,
     private readonly moduleRef: ModuleRef,
@@ -117,10 +106,8 @@ export class PaymentService implements PaymentGateway {
   }
 
   private methodUsable(code: string): boolean {
-    if (code === METHOD.VNPAY) return this.vnpay.isConfigured;
-    if (code === METHOD.PAYOS) return this.payos.isConfigured;
-    if (code === METHOD.BANK_TRANSFER) return Boolean(this.env.EF_BANK_TRANSFER_ACCOUNT_NO);
-    return true;
+    if (code === METHOD.PAYOS) return this.payos.isConfigured; // khoá PayOS trống ⇒ method payos tự ẩn
+    return code === METHOD.COD; // vnpay/bank_transfer (lịch sử) không còn dùng được cho đơn mới
   }
 
   async isMethodActive(methodCode: string): Promise<boolean> {
@@ -152,24 +139,19 @@ export class PaymentService implements PaymentGateway {
         methodCode: input.methodCode,
         amount: input.amount.toString(),
         status: PAY_STATUS.PENDING,
-        bankCode: input.bankCode ?? null,
-        transferContent: input.methodCode === METHOD.BANK_TRANSFER ? input.orderCode : null,
         expiresAt,
         createdBy: input.userId,
       },
     });
     let paymentUrl: string | null = null;
     let qrCode: string | null = null;
-    if (input.methodCode === METHOD.VNPAY) {
-      paymentUrl = this.vnpay.buildPayUrl({ txnRef: PaymentService.txnRef(input.orderCode, 1), amount: input.amount, orderInfo: `Thanh toan don ${input.orderCode}`, ipAddr: input.clientIp, bankCode: input.bankCode, expiresAt: expiresAt! });
-      await tx.paymentTransaction.create({ data: { paymentId: p.id, type: TX_TYPE.CREATE_URL, status: 'ok', amount: input.amount.toString(), providerRef: null, rawRequest: { txnRef: PaymentService.txnRef(input.orderCode, 1), bankCode: input.bankCode ?? null } } });
-    } else if (input.methodCode === METHOD.PAYOS) {
+    if (input.methodCode === METHOD.PAYOS) {
       const link = await this.createPayosLink(tx, p.id, input.orderCode, input.amount, expiresAt!);
       paymentUrl = link.checkoutUrl;
       qrCode = link.qrCode;
     }
     await this.audit(tx, { userId: input.userId, email: '' }, { action: PAYMENT_AUDIT.INITIATED, entityType: 'payment', entityId: p.id, entityCode: input.orderCode, after: { method: input.methodCode, amount: input.amount.toString() } });
-    return { paymentId: p.id, status: 'unpaid', paymentIntent: input.methodCode === METHOD.BANK_TRANSFER ? this.bankIntent(input.orderCode, input.amount, expiresAt) : null, paymentUrl, qrCode, expiresAt };
+    return { paymentId: p.id, status: 'unpaid', paymentUrl, qrCode, expiresAt };
   }
 
   /*
@@ -188,23 +170,10 @@ export class PaymentService implements PaymentGateway {
     return { checkoutUrl: link.checkoutUrl, qrCode: link.qrCode };
   }
 
-  /* txnRef VNPay: mã đơn + '-' + lần thử (khách thử lại sau khi huỷ trên cổng → ref mới). */
-  static txnRef(orderCode: string, attempt: number): string {
-    return `${orderCode}-${attempt}`;
-  }
-
   private expiryFor(methodCode: string): Promise<Date> {
-    // Thời hạn lấy theo setting của order (đơn tự huỷ) — payment giữ cùng mốc để URL VNPay có ExpireDate khớp.
-    const minutes = methodCode === METHOD.VNPAY || methodCode === METHOD.PAYOS ? 30 : 24 * 60;
+    // Link PayOS sống 30 phút (cùng mốc mặc định của setting hạn thanh toán đơn online); phương thức khác (lịch sử) giữ 24 giờ.
+    const minutes = methodCode === METHOD.PAYOS ? 30 : 24 * 60;
     return Promise.resolve(new Date(Date.now() + minutes * 60_000));
-  }
-
-  private bankIntent(orderCode: string, amount: bigint, expiresAt: Date | null) {
-    const bank = this.env.EF_BANK_TRANSFER_BANK_CODE;
-    const acc = this.env.EF_BANK_TRANSFER_ACCOUNT_NO;
-    const name = this.env.EF_BANK_TRANSFER_ACCOUNT_NAME;
-    const qrUrl = bank && acc ? `https://img.vietqr.io/image/${encodeURIComponent(bank)}-${encodeURIComponent(acc)}-compact2.png?amount=${amount.toString()}&addInfo=${encodeURIComponent(orderCode)}&accountName=${encodeURIComponent(name)}` : null;
-    return { bankCode: bank, accountNumber: acc, accountName: name, transferContent: orderCode, qrUrl, amount: amount.toString(), expiresAt: expiresAt?.toISOString() ?? null };
   }
 
   async cancel(orderCode: string, reason: string, tx: Tx): Promise<void> {
@@ -259,80 +228,9 @@ export class PaymentService implements PaymentGateway {
     const inflight = await tx.refund.aggregate({ _sum: { amount: true }, where: { paymentId: p.id, status: { in: [REFUND_STATUS.REQUESTED, REFUND_STATUS.PROCESSING] } } });
     const remaining = vnd(p.amount.toString()) - vnd(p.refundedAmount.toString()) - vnd((inflight._sum.amount ?? 0).toString());
     if (input.amount > remaining) throw new BusinessException(PAYMENT_ERR.REFUND_EXCEEDS, `Số tiền hoàn vượt phần còn lại (${money(remaining).display})`);
-    const r = await tx.refund.create({ data: { paymentId: p.id, orderCode: input.orderCode, shopId: input.shopId, returnRequestId: input.returnRequestId, amount: input.amount.toString(), status: REFUND_STATUS.REQUESTED, method: p.methodCode === METHOD.VNPAY || p.methodCode === METHOD.PAYOS ? 'gateway' : 'manual_transfer', reason: input.reason, requestedBy: input.actorUserId, kind: input.kind ?? REFUND_KIND.ORDER } });
+    const r = await tx.refund.create({ data: { paymentId: p.id, orderCode: input.orderCode, shopId: input.shopId, returnRequestId: input.returnRequestId, amount: input.amount.toString(), status: REFUND_STATUS.REQUESTED, method: p.methodCode === METHOD.PAYOS ? 'gateway' : 'manual_transfer', reason: input.reason, requestedBy: input.actorUserId, kind: input.kind ?? REFUND_KIND.ORDER } });
     await this.audit(tx, input.actorUserId ? { userId: input.actorUserId, email: '' } : null, { action: PAYMENT_AUDIT.REFUND_REQUESTED, entityType: 'refund', entityId: r.id, entityCode: input.orderCode, after: { amount: input.amount.toString(), reason: input.reason, kind: input.kind ?? REFUND_KIND.ORDER } });
     return { refundId: r.id };
-  }
-
-  // ------------------------------------------------------------------ VNPay return / IPN
-
-  /*
-   * Xử lý kết quả VNPay (return từ FE hoặc IPN server-to-server): xác minh chữ ký → tìm giao dịch theo TxnRef →
-   * kiểm số tiền → ghi payment_transactions (unique provider_ref chặn lặp) → paid + order.onPaid cùng tx.
-   * Trả mã theo chuẩn IPN VNPay: 00 thành công · 02 đã xác nhận · 01 không tìm thấy · 04 sai số tiền · 97 sai chữ ký · 99 lỗi.
-   */
-  async handleVnpay(query: Record<string, string>, source: 'ipn' | 'return'): Promise<{ rspCode: string; message: string; result: VnpayResult | null }> {
-    if (!this.vnpay.verify(query)) return { rspCode: '97', message: 'Invalid signature', result: null };
-    const txnRef = query.vnp_TxnRef ?? '';
-    const orderCode = txnRef.split('-')[0];
-    const amount = BigInt(query.vnp_Amount ?? '0') / 100n;
-    const responseCode = query.vnp_ResponseCode ?? '99';
-    const success = responseCode === '00' && (query.vnp_TransactionStatus ?? '00') === '00';
-    const transactionNo = query.vnp_TransactionNo || null;
-    const providerRef = `${transactionNo ?? txnRef}:${responseCode}`;
-    const p = await this.prisma.payment.findFirst({ where: { orderCode, methodCode: METHOD.VNPAY }, orderBy: { createdAt: 'desc' } });
-    if (!p) return { rspCode: '01', message: 'Order not found', result: null };
-    const result: VnpayResult = { orderCode, success, message: VNPAY_RESPONSE[responseCode] ?? `Mã lỗi ${responseCode}`, responseCode, amount: money(amount), transactionCode: transactionNo };
-    if (vnd(p.amount.toString()) !== amount) return { rspCode: '04', message: 'Invalid amount', result: { ...result, success: false, message: 'Số tiền không khớp' } };
-    if (p.status === PAY_STATUS.PAID) return { rspCode: '02', message: 'Order already confirmed', result: { ...result, success: true, message: VNPAY_RESPONSE['00'] } };
-
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        const exists = await tx.paymentTransaction.findFirst({ where: { type: TX_TYPE.IPN, providerRef } });
-        if (exists) return; // lặp (return + IPN cùng đến) — đã xử lý
-        await tx.paymentTransaction.create({ data: { paymentId: p.id, type: TX_TYPE.IPN, status: success ? 'ok' : 'failed', amount: amount.toString(), providerRef, rawResponse: { ...query, source } } });
-        if (success) {
-          const now = new Date();
-          await tx.payment.update({ where: { id: p.id }, data: { status: PAY_STATUS.PAID, paidAt: now, transactionCode: transactionNo, bankCode: query.vnp_BankCode ?? p.bankCode, cardBrand: query.vnp_CardType ?? null, gatewayResponse: query, version: { increment: 1 } } });
-          await this.audit(tx, null, { action: PAYMENT_AUDIT.PAID, entityType: 'payment', entityId: p.id, entityCode: orderCode, after: { method: METHOD.VNPAY, transactionNo, bank: query.vnp_BankCode ?? null, source } });
-          if (await this.refundDuplicate(tx, p)) return; // đơn đã được trả bằng khoản khác — hoàn khoản này, không onPaid lần hai
-          await this.orders.onPaid(orderCode, { paymentId: p.id, methodCode: METHOD.VNPAY, transactionCode: transactionNo, bankCode: query.vnp_BankCode ?? null, paidAt: now }, tx);
-          await writeOutboxEvent(tx.paymentOutboxEvent, { eventType: PAYMENT_EVENT.PAID, aggregateType: 'payment', aggregateId: p.id, payload: { orderCode, userId: p.userId, amount: amount.toString(), method: METHOD.VNPAY } });
-        } else {
-          await tx.payment.update({ where: { id: p.id }, data: { status: PAY_STATUS.FAILED, gatewayResponse: query, version: { increment: 1 } } });
-          await this.audit(tx, null, { action: PAYMENT_AUDIT.FAILED, entityType: 'payment', entityId: p.id, entityCode: orderCode, after: { responseCode, source } });
-          await this.orders.onPaymentFailed(orderCode, result.message, tx);
-        }
-      });
-    } catch (err) {
-      this.logger.error({ err, orderCode, source }, 'Xử lý kết quả VNPay lỗi');
-      return { rspCode: '99', message: 'Unknown error', result: { ...result, success: false, message: 'Lỗi xử lý, vui lòng liên hệ cửa hàng' } };
-    }
-    this.logger.log({ orderCode, success, source, transactionNo }, 'Đã xử lý kết quả VNPay');
-    return { rspCode: '00', message: 'Confirm Success', result };
-  }
-
-  /* Khách thử lại sau khi thất bại/huỷ trên cổng: giao dịch failed/cancelled → tạo giao dịch mới + URL mới. */
-  async retryVnpay(actor: AuthenticatedActor, orderCode: string): Promise<{ paymentUrl: string }> {
-    if (!this.vnpay.isConfigured) throw new ServiceUnavailableException(PAYMENT_ERR.VNPAY_NOT_CONFIGURED, 'VNPay chưa được cấu hình');
-    const last = await this.prisma.payment.findFirst({ where: { orderCode, userId: actor.userId, methodCode: METHOD.VNPAY }, orderBy: { createdAt: 'desc' } });
-    if (!last) throw new NotFoundException(PAYMENT_ERR.NOT_FOUND, 'Không tìm thấy giao dịch');
-    if (last.status === PAY_STATUS.PAID) throw new BusinessException(PAYMENT_ERR.ALREADY_PAID, 'Đơn đã thanh toán');
-    if (!(await this.orders.canRetryPayment(orderCode))) throw new BusinessException(PAYMENT_ERR.INVALID_STATE, 'Đơn không còn ở trạng thái chờ thanh toán (đã huỷ hoặc đã xử lý)');
-    const attempts = await this.prisma.payment.count({ where: { orderCode, methodCode: METHOD.VNPAY } });
-    const expiresAt = await this.expiryFor(METHOD.VNPAY);
-    const ip = RequestTraceContext.current()?.ip ?? '127.0.0.1';
-    const url = await this.prisma.$transaction(async (tx) => {
-      if (last.status === PAY_STATUS.PENDING) {
-        await tx.payment.update({ where: { id: last.id }, data: { status: PAY_STATUS.CANCELLED, version: { increment: 1 } } });
-      }
-      const p = await tx.payment.create({ data: { orderId: last.orderId, orderCode, userId: actor.userId, methodCode: METHOD.VNPAY, amount: last.amount, status: PAY_STATUS.PENDING, bankCode: last.bankCode, expiresAt, createdBy: actor.userId } });
-      const ref = PaymentService.txnRef(orderCode, attempts + 1);
-      const u = this.vnpay.buildPayUrl({ txnRef: ref, amount: vnd(last.amount.toString()), orderInfo: `Thanh toan don ${orderCode}`, ipAddr: ip, bankCode: last.bankCode, expiresAt });
-      await tx.paymentTransaction.create({ data: { paymentId: p.id, type: TX_TYPE.CREATE_URL, status: 'ok', amount: last.amount, rawRequest: { txnRef: ref, retry: true } } });
-      return u;
-    });
-    return { paymentUrl: url };
   }
 
   /* Khách thanh toán lại đơn PayOS (link hết hạn / đã huỷ trên cổng): huỷ giao dịch cũ chưa trả, tạo giao dịch + link mới. */
@@ -447,43 +345,23 @@ export class PaymentService implements PaymentGateway {
     });
   }
 
-  // ------------------------------------------------------------------ đối soát chuyển khoản, hoàn tiền (kế toán)
-
-  async confirmTransfer(actor: AuthenticatedActor, paymentId: string, input: { bankRef?: string; note?: string }): Promise<PaymentResponse> {
-    await this.prisma.$transaction(async (tx) => {
-      const head = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "payment"."payments" WHERE id = ${paymentId}::uuid FOR UPDATE`;
-      const p = head[0] ? await tx.payment.findUnique({ where: { id: paymentId } }) : null;
-      if (!p) throw new NotFoundException(PAYMENT_ERR.NOT_FOUND, 'Không tìm thấy giao dịch');
-      if (p.methodCode !== METHOD.BANK_TRANSFER) throw new BusinessException(PAYMENT_ERR.INVALID_STATE, 'Chỉ đối soát giao dịch chuyển khoản');
-      if (p.status === PAY_STATUS.PAID) throw new BusinessException(PAYMENT_ERR.ALREADY_PAID, 'Giao dịch đã được xác nhận');
-      if (p.status !== PAY_STATUS.PENDING) throw new BusinessException(PAYMENT_ERR.INVALID_STATE, `Giao dịch đang ở trạng thái ${p.status}`);
-      const now = new Date();
-      await tx.payment.update({ where: { id: p.id }, data: { status: PAY_STATUS.PAID, paidAt: now, transactionCode: input.bankRef ?? null, updatedBy: actor.userId, version: { increment: 1 } } });
-      await tx.bankTransferConfirmation.create({ data: { paymentId: p.id, amount: p.amount, bankRef: input.bankRef ?? null, note: input.note ?? null, confirmedBy: actor.userId } });
-      await tx.paymentTransaction.create({ data: { paymentId: p.id, type: TX_TYPE.MANUAL_CONFIRM, status: 'ok', amount: p.amount, providerRef: `manual:${p.id}` } });
-      await this.audit(tx, actor, { action: PAYMENT_AUDIT.TRANSFER_CONFIRMED, entityType: 'payment', entityId: p.id, entityCode: p.orderCode, after: { bankRef: input.bankRef ?? null, amount: p.amount.toString() } });
-      await this.orders.onPaid(p.orderCode, { paymentId: p.id, methodCode: METHOD.BANK_TRANSFER, transactionCode: input.bankRef ?? null, bankCode: this.env.EF_BANK_TRANSFER_BANK_CODE || null, paidAt: now }, tx);
-      await writeOutboxEvent(tx.paymentOutboxEvent, { eventType: PAYMENT_EVENT.PAID, aggregateType: 'payment', aggregateId: p.id, payload: { orderCode: p.orderCode, userId: p.userId, amount: p.amount.toString(), method: METHOD.BANK_TRANSFER } });
-    });
-    return this.getPayment(paymentId);
-  }
+  // ------------------------------------------------------------------ hoàn tiền (kế toán)
 
   /*
-   * Xử lý hoàn tiền: gateway (VNPay API, PayOS payout) hoặc thủ công (kế toán đã chuyển, nhập mã tham chiếu).
+   * Xử lý hoàn tiền: gateway (PayOS payout) hoặc thủ công (kế toán đã chuyển, nhập mã tham chiếu — gồm hoàn đơn COD và dữ liệu VNPay/chuyển khoản lịch sử).
    *
    * Máy trạng thái an toàn tiền — KHÔNG BAO GIỜ chi hai lần:
    *   requested|failed ─CHIẾM (compare-and-set)→ processing ─cổng chi OK→ ghi `provider_ref` ─→ GHI SỔ (1 transaction, idempotent) ─→ done
-   *  - CHIẾM trước khi gọi cổng ⇒ bấm đúp / hai kế toán cùng lúc chỉ một người đi tiếp (VNPay refund không có idempotency-key: gọi hai lần là hoàn hai lần thật).
+   *  - CHIẾM trước khi gọi cổng ⇒ bấm đúp / hai kế toán cùng lúc chỉ một người đi tiếp (chống hoàn hai lần thật).
    *  - Cổng vừa báo đã chi, `provider_ref` được ghi vào refund NGAY, TRƯỚC khi ghi sổ. Ghi sổ lỗi (DB chết, tổng hoàn vượt số đã thu…) ⇒ refund giữ nguyên
    *    `processing` + `provider_ref`; chạy lại CHỈ phần ghi sổ (gọi lại process / retryFinalizeRefund / job recoverStuckRefunds), tuyệt đối không gọi cổng lần hai.
-   *  - VNPay: ghi dấu `gateway_attempted_at` TRƯỚC khi gọi. Còn dấu mà chưa có `provider_ref` = chưa rõ cổng đã hoàn hay chưa (treo/mất kết nối) ⇒ không tự gọi
-   *    lại; người xử lý đối chiếu trên cổng rồi: ĐÃ hoàn ⇒ nhập `providerRef` (ghi sổ, không gọi cổng) · CHƯA hoàn ⇒ `confirmGatewayNotRefunded` (gọi lại cổng).
-   *    PayOS gọi lại với cùng idempotency-key (= refund.id) nên an toàn, không cần dấu.
+   *  - PayOS gọi lại với cùng idempotency-key (= refund.id) nên an toàn, không cần dấu `gateway_attempted_at` (chỉ còn trên dữ liệu VNPay cũ: refund `failed`
+   *    có dấu mà chưa có `provider_ref` ⇒ người xử lý đối chiếu trên cổng cũ rồi nhập `providerRef` để ghi sổ — không còn gọi lại cổng).
    *  - `processing` quá REFUND_STUCK_MS mà chưa có `provider_ref` ⇒ chiếm lại bằng compare-and-set theo `updated_at` (hai người cùng bấm chỉ một người thắng).
    * Ghi sổ cuối KHOÁ dòng payment và cộng `refundedAmount` từ giá trị mới nhất (không mất cập nhật khi hai khoản hoàn một phần của cùng payment hoàn tất song song),
    * kiểm lại không vượt số đã thu. Lỗi trước khi cổng chạy ⇒ nhả chiếm về `requested`.
    */
-  async processRefund(actor: AuthenticatedActor, refundId: string, input: { providerRef?: string; note?: string; confirmGatewayNotRefunded?: boolean }): Promise<RefundResponse> {
+  async processRefund(actor: AuthenticatedActor, refundId: string, input: { providerRef?: string; note?: string }): Promise<RefundResponse> {
     const claimed = await this.prisma.refund.updateMany({ where: { id: refundId, status: { in: [REFUND_STATUS.REQUESTED, REFUND_STATUS.FAILED] } }, data: { status: REFUND_STATUS.PROCESSING, processedBy: actor.userId, updatedAt: new Date(), version: { increment: 1 } } });
     if (claimed.count === 0) {
       const cur = await this.prisma.refund.findUnique({ where: { id: refundId }, select: { status: true, providerRef: true, updatedAt: true } });
@@ -520,7 +398,7 @@ export class PaymentService implements PaymentGateway {
    * Job phục hồi (worker, định kỳ): refund `processing` quá hạn.
    *  - đã có provider_ref (cổng đã chi) ⇒ GHI SỔ nốt (không gọi cổng);
    *  - chưa có provider_ref, CHƯA từng gọi cổng ⇒ nhả về `requested`;
-   *  - chưa có provider_ref, ĐÃ từng gọi cổng (VNPay) ⇒ `failed` kèm lý do — chờ người đối chiếu (không tự đoán, không tự chi).
+   *  - chưa có provider_ref, ĐÃ từng gọi cổng (VNPay cũ — dữ liệu lịch sử) ⇒ `failed` kèm lý do — chờ người đối chiếu (không tự đoán, không tự chi).
    * Mỗi refund một try/catch; mọi bước là compare-and-set nên chạy chồng với người bấm tay / nhiều worker vẫn an toàn.
    */
   async recoverStuckRefunds(limit = 20): Promise<{ finalized: number; released: number; flagged: number }> {
@@ -536,7 +414,7 @@ export class PaymentService implements PaymentGateway {
         const flagged = Boolean(r.gatewayAttemptedAt);
         const moved = await this.prisma.$transaction(async (tx) => {
           const data = flagged
-            ? { status: REFUND_STATUS.FAILED, note: 'Treo khi gọi cổng — chưa rõ cổng đã hoàn khoản này hay chưa. Đối chiếu trên cổng VNPay: đã hoàn ⇒ nhập providerRef, chưa hoàn ⇒ xác nhận rồi hoàn lại.', processedAt: new Date(), updatedAt: new Date(), version: { increment: 1 } }
+            ? { status: REFUND_STATUS.FAILED, note: 'Treo khi gọi cổng — chưa rõ cổng đã hoàn khoản này hay chưa. Đối chiếu trên cổng (VNPay cũ): nhập providerRef để ghi sổ, hoặc hoàn tay rồi nhập mã tham chiếu.', processedAt: new Date(), updatedAt: new Date(), version: { increment: 1 } }
             : { status: REFUND_STATUS.REQUESTED, updatedAt: new Date(), version: { increment: 1 } };
           const res = await tx.refund.updateMany({ where: { id: r.id, status: REFUND_STATUS.PROCESSING, providerRef: null, updatedAt: { lt: stuckBefore } }, data });
           if (res.count === 0) return false;
@@ -552,23 +430,12 @@ export class PaymentService implements PaymentGateway {
   }
 
   /* Phần còn lại của processRefund sau khi đã CHIẾM: chi tiền (cổng/tay) → ghi sổ. Tách riêng để lỗi từng bước có cách xử lý khác nhau (xem comment processRefund). */
-  private async runClaimedRefund(actor: AuthenticatedActor, refundId: string, input: { providerRef?: string; note?: string; confirmGatewayNotRefunded?: boolean }): Promise<RefundResponse> {
+  private async runClaimedRefund(actor: AuthenticatedActor, refundId: string, input: { providerRef?: string; note?: string }): Promise<RefundResponse> {
     const r = await this.prisma.refund.findUniqueOrThrow({ where: { id: refundId }, include: { payment: true } });
-    // VNPay từng được gọi mà không rõ kết quả: chưa đối chiếu thì KHÔNG gọi lại (có thể đã hoàn thật) — trả refund về `failed` kèm hướng dẫn.
-    const unverified = r.method === 'gateway' && r.payment.methodCode === METHOD.VNPAY && Boolean(r.gatewayAttemptedAt) && !r.providerRef;
-    if (unverified && !input.providerRef && !input.confirmGatewayNotRefunded) {
-      await this.prisma.refund.updateMany({ where: { id: refundId, status: REFUND_STATUS.PROCESSING }, data: { status: REFUND_STATUS.FAILED, updatedAt: new Date(), version: { increment: 1 } } });
-      throw new BusinessException(
-        PAYMENT_ERR.REFUND_RECONCILE_REQUIRED,
-        'Lần hoàn trước qua VNPay không rõ kết quả — đối chiếu trên cổng VNPay: nếu ĐÃ hoàn thì nhập mã giao dịch hoàn (providerRef) để ghi sổ; nếu CHƯA hoàn thì gửi lại kèm confirmGatewayNotRefunded = true',
-        HttpStatus.CONFLICT,
-      );
-    }
-
     const ctx = { gatewayCalled: false };
     let paid: RefundDisbursement;
     try {
-      paid = await this.disburseRefund(actor, r, input, { unverified }, ctx);
+      paid = await this.disburseRefund(actor, r, input, ctx);
     } catch (err) {
       // Lỗi TRƯỚC khi cổng chạy (cấu hình/thiếu providerRef…): nhả chiếm. Cổng đã được gọi thì KHÔNG nhả: từ chối rõ ràng đã ghi `failed` (failRefund), còn không rõ kết quả
       // thì giữ `processing` + dấu để job/người phục hồi — tuyệt đối không quay về `requested` để ai đó bấm gọi lại cổng.
@@ -591,51 +458,13 @@ export class PaymentService implements PaymentGateway {
     return this.prisma.refund.updateMany({ where: { id: refundId, status: REFUND_STATUS.PROCESSING }, data: { status: REFUND_STATUS.REQUESTED, updatedAt: new Date(), version: { increment: 1 } } });
   }
 
-  /* Bước CHI TIỀN của một refund đã chiếm: gọi cổng (ghi dấu/providerRef) hoặc xác nhận hoàn tay. Ném lỗi nếu cổng từ chối / chưa đủ điều kiện. */
-  private async disburseRefund(actor: AuthenticatedActor, r: RefundWithPayment, input: { providerRef?: string; confirmGatewayNotRefunded?: boolean }, state: { unverified: boolean }, ctx: { gatewayCalled: boolean }): Promise<RefundDisbursement> {
+  /* Bước CHI TIỀN của một refund đã chiếm: gọi PayOS payout (ghi providerRef) hoặc xác nhận hoàn tay. Ném lỗi nếu cổng từ chối / chưa đủ điều kiện. */
+  private async disburseRefund(actor: AuthenticatedActor, r: RefundWithPayment, input: { providerRef?: string }, ctx: { gatewayCalled: boolean }): Promise<RefundDisbursement> {
     const amount = vnd(r.amount.toString());
     const manual = (providerRef: string): RefundDisbursement => ({ providerRef, raw: { manual: true }, viaGateway: false, meta: {} });
     if (r.method !== 'gateway') {
       if (!input.providerRef) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Hoàn tiền tay cần mã tham chiếu chuyển khoản (providerRef)');
       return manual(input.providerRef);
-    }
-
-    if (r.payment.methodCode === METHOD.VNPAY) {
-      if (!this.vnpay.isConfigured) throw new ServiceUnavailableException(PAYMENT_ERR.VNPAY_NOT_CONFIGURED, 'VNPay chưa được cấu hình');
-      // Đã đối chiếu: cổng ĐÃ hoàn khoản này (người xử lý nhập mã giao dịch hoàn) ⇒ chỉ ghi sổ, không gọi cổng.
-      if (state.unverified && input.providerRef) return { providerRef: input.providerRef, raw: { manual: true, reconciled: true }, viaGateway: false, meta: { reconciled: true } };
-      const paidTx = await this.prisma.paymentTransaction.findFirst({ where: { paymentId: r.paymentId, type: TX_TYPE.IPN, status: 'ok' }, orderBy: { createdAt: 'desc' } });
-      const raw = (paidTx?.rawResponse ?? {}) as Record<string, string>;
-      // Ghi dấu TRƯỚC khi gọi: từ đây mọi kết cục "không rõ" đều truy được (còn dấu mà chưa có provider_ref ⇒ chưa rõ cổng đã hoàn chưa).
-      await this.prisma.refund.updateMany({ where: { id: r.id, status: REFUND_STATUS.PROCESSING, providerRef: null }, data: { gatewayAttemptedAt: new Date(), updatedAt: new Date() } });
-      ctx.gatewayCalled = true;
-      let res: Awaited<ReturnType<VnpayService['refund']>>;
-      try {
-        res = await this.vnpay.refund({
-          txnRef: raw.vnp_TxnRef ?? PaymentService.txnRef(r.orderCode, 1),
-          amount,
-          transactionNo: r.payment.transactionCode ?? '',
-          transactionDate: raw.vnp_PayDate ?? VnpayService.formatDate(r.payment.paidAt ?? r.payment.createdAt),
-          fullRefund: amount >= vnd(r.payment.amount.toString()),
-          createBy: actor.email,
-          ipAddr: RequestTraceContext.current()?.ip ?? '127.0.0.1',
-          orderInfo: `Hoan tien don ${r.orderCode}`,
-        });
-      } catch (err) {
-        res = { ok: false, code: '99', message: err instanceof Error ? err.message : 'Không gọi được cổng VNPay', raw: null };
-      }
-      if (!res.ok) {
-        if (res.raw === null) {
-          // Không nhận được phản hồi (timeout/mất kết nối sau khi gửi): VNPay có thể ĐÃ hoàn. Giữ dấu, đánh failed chờ đối chiếu — không cho gọi lại mù.
-          await this.markRefundUncertain(r, actor, `VNPay ${res.code}: ${res.message} — không nhận được phản hồi, chưa rõ cổng đã hoàn hay chưa; đối chiếu trên cổng VNPay trước khi xử lý lại`);
-          throw new BusinessException('PAYMENT_REFUND_FAILED', `Không nhận được phản hồi của VNPay (${res.message}): chưa rõ khoản hoàn đã thực hiện hay chưa — đối chiếu trên cổng trước khi hoàn lại`, HttpStatus.BAD_GATEWAY);
-        }
-        await this.failRefund(r, actor, `VNPay ${res.code}: ${res.message}`, res.raw);
-        throw new BusinessException('PAYMENT_REFUND_FAILED', `Cổng từ chối hoàn tiền: ${res.message} (${res.code})`, HttpStatus.BAD_GATEWAY);
-      }
-      const providerRef = `vnpay-refund:${(res.raw as { vnp_TransactionNo?: string })?.vnp_TransactionNo ?? Date.now()}`;
-      await this.recordGatewayRef(r.id, providerRef);
-      return { providerRef, raw: res.raw, viaGateway: true, meta: state.unverified ? { confirmedNotRefunded: true } : {} };
     }
 
     if (r.payment.methodCode === METHOD.PAYOS) {
@@ -664,7 +493,9 @@ export class PaymentService implements PaymentGateway {
       }
       return manual(input.providerRef); // kế toán đã chuyển tay → ghi sổ như hoàn thủ công
     }
-    throw new BusinessException('PAYMENT_REFUND_INVALID_METHOD', 'Phương thức thanh toán không hỗ trợ hoàn tiền tự động');
+    // Refund lịch sử qua cổng đã bỏ (VNPay): không còn gọi cổng — kế toán đối chiếu/chuyển tay rồi nhập mã tham chiếu để ghi sổ.
+    if (!input.providerRef) throw new BusinessException('PAYMENT_REFUND_MANUAL_REQUIRED', 'Cổng hoàn tiền này không còn hỗ trợ — chuyển khoản tay (hoặc đối chiếu trên cổng cũ) rồi nhập mã tham chiếu (providerRef)');
+    return { providerRef: input.providerRef, raw: { manual: true, legacyGateway: r.payment.methodCode }, viaGateway: false, meta: { legacyGateway: r.payment.methodCode } };
   }
 
   /*
@@ -680,7 +511,7 @@ export class PaymentService implements PaymentGateway {
   /*
    * GHI SỔ một refund mà tiền đã đi (cổng chi xong / kế toán chuyển tay / đối chiếu). MỘT transaction, KHOÁ dòng payment trước, rồi compare-and-set `processing → done` (ai đến sau
    * thấy đã done thì bỏ qua êm — request gốc, retry-finalize và job có chạy đồng thời cũng chỉ ghi sổ MỘT lần). Trả true nếu lần gọi này là lần ghi sổ.
-   *  - kind = order: cập nhật payment + giao dịch + audit, báo order (onRefunded, markReturnRefunded) + outbox PAYMENT_REFUNDED (ví COD đảo hoa hồng).
+   *  - kind = order: cập nhật payment + giao dịch + audit, báo order (onRefunded, markReturnRefunded) + outbox PAYMENT_REFUNDED.
    *  - kind = duplicate_payment: chỉ trả tiền thừa — payment + giao dịch + audit; KHÔNG đụng đơn (payment_status vẫn `paid` nhờ khoản kia), KHÔNG outbox hoàn theo đơn.
    * `actor` null = hệ thống (job phục hồi). `note` undefined = giữ ghi chú hiện có.
    */
@@ -703,7 +534,7 @@ export class PaymentService implements PaymentGateway {
       if (r.kind === REFUND_KIND.DUPLICATE_PAYMENT) return true;
       await this.orders.onRefunded(r.orderCode, vnd(r.amount.toString()), r.id, tx, full);
       if (r.returnRequestId) await this.orders.markReturnRefunded(r.returnRequestId, tx);
-      // payload mang đủ để listener ví COD đảo hoa hồng/ghi nợ shop (refundId, phương thức, shop).
+      // payload mang refundId, phương thức, shop — đối soát chi trả shop trừ hoàn tiền theo refund `done` (cả đơn COD lẫn PayOS).
       await writeOutboxEvent(tx.paymentOutboxEvent, { eventType: PAYMENT_EVENT.REFUNDED, aggregateType: 'refund', aggregateId: r.id, payload: { refundId: r.id, orderCode: r.orderCode, userId: r.payment.userId, amount: r.amount.toString(), methodCode: r.payment.methodCode, shopId: r.shopId } });
       return true;
     });
@@ -717,37 +548,18 @@ export class PaymentService implements PaymentGateway {
     });
   }
 
-  /* Gọi cổng mà KHÔNG rõ kết quả: `failed` + GIỮ dấu gọi cổng (process sẽ đòi đối chiếu) + giao dịch `unknown` + audit để truy vết. */
-  private async markRefundUncertain(r: { id: string; paymentId: string; orderCode: string; amount: Prisma.Decimal }, actor: AuthenticatedActor, note: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.refund.update({ where: { id: r.id }, data: { status: REFUND_STATUS.FAILED, note: note.slice(0, 500), processedBy: actor.userId, processedAt: new Date(), version: { increment: 1 } } });
-      await tx.paymentTransaction.create({ data: { paymentId: r.paymentId, type: TX_TYPE.REFUND, status: 'unknown', amount: r.amount, rawResponse: {} } });
-      await this.audit(tx, actor, { action: PAYMENT_AUDIT.REFUND_UNCERTAIN, entityType: 'refund', entityId: r.id, entityCode: r.orderCode, after: { amount: r.amount.toString(), note } });
-    });
-  }
-
   // ------------------------------------------------------------------ đọc
 
-  async extrasForOrder(orderCode: string): Promise<{ paymentIntent: ReturnType<PaymentService['bankIntent']> | null; paymentUrl: string | null; transactionCode: string | null; cardBrand: string | null; cardLast4: string | null }> {
+  async extrasForOrder(orderCode: string): Promise<{ paymentUrl: string | null; transactionCode: string | null; cardBrand: string | null; cardLast4: string | null }> {
     const p = await this.prisma.payment.findFirst({ where: { orderCode }, orderBy: { createdAt: 'desc' } });
-    if (!p) return { paymentIntent: null, paymentUrl: null, transactionCode: null, cardBrand: null, cardLast4: null };
+    if (!p) return { paymentUrl: null, transactionCode: null, cardBrand: null, cardLast4: null };
     const pending = p.status === PAY_STATUS.PENDING && (!p.expiresAt || p.expiresAt > new Date());
     let paymentUrl: string | null = null;
-    if (pending && p.methodCode === METHOD.VNPAY && this.vnpay.isConfigured) {
-      const attempts = await this.prisma.payment.count({ where: { orderCode, methodCode: METHOD.VNPAY } });
-      paymentUrl = this.vnpay.buildPayUrl({ txnRef: PaymentService.txnRef(orderCode, attempts), amount: vnd(p.amount.toString()), orderInfo: `Thanh toan don ${orderCode}`, ipAddr: RequestTraceContext.current()?.ip ?? '127.0.0.1', bankCode: p.bankCode, expiresAt: p.expiresAt!, createdAt: p.createdAt });
-    }
     if (pending && p.methodCode === METHOD.PAYOS) {
       const t = await this.prisma.paymentTransaction.findFirst({ where: { paymentId: p.id, type: TX_TYPE.CREATE_URL }, orderBy: { createdAt: 'desc' }, select: { rawRequest: true } });
       paymentUrl = (t?.rawRequest as { checkoutUrl?: string } | null)?.checkoutUrl ?? null;
     }
-    return {
-      paymentIntent: pending && p.methodCode === METHOD.BANK_TRANSFER ? this.bankIntent(orderCode, vnd(p.amount.toString()), p.expiresAt) : null,
-      paymentUrl,
-      transactionCode: p.transactionCode,
-      cardBrand: p.cardBrand,
-      cardLast4: p.cardLast4,
-    };
+    return { paymentUrl, transactionCode: p.transactionCode, cardBrand: p.cardBrand, cardLast4: p.cardLast4 };
   }
 
   async getPayment(id: string): Promise<PaymentResponse> {

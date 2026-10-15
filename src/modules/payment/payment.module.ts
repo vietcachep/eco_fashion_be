@@ -6,35 +6,27 @@ import { AdminPaymentController, PaymentController, PaymentPublicController } fr
 import { PaymentService } from './payment/payment.service';
 import { PaymentQueryApi } from './queryapi/payment.queryapi';
 import { PayosService } from './payos/payos.service';
-import { VnpayService } from './vnpay/vnpay.service';
 import { PaymentAuditLogService } from './audit/payment-audit-log.service';
 import { PaymentOutboxService } from './outbox/payment-outbox.service';
-import { ShopWalletRepository } from './shop-wallet/repository/shop-wallet.repository';
-import { ShopWalletService } from './shop-wallet/service/shop-wallet.service';
-import { ShopWalletController } from './shop-wallet/controller/shop-wallet.controller';
-import { AdminWalletController } from './shop-wallet/controller/admin-wallet.controller';
 
 /*
- * Module payment (PLAN-0007/PLAN-0015/PLAN-0017): COD · chuyển khoản VietQR · VNPay · PayOS · ví quỹ COD.
- * Export PAYMENT_GATEWAY + PaymentQueryApi cho order; PaymentService (job phục hồi refund treo ở worker) + PayosService + ShopWalletService + audit/outbox cho PaymentSettlementModule/worker.
+ * Module payment (PLAN-0007/0015/0017/0018): chỉ còn COD (sàn thu hộ qua đơn vị vận chuyển) + PayOS; mọi khoản tiền về sàn rồi đối soát chi trả shop.
+ * Export PAYMENT_GATEWAY + PaymentQueryApi cho order; PaymentService (job phục hồi refund treo ở worker) + PayosService + audit/outbox cho PaymentSettlementModule/worker.
  * Cần ORDER_PAYMENT_GATEWAY do OrderModule (@Global) cung cấp — KHÔNG import OrderModule (OrderModule import PaymentModule → vòng).
  * Đối soát shop (cần OrderQueryApi) nằm ở PaymentSettlementModule vì lý do đó.
- * Cần ShopContextGuard + SHOP_COD_GATEWAY (ShopModule) và SystemQueryApi (SystemModule).
+ * Cần ShopModule (ShopQueryApi) và SystemQueryApi (SystemModule).
  */
 @Module({
   imports: [ShopModule, SystemModule],
-  controllers: [PaymentPublicController, PaymentController, AdminPaymentController, ShopWalletController, AdminWalletController],
+  controllers: [PaymentPublicController, PaymentController, AdminPaymentController],
   providers: [
-    VnpayService,
     PayosService,
     PaymentService,
     PaymentQueryApi,
     PaymentAuditLogService,
     PaymentOutboxService,
-    ShopWalletRepository,
-    ShopWalletService,
     { provide: PAYMENT_GATEWAY, useExisting: PaymentService },
   ],
-  exports: [PAYMENT_GATEWAY, PaymentQueryApi, PaymentService, PayosService, PaymentAuditLogService, PaymentOutboxService, ShopWalletService],
+  exports: [PAYMENT_GATEWAY, PaymentQueryApi, PaymentService, PayosService, PaymentAuditLogService, PaymentOutboxService],
 })
 export class PaymentModule {}

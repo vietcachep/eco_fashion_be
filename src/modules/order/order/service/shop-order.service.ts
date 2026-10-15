@@ -33,7 +33,7 @@ const VENDOR_CANCELABLE: readonly string[] = [ORDER_STATUS.PENDING, ORDER_STATUS
  * pending→confirmed→packing→shipping→delivered (không delivered→completed, đó là quyền admin).
  *
  * Mọi route (GET / PUT status / POST cancel) trả CÙNG một dạng OrderResponse dựng từ toOrderResponse với extras = null:
- * vendor KHÔNG được thấy paymentUrl/paymentIntent/transactionCode/cardBrand/cardLast4 (thông tin thanh toán của khách).
+ * vendor KHÔNG được thấy paymentUrl/transactionCode/cardBrand/cardLast4 (thông tin thanh toán của khách).
  * OrderService.updateStatus/cancelByStaff kết thúc bằng getAdmin() (có extras thanh toán) nên kết quả của chúng bị BỎ,
  * service này đọc lại đơn qua `get()` sau khi ghi.
  * Transaction/audit/outbox/khoá dòng đều nằm ở OrderService — service này chỉ kiểm quyền sở hữu + lưới vendor + định dạng

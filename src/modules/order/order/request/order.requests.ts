@@ -29,8 +29,7 @@ export class CheckoutSummaryQuery {
 export class CreateOrderRequest {
   @ApiPropertyOptional({ description: 'Địa chỉ trong sổ (ưu tiên nếu có)' }) @IsOptional() @IsUUID() addressId?: string;
   @ApiPropertyOptional({ type: CheckoutAddressInput, description: 'Hoặc nhập tay' }) @IsOptional() @ValidateNested() @Type(() => CheckoutAddressInput) address?: CheckoutAddressInput;
-  @ApiProperty({ enum: [...Object.values(PAYMENT_METHOD), 'card'], example: 'cod', description: '`card` = VNPay thẻ quốc tế' }) @IsIn([...Object.values(PAYMENT_METHOD), 'card']) paymentMethodCode: string;
-  @ApiPropertyOptional({ description: 'VNPay: VNBANK (ATM) · INTCARD (Visa/Master) · VNPAYQR' }) @IsOptional() @IsIn(['VNBANK', 'INTCARD', 'VNPAYQR']) bankCode?: string;
+  @ApiProperty({ enum: Object.values(PAYMENT_METHOD), example: 'cod', description: 'Chỉ còn `cod` (shipper thu hộ cho sàn) hoặc `payos`' }) @IsIn(Object.values(PAYMENT_METHOD)) paymentMethodCode: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
   @ApiPropertyOptional({ example: 'FREESHIP', nullable: true }) @IsOptional() @IsString() @MaxLength(40) voucherCode?: string | null;
   @ApiPropertyOptional({ type: [String], example: ['SHOPA10'], description: 'Mã bổ sung (gộp với voucherCode): tối đa 1 mã sàn + 1 mã gian hàng cho mỗi shop trong giỏ' })

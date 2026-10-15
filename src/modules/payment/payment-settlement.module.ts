@@ -14,5 +14,6 @@ import { ShopPayoutService } from './shop-payout/shop-payout.service';
   imports: [PaymentModule, OrderModule, ShopModule, SystemModule],
   controllers: [ShopPayoutController],
   providers: [ShopPayoutService],
+  exports: [ShopPayoutService], // AutoPayoutJob (worker) gọi lại cùng service với endpoint chạy tay
 })
 export class PaymentSettlementModule {}
