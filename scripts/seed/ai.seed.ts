@@ -38,7 +38,7 @@ const ORDER_GUIDE = `# Đặt hàng, thanh toán và theo dõi đơn
 
 1. Chọn màu, size, số lượng → Thêm vào giỏ → Thanh toán.
 2. Nhập địa chỉ nhận (hoặc chọn địa chỉ đã lưu), nhập mã khuyến mãi nếu có.
-3. Chọn cách thanh toán: COD (trả khi nhận, đơn dưới 5.000.000₫), chuyển khoản VietQR (đơn giữ 24 giờ chờ chuyển), hoặc thẻ/QR qua VNPay (giữ 30 phút).
+3. Chọn cách thanh toán: COD (trả cho shipper khi nhận, shipper thu hộ cho sàn, đơn dưới 5.000.000₫) hoặc PayOS (QR/chuyển khoản tự động, giữ 30 phút).
 4. Sau khi đặt, đơn ở trạng thái Chờ xác nhận → Đã xác nhận → Đang đóng gói → Đang giao → Đã giao → Hoàn tất (tự động sau 7 ngày).
 5. Khách có thể huỷ đơn khi còn Chờ xác nhận. Đơn chưa thanh toán online quá hạn sẽ tự huỷ.
 6. Theo dõi tại Tài khoản → Đơn hàng của tôi; mọi thay đổi trạng thái đều có thông báo và email.`;

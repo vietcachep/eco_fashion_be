@@ -1,6 +1,6 @@
 /*
  * SEED sàn đa ngành hàng (PLAN-0017 Track D) — đọc DSL `scripts/seed/data/**` rồi ghi: thuộc tính động → ngành hàng (gốc + lá + mẫu thuộc tính)
- * → gian hàng + chủ/nhân viên (ShopMember) + ví COD → sản phẩm (biến thể theo trục, ảnh, thuộc tính) → bộ sưu tập theo ngành → tồn kho
+ * → gian hàng + chủ/nhân viên (ShopMember) → sản phẩm (biến thể theo trục, ảnh, thuộc tính) → bộ sưu tập theo ngành → tồn kho
  * qua phiếu nhập `posted` có sổ kho (mỗi shop một phiếu, `shopId` gắn phiếu).
  * Idempotent: mọi thứ tìm theo slug/code/email; sản phẩm đã có thì chỉ ĐỒNG BỘ ẢNH (không đụng tồn/giá đã sửa tay).
  * Dữ liệu sai thì `validateSeedData` từ chối ghi — xem `npm run seed:validate`. Cần: identity (vai) + catalog + `npm run seed:gen-images`.
@@ -110,7 +110,7 @@ async function seedShops(prisma: PrismaClient, images: SeedImages): Promise<Map<
     if (!shop) {
       const ownerId = await ensureUser(s.owner);
       shop = await prisma.shop.create({
-        data: { code: s.code, slug: s.slug, name: s.name, description: s.description, status: s.status, commissionRate: s.commissionRate, codEnabled: s.codEnabled, ownerUserId: ownerId, createdBy: ownerId, ...imgData },
+        data: { code: s.code, slug: s.slug, name: s.name, description: s.description, status: s.status, commissionRate: s.commissionRate, ownerUserId: ownerId, createdBy: ownerId, ...imgData },
         select: { id: true, code: true, ownerUserId: true },
       });
       created += 1;
@@ -124,7 +124,6 @@ async function seedShops(prisma: PrismaClient, images: SeedImages): Promise<Map<
       await ensureMember(shop.id, await ensureUser(s.owner), 'shop_owner');
       for (const st of s.staff ?? []) await ensureMember(shop.id, await ensureUser(st), 'shop_staff');
     }
-    if (s.status === 'approved') await prisma.shopWallet.upsert({ where: { shopId: shop.id }, create: { shopId: shop.id }, update: {} });
     out.set(s.slug, { id: shop.id, code: shop.code });
   }
   console.log(`   gian hàng: ${SHOPS.length} (tạo mới ${created}) — chủ/nhân viên đăng nhập bằng email trong data/shops.ts, mật khẩu ${DEMO_VENDOR_PASSWORD}`);
@@ -299,5 +298,5 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   await seedCollections(prisma, images, DEPARTMENTS);
   await recount(prisma, leafIds, shops);
   images.saveManifest();
-  console.log(`   ảnh: tái dùng ${images.reusedCount}, upload mới ${images.uploadedCount}`);
+  console.log(`   ảnh: link đóng gói sẵn ${images.packagedCount}, tái dùng ${images.reusedCount}, upload mới ${images.uploadedCount}`);
 }

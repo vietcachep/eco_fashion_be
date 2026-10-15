@@ -1,22 +1,23 @@
 /*
  * SEED hoạt động mua bán nhiều gian hàng / nhiều ngành hàng (demo): thêm 40 khách (khach6..khach45@ecofashion.vn, mỗi người một địa chỉ mặc định
  * ở nhiều tỉnh/thành) + ~320 đơn con LỊCH SỬ trải 110 ngày gần đây, gói trong ~270 OrderGroup (≈12% là giỏ nhiều shop). Mỗi đơn con thuộc đúng
- * 1 shop, có đủ: dòng hàng snapshot, lịch sử trạng thái, Payment + giao dịch (cod/chuyển khoản/VNPay/PayOS), sổ kho (RESERVE/SALE/RELEASE/RETURN),
- * voucher sàn + voucher shop (PromotionUsage + usedCount), đổi trả có hoàn tiền (ReturnRequest + Refund có shopId), hoa hồng COD vào ví shop.
+ * 1 shop, có đủ: dòng hàng snapshot, lịch sử trạng thái, Payment + giao dịch (COD/PayOS), sổ kho (RESERVE/SALE/RELEASE/RETURN),
+ * voucher sàn + voucher shop (PromotionUsage + usedCount), đổi trả có hoàn tiền (ReturnRequest + Refund có shopId). Sàn thu MỌI khoản tiền (PayOS online, COD do shipper thu hộ cho sàn):
+ * đơn COD đã giao/hoàn tất có Payment `paid` + giao dịch cod_collect, và (như PayOS) sẽ vào kỳ chi trả cho shop ở bước `settlement`.
  *
  * Thiết kế:
  *  - TẤT ĐỊNH: mọi ngẫu nhiên đến từ mulberry32 với seed cố định (mỗi nhóm/đơn con có PRNG riêng theo chỉ số → cấu trúc đơn không phụ thuộc
  *    dữ liệu đã có trong DB). Chỉ MỐC THỜI GIAN tính từ Date.now() lúc chạy trừ daysAgo. Mã đơn `DHSEED00001..`, mã nhóm `GRSEED00001..` đánh số
  *    theo thứ tự thời gian (cũ → mới).
  *  - IDEMPOTENT: nhóm tồn tại theo mã → bỏ qua; mỗi nhóm ghi trong MỘT transaction (đơn + thanh toán + kho + voucher cùng sống cùng chết).
- *    Khách tìm theo email trước khi tạo; ví COD chỉ ghi dòng chưa có theo (shopId, type, orderCode).
+ *    Khách tìm theo email trước khi tạo.
  *  - KHO: trước khi ghi đơn, mô phỏng sổ kho THEO THỜI GIAN từng biến thể (kho hiện tại + mọi RESERVE/SALE/RELEASE/RETURN của đơn mới) để
  *    (a) nhập bổ sung bằng phiếu `posted` theo shop (có sổ kho RECEIPT) sao cho stock − reserved ≥ 3 ở MỌI thời điểm (không âm kho, reserved ≤ stock —
  *    CHECK ck_product_variants_stock_nonneg) và (b) tính đúng `stockAfter` từng dòng sổ kho.
  *  - Bất biến tiền: số nguyên VND (bigint); discount = shopDiscount + platformDiscount; total = subtotal + shippingFee − discount ≥ 0; OrderGroup = tổng các
  *    đơn con; phí ship tính RIÊNG từng đơn con theo bảng phí tỉnh + ngưỡng freeship (như OrderService.price); voucher sàn tính trên cả giỏ rồi phân bổ
  *    theo tỉ lệ (như OrderService.applyVouchers); công thức giảm đúng PromotionService.discountOf.
- *  - Mỗi nhóm dùng CHUNG một phương thức thanh toán + một địa chỉ (như placeOrder). COD bị loại khi có shop tắt COD hoặc đơn con vượt hạn mức COD.
+ *  - Mỗi nhóm dùng CHUNG một phương thức thanh toán + một địa chỉ (như placeOrder). COD bị loại khi đơn con vượt hạn mức COD.
  *  - Shop bị khoá chỉ có đơn CŨ (≥ 60 ngày) đã hoàn tất/huỷ; shop chờ duyệt không có đơn (không có cột "ngày khoá" nên dùng mốc bảo thủ này).
  * Cần chạy sau: identity, system (tỉnh + phí ship), catalog, dynamic-attribute, marketplace (shop + sản phẩm), product, payment, promotion
  * (voucher sàn + voucher từng shop, scope='shop'). Không tạo thông báo/outbox (đơn lịch sử).
@@ -64,7 +65,7 @@ const SHOP_WEIGHTS: Record<string, number> = {
   'nha-xinh-decor': 7, 'bag-and-co': 7, 'baby-land': 6, 'sport-planet': 6, 'ngon-viet': 6, 'book-cafe': 5, 'pet-world': 5, 'time-lab': 4, 'auto-moto-pro': 3,
 };
 
-const METHOD_WEIGHTS: ReadonlyArray<readonly [PayMethod, number]> = [[METHOD.COD, 38], [METHOD.BANK_TRANSFER, 12], [METHOD.VNPAY, 28], [METHOD.PAYOS, 22]];
+const METHOD_WEIGHTS: ReadonlyArray<readonly [PayMethod, number]> = [[METHOD.COD, 45], [METHOD.PAYOS, 55]];
 const HOUR_WEIGHTS = [1, 1, 0.5, 0.5, 0.5, 1, 2, 4, 6, 8, 9, 9, 8, 7, 7, 8, 8, 8, 9, 11, 12, 12, 8, 4];
 
 const CUSTOMER_NOTES = ['Giao giờ hành chính giúp mình', 'Gọi trước khi giao nhé', 'Để hàng ở bảo vệ nếu không có nhà', 'Gói quà giúp mình với', 'Giao buổi tối sau 18h', 'Kiểm tra hàng kỹ trước khi giao giúp shop'];
@@ -77,8 +78,6 @@ const RETURN_REASONS = [
   { reason: 'Không giống mô tả', detail: 'Chất lượng và hình thức khác với mô tả trên trang sản phẩm.' },
 ];
 const RETURN_REJECT_REASONS = ['Sản phẩm đã qua sử dụng/giặt, không còn nguyên tem mác', 'Minh chứng chưa đủ rõ để xác nhận lỗi từ shop'];
-const VNPAY_BANKS = ['NCB', 'VCB', 'TCB', 'MB', 'BIDV', 'ACB', 'VNPAYQR'];
-const TRANSFER_BANKS = ['MB', 'VCB', 'TCB', 'ACB', 'BIDV'];
 
 /* 40 khách mới: họ tên Việt có dấu (nam/nữ lẫn lộn) + địa chỉ mặc định — nhiều ở HCM/Hà Nội/Đà Nẵng/Cần Thơ/Hải Phòng, còn lại là tỉnh nhỏ. */
 interface CustomerDef { no: number; fullName: string; provinceCode: string; district: string; ward: string; street: string }
@@ -132,7 +131,7 @@ interface CustomerRef { key: string; fullName: string; phone: string; weight: nu
 interface ImageCtx { url: string; colorCode: string | null; isPrimary: boolean }
 interface VariantCtx { id: string; sku: string; colorCode: string | null; colorName: string | null; sizeCode: string | null; price: bigint; stock: number; reserved: number; optionsText: string }
 interface ProductCtx { id: string; slug: string; name: string; categorySlug: string; shopId: string; basePrice: bigint; variants: VariantCtx[]; images: ImageCtx[]; weight: number }
-interface ShopCtx { id: string; code: string; slug: string; name: string; status: string; commissionRate: string; codEnabled: boolean; ownerUserId: string; products: ProductCtx[] }
+interface ShopCtx { id: string; code: string; slug: string; name: string; status: string; commissionRate: string; ownerUserId: string; products: ProductCtx[] }
 interface PromoDef {
   id: string; code: string; name: string; type: string; value: string; maxDiscount: bigint | null; minOrder: bigint; usageLimit: number | null; perUser: number | null; usedCount: number;
   appliesTo: string; targets: Array<{ targetType: string; targetRef: string }>; startsAt: number; endsAt: number; scope: 'platform' | 'shop'; shopId: string | null;
@@ -173,7 +172,7 @@ interface ChildPlan {
   note: string | null;
   refundAmount: bigint; // số hoàn nếu có đổi trả (1 đơn vị dòng đầu, trừ phần giảm giá theo tỉ lệ)
   events: StockEvt[];
-  ids: { txnNo: string; bankCode: string; cardBrand: string; bankRef: string; payosCode: string; linkId: string };
+  ids: { bankRef: string; payosCode: string; linkId: string };
 }
 interface GroupPlan { idx: number; code: string; customer: CustomerRef; createdAt: number; children: ChildPlan[]; platform: { promo: PromoDef; discount: bigint } | null }
 
@@ -240,7 +239,6 @@ function uid(key: string): string {
 const code5 = (n: number): string => String(n).padStart(5, '0');
 const dt = (ms: number): Date => new Date(ms);
 const dtOrNull = (ms: number | null): Date | null => (ms === null ? null : new Date(ms));
-const vnpayDate = (ms: number): string => new Date(ms + 7 * HOUR).toISOString().replace(/[-:T]/g, '').slice(0, 14);
 const hex32 = (key: string): string => createHash('sha1').update(`activity-seed:${key}`).digest('hex').slice(0, 32);
 
 /* ============================================================================================== voucher (cùng công thức PromotionService) */
@@ -313,8 +311,8 @@ function planLifecycle(a: { r: number[]; now: number; createdAt: number; method:
   const { r, now, createdAt, method, target } = a;
   const ageDays = (now - createdAt) / DAY;
   const online = method !== METHOD.COD;
-  const expiryMs = method === METHOD.BANK_TRANSFER ? 24 * HOUR : online ? 30 * MIN : 0;
-  const payDelay = method === METHOD.BANK_TRANSFER ? (20 + r[5] * 580) * MIN : (1 + r[5] * 11) * MIN;
+  const expiryMs = online ? 30 * MIN : 0;
+  const payDelay = (1 + r[5] * 11) * MIN;
   const limit = now - 3 * MIN;
 
   const s: number[] = [createdAt];
@@ -336,14 +334,12 @@ function planLifecycle(a: { r: number[]; now: number; createdAt: number; method:
     const kind: CancelKind =
       method === METHOD.COD
         ? weightedPick<CancelKind>(r[2], [['customer', 65], ['shop', 35]])
-        : method === METHOD.PAYOS
-          ? weightedPick<CancelKind>(r[2], [['customer', 75], ['shop', 25]])
-          : weightedPick<CancelKind>(r[2], [['expired', 40], ['customer', 40], ['shop', 20]]);
+        : weightedPick<CancelKind>(r[2], [['expired', 35], ['customer', 45], ['shop', 20]]);
     let at: number;
     let reason: string;
     if (kind === 'expired') {
       at = createdAt + expiryMs + (1 + r[4] * 9) * MIN;
-      reason = 'Quá hạn thanh toán';
+      reason = 'Quá hạn thanh toán PayOS';
     } else if (kind === 'customer') {
       at = createdAt + (expiryMs > 0 ? Math.min((10 + r[4] * 470) * MIN, 0.8 * expiryMs) : (10 + r[4] * 470) * MIN);
       reason = pickOf(r[3], CANCEL_REASONS_CUSTOMER);
@@ -386,7 +382,7 @@ function planLifecycle(a: { r: number[]; now: number; createdAt: number; method:
   } else if (idx >= 1) {
     paidAt = needsOnlinePay ? createdAt + payDelay : idx >= 4 ? s[4] : null;
   } else if (needsOnlinePay) {
-    const canBeUnpaid = method === METHOD.BANK_TRANSFER ? now - createdAt < 24 * HOUR : now - createdAt < 30 * MIN;
+    const canBeUnpaid = now - createdAt < 30 * MIN;
     const paidTime = createdAt + payDelay;
     unpaidOnline = paidTime > limit || (canBeUnpaid && r[12] < 0.55);
     if (!unpaidOnline) paidAt = paidTime;
@@ -580,8 +576,8 @@ function buildPlans(ctx: PlanCtx, shops: ShopCtx[], customers: CustomerRef[], ra
       if (sp) commitPromo(ctx, sp.promo, customer.key);
     });
 
-    // ---- phương thức thanh toán chung cả nhóm (COD bị loại khi shop tắt COD / đơn con vượt hạn mức COD)
-    const allowCod = kids.every((k, j) => k.shop.codEnabled && (ctx.codMax === 0n || chosen.alloc[j].total <= ctx.codMax)); // hạn mức 0 = không giới hạn (như OrderService)
+    // ---- phương thức thanh toán chung cả nhóm (COD bị loại khi đơn con vượt hạn mức COD)
+    const allowCod = kids.every((k, j) => (ctx.codMax === 0n || chosen.alloc[j].total <= ctx.codMax)); // hạn mức 0 = không giới hạn (như OrderService)
     const method: PayMethod = weightedPick(allowCod ? gr[4] : gr[5], allowCod ? METHOD_WEIGHTS : METHOD_WEIGHTS.filter(([m]) => m !== METHOD.COD));
 
     // ---- đơn con: vòng đời + thanh toán + kho
@@ -636,16 +632,12 @@ function buildPlans(ctx: PlanCtx, shops: ShopCtx[], customers: CustomerRef[], ra
         refundAmount,
         events,
         ids: {
-          txnNo: String(14_000_000 + seq * 100 + Math.floor(k.r[14] * 100)),
-          bankCode: method === METHOD.VNPAY ? pickOf(k.r[13], VNPAY_BANKS) : pickOf(k.r[13], TRANSFER_BANKS),
-          cardBrand: '',
           bankRef: `FT${String(26_000_000 + seq * 100 + Math.floor(k.r[14] * 100)).padStart(8, '0')}`,
           payosCode: String(createdAt * 1000 + (seq % 1000)),
           linkId: hex32(`link:${code}`),
         },
       };
     });
-    for (const c of children) c.ids.cardBrand = c.ids.bankCode === 'VNPAYQR' ? 'QRCODE' : 'ATM';
     plans.push({ idx: g.idx, code: groupCode, customer, createdAt, children, platform: chosen.platform });
     if (customer.firstOrderAt === null || createdAt < customer.firstOrderAt) customer.firstOrderAt = createdAt;
   });
@@ -709,7 +701,6 @@ async function writeGroup(prisma: PrismaClient, g: GroupPlan, w: WriteCtx): Prom
   const histories: Prisma.OrderStatusHistoryCreateManyInput[] = [];
   const payments: Prisma.PaymentCreateManyInput[] = [];
   const payTxs: Prisma.PaymentTransactionCreateManyInput[] = [];
-  const confirmations: Prisma.BankTransferConfirmationCreateManyInput[] = [];
   const usages: Prisma.PromotionUsageCreateManyInput[] = [];
   const returns: Prisma.ReturnRequestCreateManyInput[] = [];
   const returnItems: Prisma.ReturnRequestItemCreateManyInput[] = [];
@@ -764,15 +755,15 @@ async function writeGroup(prisma: PrismaClient, g: GroupPlan, w: WriteCtx): Prom
       orderPay = 'unpaid';
     }
     const refundedAmount = cancelRefundDone ? c.total : returnDone ? returnRefund : 0n;
-    const payExpires = online ? g.createdAt + (c.method === METHOD.BANK_TRANSFER ? 24 * HOUR : 30 * MIN) : null;
-    const orderExpires = c.method === METHOD.VNPAY || c.method === METHOD.BANK_TRANSFER ? payExpires : null;
+    const payExpires = online ? g.createdAt + 30 * MIN : null;
+    const orderExpires = c.method === METHOD.PAYOS ? payExpires : null;
     const paymentExpiresAtOnOrder = L.paidAt !== null ? null : orderExpires;
 
     // ---- đổi trả + hoàn tiền (dòng đầu, 1 đơn vị)
     const ret = L.ret;
     const retActor = c.shop.id === FITLY_OFFICIAL_SHOP_ID ? w.staff.sales : c.shop.ownerUserId;
-    const refundMethod = c.method === METHOD.VNPAY || c.method === METHOD.PAYOS ? 'gateway' : 'manual_transfer';
-    const refundRef = (kind: string): string => (c.method === METHOD.VNPAY ? `vnpay-refund:${c.ids.txnNo}${kind}` : c.method === METHOD.PAYOS ? `payos-refund:${c.ids.payosCode}${kind}` : `HT-${c.code}${kind}`);
+    const refundMethod = c.method === METHOD.PAYOS ? 'gateway' : 'manual_transfer'; // COD hoàn thủ công
+    const refundRef = (kind: string): string => (c.method === METHOD.PAYOS ? `payos-refund:${c.ids.payosCode}${kind}` : `HT-${c.code}${kind}`);
 
     // ---- lịch sử trạng thái
     const hist: Array<{ from: string | null; to: string; at: number; actor: string | null; note: string | null }> = [{ from: null, to: 'pending', at: g.createdAt, actor: userId, note: 'Khách đặt hàng' }];
@@ -815,39 +806,24 @@ async function writeGroup(prisma: PrismaClient, g: GroupPlan, w: WriteCtx): Prom
     });
 
     // ---- Payment + giao dịch (đúng type/providerRef như PaymentService; (type, providerRef) duy nhất toàn bảng)
-    const gatewayVnpay = {
-      vnp_TmnCode: 'FITLYDEMO', vnp_TxnRef: `${c.code}-1`, vnp_Amount: (c.total * 100n).toString(), vnp_OrderInfo: `Thanh toan don ${c.code}`, vnp_ResponseCode: '00', vnp_TransactionStatus: '00',
-      vnp_TransactionNo: c.ids.txnNo, vnp_BankCode: c.ids.bankCode, vnp_CardType: c.ids.cardBrand, vnp_PayDate: vnpayDate(L.paidAt ?? g.createdAt),
-    };
     const gatewayPayos = {
       code: '00', desc: 'success', orderCode: c.ids.payosCode, amount: Number(c.total), description: c.code, reference: c.ids.bankRef, paymentLinkId: c.ids.linkId, currency: 'VND', transactionDateTime: new Date((L.paidAt ?? g.createdAt) + 7 * HOUR).toISOString().replace('T', ' ').slice(0, 19),
     };
-    const paidTxCode = c.method === METHOD.VNPAY ? c.ids.txnNo : c.method === METHOD.PAYOS ? c.ids.payosCode : c.method === METHOD.BANK_TRANSFER ? c.ids.bankRef : null;
+    const paidTxCode = c.method === METHOD.PAYOS ? c.ids.payosCode : null;
     const lastPayAt = Math.max(g.createdAt, L.paidAt ?? 0, L.cancel?.at ?? 0, L.cancelRefund?.done ? L.cancelRefund.at : 0, ret?.refundedAt ?? 0);
     payments.push({
       id: paymentId, orderId, orderCode: c.code, userId, methodCode: c.method, amount: c.total.toString(), status: payStatus,
       transactionCode: L.paidAt !== null ? paidTxCode : null,
-      bankCode: c.method === METHOD.VNPAY ? (L.paidAt !== null ? c.ids.bankCode : null) : c.method === METHOD.BANK_TRANSFER ? c.ids.bankCode : null,
-      cardBrand: c.method === METHOD.VNPAY && L.paidAt !== null ? c.ids.cardBrand : null,
-      transferContent: c.method === METHOD.BANK_TRANSFER ? c.code : null,
       refundedAmount: refundedAmount.toString(),
-      gatewayResponse: L.paidAt !== null && c.method === METHOD.VNPAY ? (gatewayVnpay) : L.paidAt !== null && c.method === METHOD.PAYOS ? (gatewayPayos) : undefined,
+      gatewayResponse: L.paidAt !== null && c.method === METHOD.PAYOS ? gatewayPayos : undefined,
       paidAt: dtOrNull(L.paidAt), expiresAt: dtOrNull(payExpires), createdAt, createdBy: userId, updatedAt: dt(lastPayAt),
     });
-    if (c.method === METHOD.VNPAY) {
-      payTxs.push({ paymentId, type: TX_TYPE.CREATE_URL, status: 'ok', amount: c.total.toString(), providerRef: null, rawRequest: { txnRef: `${c.code}-1`, bankCode: c.ids.bankCode }, createdAt });
-      if (L.paidAt !== null) payTxs.push({ paymentId, type: TX_TYPE.IPN, status: 'ok', amount: c.total.toString(), providerRef: `${c.ids.txnNo}:00`, rawResponse: { ...gatewayVnpay, source: 'ipn' }, createdAt: dt(L.paidAt) });
-    } else if (c.method === METHOD.PAYOS) {
+    if (c.method === METHOD.PAYOS) {
       payTxs.push({
         paymentId, type: TX_TYPE.CREATE_URL, status: 'ok', amount: c.total.toString(), providerRef: c.ids.payosCode,
         rawRequest: { payosOrderCode: c.ids.payosCode, checkoutUrl: `https://pay.payos.vn/web/${c.ids.linkId}`, paymentLinkId: c.ids.linkId }, createdAt,
       });
       if (L.paidAt !== null) payTxs.push({ paymentId, type: TX_TYPE.PAYOS_WEBHOOK, status: 'ok', amount: c.total.toString(), providerRef: c.ids.payosCode, rawResponse: gatewayPayos, createdAt: dt(L.paidAt) });
-    } else if (c.method === METHOD.BANK_TRANSFER) {
-      if (L.paidAt !== null) {
-        confirmations.push({ paymentId, amount: c.total.toString(), bankRef: c.ids.bankRef, note: 'Đối soát sao kê (seed hoạt động)', confirmedBy: w.staff.accountant ?? userId, confirmedAt: dt(L.paidAt) });
-        payTxs.push({ paymentId, type: TX_TYPE.MANUAL_CONFIRM, status: 'ok', amount: c.total.toString(), providerRef: `manual:${paymentId}`, createdAt: dt(L.paidAt) });
-      }
     } else if (L.paidAt !== null) {
       payTxs.push({ paymentId, type: TX_TYPE.COD_COLLECT, status: 'ok', amount: c.total.toString(), providerRef: `cod:${c.code}`, createdAt: dt(L.paidAt) });
     }
@@ -922,7 +898,6 @@ async function writeGroup(prisma: PrismaClient, g: GroupPlan, w: WriteCtx): Prom
       await tx.orderStatusHistory.createMany({ data: histories });
       await tx.payment.createMany({ data: payments });
       if (payTxs.length > 0) await tx.paymentTransaction.createMany({ data: payTxs });
-      if (confirmations.length > 0) await tx.bankTransferConfirmation.createMany({ data: confirmations });
       if (usages.length > 0) await tx.promotionUsage.createMany({ data: usages });
       if (returns.length > 0) {
         await tx.returnRequest.createMany({ data: returns });
@@ -952,7 +927,7 @@ async function settingNumber(prisma: PrismaClient, key: string, fallback: number
 }
 
 async function loadShops(prisma: PrismaClient): Promise<ShopCtx[]> {
-  const shopRows = await prisma.shop.findMany({ where: { isDeleted: false }, select: { id: true, code: true, slug: true, name: true, status: true, commissionRate: true, codEnabled: true, ownerUserId: true }, orderBy: { code: 'asc' } });
+  const shopRows = await prisma.shop.findMany({ where: { isDeleted: false }, select: { id: true, code: true, slug: true, name: true, status: true, commissionRate: true, ownerUserId: true }, orderBy: { code: 'asc' } });
   const productRows = await prisma.product.findMany({
     where: { isDeleted: false, status: 'active', variants: { some: { isDeleted: false, isActive: true } } },
     orderBy: { slug: 'asc' },
@@ -984,7 +959,7 @@ async function loadShops(prisma: PrismaClient): Promise<ShopCtx[]> {
     products.forEach((p, rank) => {
       p.weight = 1 / (rank + 1) ** 0.6;
     });
-    return { id: s.id, code: s.code, slug: s.slug, name: s.name, status: s.status, commissionRate: s.commissionRate.toString(), codEnabled: s.codEnabled, ownerUserId: s.ownerUserId, products };
+    return { id: s.id, code: s.code, slug: s.slug, name: s.name, status: s.status, commissionRate: s.commissionRate.toString(), ownerUserId: s.ownerUserId, products };
   });
 }
 
@@ -1213,8 +1188,6 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     if (created % 50 === 0) console.log(`   ... đã ghi ${created}/${todo.length} nhóm`);
   }
   console.log(`   đơn hàng: ${plans.length} nhóm kế hoạch — tạo mới ${created} nhóm / ${createdChildren} đơn con, bỏ qua ${plans.length - created} nhóm đã có`);
-
-  // Ví quỹ COD (hoa hồng đơn COD hoàn tất, nộp quỹ, shop bị khoá COD) do bước `settlement` ghi — một nguồn duy nhất để sổ cái nhất quán.
 
   // ---- tổng kết (đọc lại từ DB để tính cả đơn đã có từ lần chạy trước)
   const where = { code: { startsWith: CODE_PREFIX } };

@@ -106,7 +106,7 @@ describe('cache công khai + SHOP_* — shop khoá / duyệt lại có hiệu l�
   const card = (id: string, shopId: string) =>
     ({ id, shopId, slug: `sp-${id}`, name: `Sản phẩm ${id}`, categorySlug: 'ao-thun', gender: 'unisex', basePrice: { toString: () => '100000' }, listPrice: null, avgRating: { toString: () => '4.5' }, reviewCount: 3, soldCount: 5, isNew: false, isFeatured: false, publishedAt: null, tags: [], images: [], variants: [] }) as never;
   const detailRow = () => ({ ...(card('p1', 'shop-1') as object), shortDescription: null, description: null, material: null, care: [], attributeValues: [], images: [], variants: [] });
-  const shopBrief = (status: string): ShopBrief => ({ id: 'shop-1', code: 'S1', slug: 'shop-1', name: 'Shop 1', logoUrl: null, ratingAvg: 4.5, status, commissionRate: '10.00', codEnabled: true });
+  const shopBrief = (status: string): ShopBrief => ({ id: 'shop-1', code: 'S1', slug: 'shop-1', name: 'Shop 1', logoUrl: null, ratingAvg: 4.5, status, commissionRate: '10.00'  });
 
   function build() {
     const shop = { status: 'approved' };

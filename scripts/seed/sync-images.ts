@@ -41,9 +41,8 @@ async function main(): Promise<number> {
   console.log('='.repeat(65));
   console.log(`[ĐỒNG BỘ ẢNH SEED] — Chế độ: ${images.mode}`);
   if (!images.isConfigured) {
-    console.log('⚠️  Chưa cấu hình EF_CLOUDINARY_* trong .env — dùng URL tĩnh (/static/seed)');
-    console.log('   Nếu muốn đẩy ảnh lên Cloudinary, vui lòng điền đủ:');
-    console.log('   EF_CLOUDINARY_CLOUD_NAME, EF_CLOUDINARY_API_KEY, EF_CLOUDINARY_API_SECRET');
+    console.log('ℹ️  Chưa cấu hình EF_CLOUDINARY_* — ảnh có trong manifest đóng gói dùng link Cloudinary sẵn có, ảnh còn lại dùng URL tĩnh (/static/seed).');
+    console.log('   Muốn đẩy ảnh lên Cloudinary của bạn: điền EF_CLOUDINARY_CLOUD_NAME, EF_CLOUDINARY_API_KEY, EF_CLOUDINARY_API_SECRET và đặt EF_SEED_IMAGE_SOURCE=upload.');
   } else {
     console.log(`☁️  Đang kết nối Cloudinary: ${env.EF_CLOUDINARY_CLOUD_NAME}`);
   }
@@ -136,6 +135,7 @@ async function main(): Promise<number> {
     // Tổng kết
     console.log('\n' + '='.repeat(65));
     console.log('KẾT QUẢ ĐỒNG BỘ:');
+    console.log(`  - Link đóng gói sẵn      : ${images.packagedCount} ảnh (không upload, không gọi mạng)`);
     if (images.isConfigured) {
       console.log(`  - Tải lên mới Cloudinary : ${images.uploadedCount} ảnh`);
       console.log(`  - Đã có sẵn (bỏ qua)     : ${images.reusedCount} ảnh (không tốn thêm dung lượng/băng thông)`);

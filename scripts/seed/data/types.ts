@@ -121,7 +121,6 @@ export interface SeedShopDef {
   description: string;
   status: 'approved' | 'pending' | 'suspended' | 'rejected';
   commissionRate: number;
-  codEnabled: boolean;
   owner: SeedShopOwner;
   /* nhân viên (vai shop_staff) — tuỳ chọn */
   staff?: readonly SeedShopOwner[];

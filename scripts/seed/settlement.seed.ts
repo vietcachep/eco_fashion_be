@@ -1,26 +1,22 @@
 /*
- * SEED tiền của sàn đa gian hàng (PLAN-0017): tài khoản ngân hàng shop → ví quỹ COD (sổ cái append-only) → yêu cầu nộp quỹ →
- * kỳ đối soát lịch sử (ShopPayout + ShopPayoutLine) + audit PAYOUT_CREATED. CHỈ ĐỌC đơn/hoàn tiền do activity.seed tạo (mã DHSEED*),
- * không sửa đơn. Chạy SAU activity.seed; chưa có đơn DHSEED nào thì chỉ khai tài khoản ngân hàng rồi thoát êm.
+ * SEED tiền của sàn đa gian hàng (PLAN-0017/0018): tài khoản ngân hàng shop → kỳ đối soát lịch sử (ShopPayout + ShopPayoutLine) + audit
+ * PAYOUT_CREATED. Sàn thu MỌI khoản tiền (PayOS online + COD do shipper thu hộ) nên đơn COD đã giao/hoàn tất (Payment `paid`) vào đối soát
+ * CÙNG đường với PayOS — không còn ví quỹ COD / nạp quỹ. CHỈ ĐỌC đơn/hoàn tiền do activity.seed tạo (mã DHSEED*), không sửa đơn.
+ * Chạy SAU activity.seed; chưa có đơn DHSEED nào thì chỉ khai tài khoản ngân hàng rồi thoát êm.
  *
- * Công thức SAO CHÉP từ service thật để số liệu seed khớp đúng thứ kế toán sẽ thấy khi bấm "Chạy kỳ":
- *   - hoa hồng COD ghi ví  (payment-worker.module.ts): net = round((total + platformDiscount) × rate% ) − platformDiscount;
- *     dòng sổ cái 'cod_commission' amount = −net, orderCode = mã đơn (net = 0 thì không ghi).
- *   - đối soát (shop-payout.service.ts): gross = total + platformDiscount; hoa hồng = round half up(gross × rate / 100);
- *     dòng hoàn tiền khoá `RF-` + 26 hex đầu của refund.id, chia theo TỈ LỆ LUỸ KẾ trên khách đã trả T: gross hoàn = round(G × cumSau / T)
- *     − round(G × cumTrước / T), hoa hồng hoàn lại tương tự với C (G, C = gross/hoa hồng dòng bán); chỉ trừ hoàn tiền của đơn ĐÃ có
- *     dòng bán; net = gross − hoa hồng ròng − hoàn tiền − nợ mang sang;
- *     net < 0 → carried, = 0 → settled, > 0 → pending/processing/paid/failed. Escrow: đơn online (≠ cod) completed,
- *     paymentStatus paid|partially_refunded, deliveredAt (hoặc completedAt khi chưa có deliveredAt) + return.window_days ≤ periodEnd.
+ * Công thức SAO CHÉP từ service thật (shop-payout.service.ts) để số liệu seed khớp đúng thứ kế toán sẽ thấy khi bấm "Chạy kỳ":
+ *   gross = total + platformDiscount; hoa hồng = round half up(gross × rate / 100);
+ *   dòng hoàn tiền khoá `RF-` + 26 hex đầu của refund.id, chia theo TỈ LỆ LUỸ KẾ trên khách đã trả T: gross hoàn = round(G × cumSau / T)
+ *   − round(G × cumTrước / T), hoa hồng hoàn lại tương tự với C (G, C = gross/hoa hồng dòng bán); chỉ trừ hoàn tiền của đơn ĐÃ có
+ *   dòng bán; net = gross − hoa hồng ròng − hoàn tiền − nợ mang sang;
+ *   net < 0 → carried, = 0 → settled, > 0 → pending/processing/paid/failed. Escrow (OrderQueryApi.settlementOrders): đơn (PayOS HOẶC COD) completed,
+ *   paymentStatus paid|partially_refunded, không còn đổi trả requested/approved, deliveredAt (hoặc completedAt khi chưa có deliveredAt) + return.window_days ≤ periodEnd.
  *
- * Idempotent: ngân hàng chỉ ghi khi 3 cột đang NULL; sổ cái bỏ qua dòng đã có (shop, loại, mã đơn / ghi chú); yêu cầu nộp quỹ theo
- * (shop, trạng thái, ghi chú); kỳ theo (shopId, periodStart, periodEnd) và các khoá (orderCode, kind) đã có. Chạy lại ở ngày khác vẫn
- * dùng lại đúng hai kỳ đã tạo (neo theo ShopPayout.createdBy IS NULL) nên không sinh kỳ chồng nhau.
+ * Idempotent: ngân hàng chỉ ghi khi 3 cột đang NULL; kỳ theo (shopId, periodStart, periodEnd) và các khoá (orderCode, kind) đã có. Chạy lại ở ngày
+ * khác vẫn dùng lại đúng hai kỳ đã tạo (neo theo ShopPayout.createdBy IS NULL) nên không sinh kỳ chồng nhau.
  * Tiền là Prisma.Decimal / số nguyên VND — không dùng số thực.
  */
 import { Prisma, type PrismaClient } from '../../src/generated/prisma/client';
-import { SHOPS } from './data/shops';
-import type { SeedShopDef } from './data/types';
 
 type Dec = Prisma.Decimal;
 
@@ -35,14 +31,9 @@ const vnd = (d: Dec): string => `${Number(d.toFixed(0)).toLocaleString('vi-VN')}
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
-const OFFICIAL_SHOP_CODE = 'SHOP-000001';
 const ORDER_PREFIX = 'DHSEED';
-const ADMIN_EMAIL = 'admin@ecofashion.vn';
 const DEFAULT_RETURN_WINDOW_DAYS = 7;
-const INITIAL_DEPOSIT_NOTE = 'Nộp quỹ ban đầu (seed)';
 const PAYOS_LOW_BALANCE = 'Số dư tài khoản chi PayOS không đủ';
-/* URL ảnh minh chứng ví dụ hợp lệ (ảnh mẫu công khai của Cloudinary) */
-const DEMO_PROOF_URL = 'https://res.cloudinary.com/demo/image/upload/sample.jpg';
 
 /* BIN 6 số THẬT của ngân hàng VN (chuẩn Napas/PayOS — dùng làm `toBin` khi chi tiền) */
 const BANKS: ReadonlyArray<{ bin: string; name: string }> = [
@@ -65,7 +56,6 @@ interface ShopRow {
   code: string;
   name: string;
   status: string;
-  codEnabled: boolean;
   ownerUserId: string;
   bankCode: string | null;
   bankAccountNumber: string | null;
@@ -90,26 +80,6 @@ interface SeedOrder {
   createdAt: Date;
   deliveredAt: Date | null;
   completedAt: Date | null;
-}
-
-interface LedgerEvent {
-  at: Date;
-  type: 'deposit' | 'cod_commission' | 'adjust';
-  amount: Dec;
-  orderCode: string | null;
-  note: string;
-  createdBy: string | null;
-}
-
-interface RequestDef {
-  shop: ShopRow;
-  status: 'pending' | 'approved' | 'rejected';
-  amount: number;
-  createdAt: Date;
-  decidedAt: Date | null;
-  note: string;
-  decideNote: string | null;
-  proofUrl: string | null;
 }
 
 /* ---------------------------------------------------------------- tiện ích tất định */
@@ -191,215 +161,6 @@ async function seedBankAccounts(prisma: PrismaClient, shops: ShopRow[]): Promise
   return { bankOf, created };
 }
 
-/* ---------------------------------------------------------------- 2–3. kế hoạch ví quỹ COD + yêu cầu nộp quỹ */
-
-/* Hoa hồng COD ròng của đơn (payment-worker.module.ts): dương = trừ ví, âm = cộng ví (sàn hoàn voucher sàn lớn hơn hoa hồng). */
-function codNetOf(o: SeedOrder): Dec {
-  const revenue = D(o.total).add(D(o.platformDiscount));
-  const commission = revenue.mul(o.commissionRateSnapshot).div(100).toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP);
-  return commission.sub(D(o.platformDiscount));
-}
-
-interface ShopStat {
-  shop: ShopRow;
-  orderCount: number;
-  initialAt: Date;
-  cod: LedgerEvent[];
-  totalNet: Dec; // Σ hoa hồng ròng (có dấu)
-  posNet: Dec; // Σ phần dương — mức tối đa ví có thể bị trừ
-}
-
-/* Quy mô shop → khoản nộp quỹ ban đầu 2–15 triệu; nới lên nếu hoa hồng COD dự kiến vượt (để ví luôn > 0 xuyên suốt, không bị khoá giữa chừng). */
-function initialDepositOf(st: ShopStat): Dec {
-  const tier = st.orderCount >= 30 ? 15_000_000 : st.orderCount >= 20 ? 10_000_000 : st.orderCount >= 12 ? 6_000_000 : st.orderCount >= 6 ? 4_000_000 : 2_000_000;
-  const needed = st.posNet.mul('1.3').add(500_000).div(100_000).ceil().mul(100_000);
-  return Prisma.Decimal.max(D(tier), needed);
-}
-
-interface MoneyPlan {
-  events: Map<string, LedgerEvent[]>;
-  requests: RequestDef[];
-  locked: ShopRow | null;
-}
-
-/* Mã shop approved mà data/shops.ts CHỦ Ý tắt COD (vd Time Lab) — seed không mở lại, cũng không chọn làm shop "bị khoá do ví". */
-const INTENTIONAL_COD_OFF: ReadonlySet<string> = new Set((SHOPS as readonly SeedShopDef[]).filter((s) => s.status === 'approved' && !s.codEnabled).map((s) => s.code));
-
-/* Hàm thuần: từ shop + đơn dựng toàn bộ dòng sổ cái và yêu cầu nộp quỹ. ĐÚNG MỘT shop approved (không phải shop chính chủ, COD nặng nhất,
-   ưu tiên shop không bị tắt COD chủ ý) bị giảm khoản nộp ban đầu để ví ≤ 0 ⇒ COD bị khoá; mọi shop approved khác ví > 0. */
-function planMoney(shops: ShopRow[], orders: SeedOrder[], adminId: string | null, nowMs: number): MoneyPlan {
-  const ago = (days: number, hours = 0): Date => new Date(nowMs - days * DAY - hours * HOUR);
-  const approved = shops.filter((s) => s.status === 'approved');
-  const byShop = new Map<string, SeedOrder[]>();
-  for (const o of orders) {
-    const arr = byShop.get(o.shopId);
-    if (arr) arr.push(o);
-    else byShop.set(o.shopId, [o]);
-  }
-  const globalFirst = orders[0].createdAt;
-
-  const stats = new Map<string, ShopStat>();
-  for (const shop of approved) {
-    const mine = byShop.get(shop.id) ?? [];
-    const cod: LedgerEvent[] = [];
-    let totalNet = ZERO;
-    let posNet = ZERO;
-    for (const o of mine) {
-      if (o.paymentMethodCode !== 'cod' || o.status !== 'completed') continue;
-      const net = codNetOf(o);
-      if (net.isZero()) continue; // service không ghi dòng khi khoản ròng bằng 0
-      totalNet = totalNet.add(net);
-      if (net.gt(0)) posNet = posNet.add(net);
-      cod.push({ at: o.completedAt ?? o.deliveredAt ?? o.createdAt, type: 'cod_commission', amount: net.neg(), orderCode: o.code, note: `Hoa hồng COD đơn ${o.code}`, createdBy: null });
-    }
-    // Nộp quỹ ban đầu LUÔN trước đơn đầu tiên của shop (2 ngày).
-    stats.set(shop.id, { shop, orderCount: mine.length, initialAt: new Date((mine[0]?.createdAt ?? globalFirst).getTime() - 2 * DAY), cod, totalNet, posNet });
-  }
-
-  // Shop khoá COD = shop COD nặng nhất (không tính shop chính chủ — hoa hồng 0%); hoà thì theo mã shop. Shop đã chủ ý tắt COD không
-  // vào danh sách này (chỉ lấy làm phương án cuối nếu không còn shop nào khác); cũng không nhận luồng nộp quỹ (duyệt nộp quỹ sẽ mở lại COD).
-  const ranked = approved
-    .filter((s) => s.code !== OFFICIAL_SHOP_CODE)
-    .sort((a, b) => {
-      const d = (stats.get(b.id) as ShopStat).totalNet.cmp((stats.get(a.id) as ShopStat).totalNet);
-      return d !== 0 ? d : a.code.localeCompare(b.code);
-    });
-  const candidates = ranked.filter((s) => !INTENTIONAL_COD_OFF.has(s.code));
-  const locked = candidates[0] ?? ranked[0] ?? null;
-  const donors = candidates.filter((s) => s.id !== locked?.id).slice(0, 4);
-
-  const events = new Map<string, LedgerEvent[]>();
-  const requests: RequestDef[] = [];
-  const initialEvent = (st: ShopStat, amount: Dec): LedgerEvent[] => (amount.gt(0) ? [{ at: st.initialAt, type: 'deposit', amount, orderCode: null, note: INITIAL_DEPOSIT_NOTE, createdBy: null }] : []);
-
-  // --- shop bị khoá COD: khoản ban đầu = 55% tổng hoa hồng (làm tròn xuống chục nghìn) ⇒ cuối cùng ví ÂM.
-  if (locked) {
-    const st = stats.get(locked.id) as ShopStat;
-    const deposit = st.totalNet.gt(0) ? st.totalNet.mul('0.55').div(10_000).floor().mul(10_000) : ZERO;
-    const ev = [...initialEvent(st, deposit), ...st.cod];
-    let final = ev.reduce((sum, e) => sum.add(e.amount), ZERO);
-    if (final.gt(0)) {
-      // Dữ liệu không có COD đủ lớn (vd chỉ toàn voucher sàn chịu) → thêm một dòng điều chỉnh để vẫn có đúng một shop bị khoá.
-      const adj = final.add(150_000).neg();
-      ev.push({ at: ago(1), type: 'adjust', amount: adj, orderCode: null, note: 'Điều chỉnh giảm quỹ: bù trừ hoa hồng COD các kỳ trước (seed)', createdBy: adminId });
-      final = final.add(adj);
-    }
-    events.set(locked.id, ev);
-
-    // Yêu cầu đã bị từ chối (chứng từ mờ) rồi gửi lại — đang chờ duyệt, đủ số tiền để mở lại COD.
-    const topUp = Math.max(2_000_000, Math.ceil((Number(final.neg().toFixed(0)) + 1_000_000) / 500_000) * 500_000);
-    requests.push({ shop: locked, status: 'rejected', amount: 2_000_000, createdAt: ago(9), decidedAt: ago(8, 3), note: 'Nộp quỹ COD bổ sung lần 1', decideNote: 'Ảnh chứng từ bị mờ, không đọc được số tiền và nội dung chuyển khoản — vui lòng gửi lại ảnh sao kê đầy đủ', proofUrl: DEMO_PROOF_URL });
-    requests.push({ shop: locked, status: 'pending', amount: topUp, createdAt: ago(2, 5), decidedAt: null, note: 'Đã chuyển khoản bổ sung quỹ COD, nhờ sàn duyệt sớm để mở lại COD', decideNote: null, proofUrl: DEMO_PROOF_URL });
-  }
-
-  // --- shop "nạp thêm": 1 yêu cầu chờ duyệt + 3 yêu cầu đã duyệt (kèm dòng sổ cái 'deposit' tương ứng).
-  const donorPlans: Array<{ status: RequestDef['status']; amount: number; daysAgo: number; note: string; decideNote: string | null; proof: boolean }> = [
-    { status: 'pending', amount: 5_000_000, daysAgo: 1, note: 'Nộp trước quỹ COD để không gián đoạn trong đợt khuyến mãi cuối tháng', decideNote: null, proof: false },
-    { status: 'approved', amount: 5_000_000, daysAgo: 30, note: 'Nộp quỹ COD định kỳ', decideNote: 'Đã đối chiếu sao kê, khớp số tiền', proof: true },
-    { status: 'approved', amount: 3_000_000, daysAgo: 21, note: 'Bổ sung quỹ COD do tăng đơn trong tuần', decideNote: 'Đã đối chiếu sao kê, khớp số tiền', proof: true },
-    { status: 'approved', amount: 10_000_000, daysAgo: 12, note: 'Nộp quỹ COD đầu kỳ', decideNote: 'Đã xác nhận tiền về tài khoản sàn', proof: false },
-  ];
-  const donorDeposits = new Map<string, LedgerEvent[]>();
-  for (const [i, shop] of donors.entries()) {
-    const plan = donorPlans[i];
-    const st = stats.get(shop.id) as ShopStat;
-    let createdAt = ago(plan.daysAgo);
-    let decidedAt: Date | null = null;
-    if (plan.status === 'approved') {
-      // Không để lệnh duyệt rơi trước khoản nộp ban đầu khi đơn đầu tiên quá gần đây.
-      decidedAt = new Date(Math.max(ago(plan.daysAgo).getTime(), st.initialAt.getTime() + DAY));
-      createdAt = new Date(decidedAt.getTime() - 20 * HOUR);
-      donorDeposits.set(shop.id, [{ at: decidedAt, type: 'deposit', amount: D(plan.amount), orderCode: null, note: plan.decideNote ?? 'Nộp quỹ được phê duyệt', createdBy: adminId }]);
-    }
-    requests.push({ shop, status: plan.status, amount: plan.amount, createdAt, decidedAt, note: plan.note, decideNote: plan.decideNote, proofUrl: plan.proof ? DEMO_PROOF_URL : null });
-  }
-
-  for (const shop of approved) {
-    if (locked && shop.id === locked.id) continue;
-    const st = stats.get(shop.id) as ShopStat;
-    events.set(shop.id, [...initialEvent(st, initialDepositOf(st)), ...(donorDeposits.get(shop.id) ?? []), ...st.cod]);
-  }
-  return { events, requests, locked };
-}
-
-/* ---------------------------------------------------------------- ghi ví + yêu cầu */
-
-const byTime = (a: LedgerEvent, b: LedgerEvent): number => {
-  const d = a.at.getTime() - b.at.getTime();
-  if (d !== 0) return d;
-  if (a.type !== b.type) return a.type === 'deposit' ? -1 : b.type === 'deposit' ? 1 : a.type.localeCompare(b.type);
-  return (a.orderCode ?? '').localeCompare(b.orderCode ?? '');
-};
-
-/* Ghi các dòng sổ cái CHƯA có (khoá: shop+loại+mã đơn; khoản không gắn đơn thì shop+loại+ghi chú — bỏ qua số tiền để lần chạy sau
-   đổi cỡ khoản nộp ban đầu cũng không nhân đôi) theo thứ tự thời gian với balanceAfter lũy kế đúng; rồi đặt ShopWallet.balance = tổng
-   sổ cái (đọc lại từ DB) và đồng bộ Shop.codEnabled theo số dư. */
-async function writeWallet(prisma: PrismaClient, shop: ShopRow, events: LedgerEvent[]): Promise<Dec> {
-  const wallet = await prisma.shopWallet.upsert({ where: { shopId: shop.id }, create: { shopId: shop.id }, update: {}, select: { id: true, createdAt: true } });
-  const existing = await prisma.shopWalletTransaction.findMany({ where: { shopId: shop.id }, select: { type: true, orderCode: true, amount: true, note: true } });
-  const exists = (e: LedgerEvent): boolean => existing.some((x) => x.type === e.type && (e.orderCode ? x.orderCode === e.orderCode : x.orderCode === null && x.note === e.note));
-
-  let running = existing.reduce((sum, x) => sum.add(D(x.amount)), ZERO);
-  const rows = events
-    .filter((e) => !exists(e))
-    .sort(byTime)
-    .map((e) => {
-      running = running.add(e.amount);
-      return { walletId: wallet.id, shopId: shop.id, type: e.type, orderCode: e.orderCode, amount: e.amount, balanceAfter: running, note: e.note, createdBy: e.createdBy, createdAt: e.at };
-    });
-
-  const balance = await prisma.$transaction(
-    async (tx) => {
-      if (rows.length > 0) await tx.shopWalletTransaction.createMany({ data: rows, skipDuplicates: true });
-      const agg = await tx.shopWalletTransaction.aggregate({ where: { shopId: shop.id }, _sum: { amount: true }, _min: { createdAt: true }, _max: { createdAt: true }, _count: true });
-      const total = agg._sum.amount ? D(agg._sum.amount) : ZERO;
-      await tx.shopWallet.update({
-        where: { id: wallet.id },
-        data: {
-          balance: total,
-          version: agg._count,
-          createdAt: agg._min.createdAt && agg._min.createdAt < wallet.createdAt ? agg._min.createdAt : undefined,
-          updatedAt: agg._max.createdAt ?? undefined,
-        },
-      });
-      return total;
-    },
-    { timeout: 30_000 },
-  );
-
-  // Quy tắc ví quỹ COD: ví ≤ 0 ⇒ khoá COD, > 0 ⇒ mở (xem ShopWalletService.syncCod) — TRỪ shop đã chủ ý tắt COD ở data/shops.ts: giữ false.
-  const enable = INTENTIONAL_COD_OFF.has(shop.code) ? false : balance.gt(0);
-  if (shop.codEnabled !== enable) await prisma.shop.update({ where: { id: shop.id }, data: { codEnabled: enable } });
-  return balance;
-}
-
-async function writeDepositRequests(prisma: PrismaClient, requests: RequestDef[], adminId: string | null): Promise<number> {
-  let created = 0;
-  for (const r of requests) {
-    const found = await prisma.shopWalletDepositRequest.findFirst({ where: { shopId: r.shop.id, status: r.status, note: r.note }, select: { id: true } });
-    if (found) continue;
-    const decided = r.status !== 'pending';
-    await prisma.shopWalletDepositRequest.create({
-      data: {
-        shopId: r.shop.id,
-        amount: D(r.amount),
-        status: r.status,
-        proofUrl: r.proofUrl,
-        note: r.note,
-        decidedBy: decided ? adminId : null,
-        decidedAt: r.decidedAt,
-        decideNote: r.decideNote,
-        createdBy: r.shop.ownerUserId,
-        version: decided ? 1 : 0,
-        createdAt: r.createdAt,
-        updatedAt: r.decidedAt ?? r.createdAt,
-      },
-    });
-    created += 1;
-  }
-  return created;
-}
-
 /* ---------------------------------------------------------------- 4. kỳ đối soát (payout) */
 
 interface DraftLine {
@@ -445,7 +206,7 @@ interface Period {
 }
 
 /* Gom dòng CHƯA từng tính tới hết periodEnd — bản sao ShopPayoutService.collect() chạy trên đơn DHSEED đã nạp sẵn. */
-function collectDrafts(orders: SeedOrder[], refunds: SeedRefund[], state: PayoutLedgerState, windowDays: number, periodEnd: Date): Map<string, DraftLine[]> {
+function collectDrafts(orders: SeedOrder[], refunds: SeedRefund[], openReturns: ReadonlySet<string>, state: PayoutLedgerState, windowDays: number, periodEnd: Date): Map<string, DraftLine[]> {
   const cutoff = new Date(periodEnd.getTime() - windowDays * DAY);
   const byShop = new Map<string, DraftLine[]>();
   const push = (shopId: string, line: DraftLine): void => {
@@ -456,8 +217,9 @@ function collectDrafts(orders: SeedOrder[], refunds: SeedRefund[], state: Payout
   const saleThisRun = new Map<string, { gross: Dec; commission: Dec }>();
 
   for (const o of orders) {
-    // Escrow (OrderQueryApi.settlementOrders): online + completed + đã thanh toán + qua hạn đổi trả tính từ ngày giao.
-    if (o.status !== 'completed' || o.paymentMethodCode === 'cod') continue;
+    // Escrow (OrderQueryApi.settlementOrders): PayOS hoặc COD (COD chỉ `paid` khi sàn đã thu lúc giao) + completed + qua hạn đổi trả tính từ ngày giao
+    // + không còn yêu cầu đổi trả đang xử lý (requested/approved).
+    if (o.status !== 'completed' || openReturns.has(o.code)) continue;
     if (o.paymentStatus !== 'paid' && o.paymentStatus !== 'partially_refunded') continue;
     const settled = o.deliveredAt !== null ? o.deliveredAt <= cutoff : o.completedAt !== null && o.completedAt <= cutoff;
     if (!settled || state.saleLine.has(o.code)) continue;
@@ -557,6 +319,9 @@ async function seedPayouts(prisma: PrismaClient, shops: ShopRow[], bankOf: Map<s
   const refunds: SeedRefund[] = (await prisma.refund.findMany({ where: { status: 'done', shopId: { not: null }, orderCode: { startsWith: ORDER_PREFIX } }, select: { id: true, orderCode: true, amount: true, shopId: true, processedAt: true } }))
     .flatMap((r) => (r.shopId ? [{ id: r.id, orderCode: r.orderCode, amount: D(r.amount), shopId: r.shopId, processedAt: r.processedAt }] : []));
 
+  // Đơn đang có yêu cầu đổi trả CHƯA xử lý xong bị giữ lại (escrow) — như settlementOrders.
+  const openReturns = new Set((await prisma.returnRequest.findMany({ where: { orderCode: { startsWith: ORDER_PREFIX }, status: { in: ['requested', 'approved'] } }, select: { orderCode: true } })).map((r) => r.orderCode));
+
   // Dòng đối soát đã có trong DB (kỳ seed lần trước hoặc kỳ chạy tay) — để không tính hai lần.
   const state: PayoutLedgerState = { saleLine: new Map(), refundKeys: new Set() };
   for (const l of await prisma.shopPayoutLine.findMany({ where: { OR: [{ kind: 'sale', orderCode: { startsWith: ORDER_PREFIX } }, { kind: 'refund', orderCode: { startsWith: 'RF-' } }] }, select: { orderCode: true, kind: true, gross: true, commission: true } })) {
@@ -569,7 +334,7 @@ async function seedPayouts(prisma: PrismaClient, shops: ShopRow[], bankOf: Map<s
 
   for (const [idx, period] of periods.entries()) {
     const kind: 1 | 2 = idx === 0 ? 1 : 2;
-    const drafts = collectDrafts(orders, refunds, state, windowDays, period.end);
+    const drafts = collectDrafts(orders, refunds, openReturns, state, windowDays, period.end);
     const plans: PayoutPlan[] = [];
 
     const shopIds = [...drafts.keys()].sort((a, b) => (shopById.get(a)?.code ?? a).localeCompare(shopById.get(b)?.code ?? b));
@@ -669,7 +434,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   const shops: ShopRow[] = await prisma.shop.findMany({
     where: { isDeleted: false },
     orderBy: { code: 'asc' },
-    select: { id: true, code: true, name: true, status: true, codEnabled: true, ownerUserId: true, bankCode: true, bankAccountNumber: true, bankAccountName: true },
+    select: { id: true, code: true, name: true, status: true, ownerUserId: true, bankCode: true, bankAccountNumber: true, bankAccountName: true },
   });
   if (shops.length === 0) {
     console.log('   ! Chưa có gian hàng nào — chạy marketplace.seed trước; bỏ qua seed tiền của sàn');
@@ -686,35 +451,11 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     select: { code: true, shopId: true, status: true, paymentMethodCode: true, paymentStatus: true, total: true, platformDiscount: true, commissionRateSnapshot: true, createdAt: true, deliveredAt: true, completedAt: true },
   });
   if (orders.length === 0) {
-    console.log(`   ! Chưa có đơn ${ORDER_PREFIX}* — bỏ qua ví quỹ COD, yêu cầu nộp quỹ và kỳ đối soát (chạy activity.seed trước)`);
+    console.log(`   ! Chưa có đơn ${ORDER_PREFIX}* — bỏ qua kỳ đối soát (chạy activity.seed trước)`);
     return;
   }
 
-  const adminId = (await prisma.user.findFirst({ where: { email: { equals: ADMIN_EMAIL, mode: 'insensitive' }, isDeleted: false }, select: { id: true } }))?.id ?? null;
-
-  // 2–3. Ví quỹ COD + yêu cầu nộp quỹ.
-  const plan = planMoney(shops, orders, adminId, nowMs);
-  const requestsCreated = await writeDepositRequests(prisma, plan.requests, adminId);
-  let walletTotal = ZERO;
-  const lockedBalances: string[] = [];
-  for (const shop of shops) {
-    if (shop.status === 'approved') {
-      const balance = await writeWallet(prisma, shop, plan.events.get(shop.id) ?? []);
-      walletTotal = walletTotal.add(balance);
-      if (balance.lte(0)) lockedBalances.push(`${shop.name} (${vnd(balance)})`);
-    } else if (shop.status === 'suspended' && shop.codEnabled) {
-      await prisma.shop.update({ where: { id: shop.id }, data: { codEnabled: false } }); // shop bị khoá giữ codEnabled=false
-    }
-  }
-  const walletCount = shops.filter((s) => s.status === 'approved').length;
-  console.log(`   ví quỹ COD: ${walletCount} ví, tổng số dư ${vnd(walletTotal)}; COD bị khoá (ví ≤ 0): ${lockedBalances.length > 0 ? lockedBalances.join(', ') : 'không có'}`);
-  if (lockedBalances.length !== 1) console.log(`   ! Mong đợi đúng 1 shop bị khoá COD, thực tế ${lockedBalances.length} — kiểm tra dữ liệu đơn COD`);
-
-  const allRequests = await prisma.shopWalletDepositRequest.findMany({ select: { status: true } });
-  const reqByStatus = (s: string): number => allRequests.filter((r) => r.status === s).length;
-  console.log(`   yêu cầu nộp quỹ: pending ${reqByStatus('pending')} · approved ${reqByStatus('approved')} · rejected ${reqByStatus('rejected')} (tạo mới ${requestsCreated})`);
-
-  // 4. Kỳ đối soát lịch sử.
+  // 2. Kỳ đối soát lịch sử (PayOS + COD).
   const { created: payoutCreated } = await seedPayouts(prisma, shops, bankOf, orders, nowMs);
   const payouts = await prisma.shopPayout.findMany({ where: { code: { startsWith: 'PAY-' } }, select: { status: true, netPayout: true } });
   const byStatus = new Map<string, { n: number; net: Dec }>();

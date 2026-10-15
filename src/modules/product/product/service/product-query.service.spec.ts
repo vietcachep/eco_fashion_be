@@ -11,7 +11,7 @@ import { ProductQueryService } from './product-query.service';
  * Repo/ShopQueryApi dựng giả; cache chạy thẳng (getOrSet gọi factory) để kiểm logic, không kiểm Redis.
  */
 
-const brief = (over: Partial<ShopBrief> = {}): ShopBrief => ({ id: 's-ok', code: 'S1', slug: 'shop-ok', name: 'Shop OK', logoUrl: null, ratingAvg: 4.5, status: 'approved', commissionRate: '10.00', codEnabled: true, ...over });
+const brief = (over: Partial<ShopBrief> = {}): ShopBrief => ({ id: 's-ok', code: 'S1', slug: 'shop-ok', name: 'Shop OK', logoUrl: null, ratingAvg: 4.5, status: 'approved', commissionRate: '10.00', ...over });
 const card = (id: string, shopId: string) =>
   ({ id, shopId, slug: `sp-${id}`, name: `Sản phẩm ${id}`, categorySlug: 'ao-thun', gender: 'unisex', basePrice: { toString: () => '100000' }, listPrice: null, avgRating: { toString: () => '4.5' }, reviewCount: 3, soldCount: 5, isNew: false, isFeatured: false, publishedAt: null, tags: [], images: [], variants: [] }) as unknown as ProductCardRow;
 

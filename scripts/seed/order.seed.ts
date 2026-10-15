@@ -1,14 +1,14 @@
 /*
  * SEED module cart + order + payment (+ promotion_usages): giỏ/wishlist demo cho khách, 14 đơn đủ trạng thái
- * (pending COD, chờ chuyển khoản, confirmed, packing, shipping, delivered, completed, cancelled, đổi trả đã hoàn),
- * kèm payment/giao dịch tương ứng, sổ kho (RESERVE/SALE/RETURN) và soldCount. Idempotent: đơn tồn tại theo mã → bỏ qua.
+ * (pending COD, chờ PayOS, confirmed, packing, shipping, delivered, completed, cancelled, đổi trả đã hoàn),
+ * kèm payment/giao dịch tương ứng (chỉ COD + PayOS; COD đã giao/hoàn tất có Payment `paid` + cod_collect vì sàn thu hộ qua shipper), sổ kho (RESERVE/SALE/RETURN) và soldCount. Idempotent: đơn tồn tại theo mã → bỏ qua.
  * Mã đơn seed `DHDEMO0001..` (khác dãy DHyymmdd của API). Cần identity/system/product/promotion.seed chạy trước.
  */
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { FITLY_OFFICIAL_SHOP_ID } from './lib/seed-shop';
 
 type Status = 'pending' | 'confirmed' | 'packing' | 'shipping' | 'delivered' | 'completed' | 'cancelled';
-type Method = 'cod' | 'bank_transfer' | 'vnpay';
+type Method = 'cod' | 'payos';
 
 interface Spec {
   code: string;
@@ -26,19 +26,19 @@ interface Spec {
 
 const SPECS: Spec[] = [
   { code: 'DHDEMO0001', customer: 1, method: 'cod', status: 'completed', paid: true, daysAgo: 22, items: [{ slug: 'ao-thun-cotton-nam-basic', qty: 2 }, { slug: 'ao-thun-in-hinh-unisex', qty: 1 }] },
-  { code: 'DHDEMO0002', customer: 2, method: 'vnpay', status: 'completed', paid: true, daysAgo: 20, items: [{ slug: 'ao-so-mi-nu-tay-phong', qty: 1 }], promotion: 'GIAM10' },
-  { code: 'DHDEMO0003', customer: 4, method: 'vnpay', status: 'completed', paid: true, daysAgo: 18, items: [{ slug: 'quan-jean-nu-ong-rong', qty: 1 }, { slug: 'ao-thun-croptop-nu', qty: 1 }] },
+  { code: 'DHDEMO0002', customer: 2, method: 'payos', status: 'completed', paid: true, daysAgo: 20, items: [{ slug: 'ao-so-mi-nu-tay-phong', qty: 1 }], promotion: 'GIAM10' },
+  { code: 'DHDEMO0003', customer: 4, method: 'payos', status: 'completed', paid: true, daysAgo: 18, items: [{ slug: 'quan-jean-nu-ong-rong', qty: 1 }, { slug: 'ao-thun-croptop-nu', qty: 1 }] },
   { code: 'DHDEMO0004', customer: 2, method: 'cod', status: 'completed', paid: true, daysAgo: 16, items: [{ slug: 'quan-short-jean-nu', qty: 1 }, { slug: 'ao-thun-oversize-nam', qty: 2 }], promotion: 'FREESHIP' },
-  { code: 'DHDEMO0005', customer: 1, method: 'vnpay', status: 'completed', paid: true, daysAgo: 14, items: [{ slug: 'dam-du-tiec-body', qty: 1 }] },
-  { code: 'DHDEMO0006', customer: 3, method: 'bank_transfer', status: 'delivered', paid: true, daysAgo: 9, items: [{ slug: 'ao-so-mi-nam-linen', qty: 1 }, { slug: 'quan-jean-nam-slim-fit', qty: 1 }], returned: 'refunded' },
+  { code: 'DHDEMO0005', customer: 1, method: 'payos', status: 'completed', paid: true, daysAgo: 14, items: [{ slug: 'dam-du-tiec-body', qty: 1 }] },
+  { code: 'DHDEMO0006', customer: 3, method: 'payos', status: 'delivered', paid: true, daysAgo: 9, items: [{ slug: 'ao-so-mi-nam-linen', qty: 1 }, { slug: 'quan-jean-nam-slim-fit', qty: 1 }], returned: 'refunded' },
   { code: 'DHDEMO0007', customer: 4, method: 'cod', status: 'completed', paid: true, daysAgo: 8, items: [{ slug: 'ao-thun-polo-nam', qty: 1 }], note: 'Giao giờ hành chính' },
-  { code: 'DHDEMO0008', customer: 5, method: 'vnpay', status: 'cancelled', paid: false, daysAgo: 6, items: [{ slug: 'dam-suong-nu-basic', qty: 1 }], cancelReason: 'Quá hạn thanh toán VNPay' },
+  { code: 'DHDEMO0008', customer: 5, method: 'payos', status: 'cancelled', paid: false, daysAgo: 6, items: [{ slug: 'dam-suong-nu-basic', qty: 1 }], cancelReason: 'Quá hạn thanh toán PayOS' },
   { code: 'DHDEMO0009', customer: 3, method: 'cod', status: 'delivered', paid: true, daysAgo: 3, items: [{ slug: 'ao-khoac-du-chong-nuoc', qty: 1 }, { slug: 'quan-short-kaki-nam', qty: 1 }], returned: 'requested' },
   { code: 'DHDEMO0010', customer: 1, method: 'cod', status: 'shipping', paid: false, daysAgo: 2, items: [{ slug: 'ao-so-mi-nam-cong-so', qty: 1 }] },
-  { code: 'DHDEMO0011', customer: 2, method: 'vnpay', status: 'packing', paid: true, daysAgo: 1, items: [{ slug: 'dam-du-tiec-body', qty: 1 }, { slug: 'ao-thun-croptop-nu', qty: 1 }], promotion: 'DAM100K' },
-  { code: 'DHDEMO0012', customer: 5, method: 'bank_transfer', status: 'confirmed', paid: true, daysAgo: 1, items: [{ slug: 'chan-vay-xep-ly', qty: 1 }, { slug: 'ao-thun-nu-form-rong', qty: 1 }] },
+  { code: 'DHDEMO0011', customer: 2, method: 'payos', status: 'packing', paid: true, daysAgo: 1, items: [{ slug: 'dam-du-tiec-body', qty: 1 }, { slug: 'ao-thun-croptop-nu', qty: 1 }], promotion: 'DAM100K' },
+  { code: 'DHDEMO0012', customer: 5, method: 'payos', status: 'confirmed', paid: true, daysAgo: 1, items: [{ slug: 'chan-vay-xep-ly', qty: 1 }, { slug: 'ao-thun-nu-form-rong', qty: 1 }] },
   { code: 'DHDEMO0013', customer: 4, method: 'cod', status: 'pending', paid: false, daysAgo: 0, items: [{ slug: 'ao-so-mi-nu-form-rong', qty: 1 }] },
-  { code: 'DHDEMO0014', customer: 5, method: 'bank_transfer', status: 'pending', paid: false, daysAgo: 0, items: [{ slug: 'quan-jean-nu-skinny', qty: 1 }, { slug: 'dam-hoa-nhi-vintage', qty: 1 }] },
+  { code: 'DHDEMO0014', customer: 5, method: 'payos', status: 'pending', paid: false, daysAgo: 0, items: [{ slug: 'quan-jean-nu-skinny', qty: 1 }, { slug: 'dam-hoa-nhi-vintage', qty: 1 }] },
 ];
 
 const STATUS_CHAIN: Status[] = ['pending', 'confirmed', 'packing', 'shipping', 'delivered', 'completed'];
@@ -119,7 +119,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     const total = subtotal + shippingFee - discount;
     const idx = STATUS_CHAIN.indexOf(s.status);
     const stamp = (step: number, hours: number) => (s.status !== 'cancelled' && idx >= step ? new Date(createdAt.getTime() + hours * 3_600_000) : null);
-    const paymentStatus = s.returned === 'refunded' ? 'partially_refunded' : s.paid ? 'paid' : 'unpaid';
+    const paymentStatus = s.returned === 'refunded' ? 'partially_refunded' : s.method === 'cod' ? (idx >= 4 ? 'paid' : 'unpaid') : s.paid ? 'paid' : 'unpaid';
 
     const order = await prisma.$transaction(async (tx) => {
       const shippingAddressStr = [addr.street, addr.wardName, addr.districtName, addr.provinceName].filter(Boolean).join(', ');
@@ -165,7 +165,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
           total: total.toString(),
           itemCount: lines.reduce((a, l) => a + l.quantity, 0),
           cancelReason: s.cancelReason ?? null,
-          paymentExpiresAt: s.method !== 'cod' && s.status === 'pending' ? new Date(createdAt.getTime() + 24 * 3_600_000) : null,
+          paymentExpiresAt: s.method === 'payos' && s.status === 'pending' && !s.paid ? new Date(createdAt.getTime() + 30 * 60_000) : null,
           confirmedAt: stamp(1, 2),
           packedAt: stamp(2, 6),
           shippedAt: stamp(3, 20),
@@ -200,25 +200,26 @@ export async function seed(prisma: PrismaClient): Promise<void> {
       }
 
       // Thanh toán
-      const paidAt = s.paid ? (s.method === 'cod' ? o.deliveredAt : new Date(createdAt.getTime() + 10 * 60_000)) : null;
-      const payStatus = s.returned === 'refunded' ? 'partially_refunded' : s.paid ? 'paid' : s.status === 'cancelled' ? 'expired' : 'pending';
+      // COD đã giao/hoàn tất: sàn (qua shipper) đã thu tiền → Payment `paid`; COD chưa giao giữ `pending`. PayOS paid → webhook.
+      const codCollected = s.method === 'cod' && idx >= 4;
+      const isPaid = s.method === 'cod' ? codCollected : s.paid;
+      const paidAt = isPaid ? (s.method === 'cod' ? new Date(o.deliveredAt!.getTime() + 30 * 60_000) : new Date(createdAt.getTime() + 10 * 60_000)) : null;
+      const payStatus = s.returned === 'refunded' ? 'partially_refunded' : isPaid ? 'paid' : s.status === 'cancelled' ? 'expired' : 'pending';
+      const payosCode = `${Math.floor(createdAt.getTime() / 1000)}${s.code.slice(-3)}`; // mã đơn PayOS giả, tất định theo mốc tạo + mã đơn
       const payment = await tx.payment.create({
         data: {
           orderId: o.id, orderCode: s.code, userId: u.id, methodCode: s.method, amount: total.toString(), status: payStatus,
-          transactionCode: s.paid && s.method === 'vnpay' ? `1499${String(created + 1000)}` : null,
-          bankCode: s.paid && s.method === 'vnpay' ? 'NCB' : s.method === 'bank_transfer' ? 'MB' : null,
-          transferContent: s.method === 'bank_transfer' ? s.code : null,
-          paidAt, expiresAt: s.method !== 'cod' ? new Date(createdAt.getTime() + (s.method === 'vnpay' ? 30 * 60_000 : 24 * 3_600_000)) : null,
+          transactionCode: isPaid && s.method === 'payos' ? payosCode : null,
+          paidAt, expiresAt: s.method === 'payos' ? new Date(createdAt.getTime() + 30 * 60_000) : null,
           createdAt, createdBy: u.id,
         },
       });
-      if (s.method === 'vnpay') await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'create_url', status: 'ok', amount: total.toString(), providerRef: `${s.code}-1`, createdAt } });
-      if (s.paid && s.method === 'vnpay') await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'return', status: '00', amount: total.toString(), providerRef: `1499${String(created + 1000)}`, createdAt: paidAt! } });
-      if (s.paid && s.method === 'bank_transfer') {
-        await tx.bankTransferConfirmation.create({ data: { paymentId: payment.id, amount: total.toString(), bankRef: `FT${createdAt.getTime().toString().slice(-8)}`, note: 'Đối soát sao kê (seed)', confirmedBy: staffId('accountant') ?? u.id, confirmedAt: paidAt! } });
-        await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'manual_confirm', status: 'ok', amount: total.toString(), providerRef: `${s.code}-CK`, createdAt: paidAt! } });
+      if (s.method === 'payos') {
+        const linkId = `demo-link-${s.code.toLowerCase()}`;
+        await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'create_url', status: 'ok', amount: total.toString(), providerRef: payosCode, rawRequest: { payosOrderCode: payosCode, checkoutUrl: `https://pay.payos.vn/web/${linkId}`, paymentLinkId: linkId }, createdAt } });
+        if (isPaid) await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'payos_webhook', status: 'ok', amount: total.toString(), providerRef: payosCode, rawResponse: { code: '00', desc: 'success', orderCode: payosCode, amount: Number(total), description: s.code, paymentLinkId: linkId }, createdAt: paidAt! } });
       }
-      if (s.paid && s.method === 'cod') await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'cod_collect', status: 'ok', amount: total.toString(), providerRef: `${s.code}-COD`, createdAt: paidAt! } });
+      if (codCollected) await tx.paymentTransaction.create({ data: { paymentId: payment.id, type: 'cod_collect', status: 'ok', amount: total.toString(), providerRef: `cod:${s.code}`, createdAt: paidAt! } });
 
       // Khuyến mãi đã dùng
       if (promotion) {

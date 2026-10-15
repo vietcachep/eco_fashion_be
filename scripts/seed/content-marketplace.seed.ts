@@ -1,7 +1,7 @@
 /*
  * SEED nội dung cho sàn đa ngành hàng (PLAN-0017, D5) — bổ sung trên nền `system.seed.ts` / `ai.seed.ts` (KHÔNG sửa hai file đó):
  *   1. Banner: mỗi ngành gốc (data/dept) một banner `promo` trỏ tới trang ngành + 3 banner khuyến mãi chung `hero` (sortOrder tiếp nối banner cũ).
- *   2. FAQ: câu hỏi–đáp về sàn đa gian hàng/đa ngành (nhiều shop một đơn, voucher sàn/shop, PayOS/VNPay/COD, đổi trả, bảo hành, bán hàng…).
+ *   2. FAQ: câu hỏi–đáp về sàn đa gian hàng/đa ngành (nhiều shop một đơn, voucher sàn/shop, PayOS/COD, đổi trả, bảo hành, bán hàng…).
  *   3. Trang chính sách (bảng pages): người bán · hoa hồng & đối soát · đổi trả theo ngành hàng.
  *   4. Kho tri thức chatbot (ai.documents + ai.document_chunks): hướng dẫn mua sắm cho TỪNG ngành gốc + 4 tài liệu vận hành sàn
  *      + FAQ mới + 3 trang chính sách trên. Cắt đoạn sẵn bằng `chunkText` (không vector): worker nhúng khi có EF_OPENAI_API_KEY
@@ -121,11 +121,11 @@ function buildFaqs(): FaqDef[] {
     { g: 'payment', o: 13, q: 'Tôi có dùng nhiều mã giảm giá trong cùng một lần đặt hàng được không?', a: 'Được, nhưng có giới hạn: tối đa 1 mã của sàn cho cả lần đặt hàng, cộng với tối đa 1 mã của gian hàng cho mỗi shop có trong giỏ. Ví dụ giỏ có hàng của 3 shop, bạn dùng được 1 mã sàn và tối đa 3 mã shop (mỗi shop 1 mã). Mã thứ hai cùng loại hoặc cùng shop sẽ bị từ chối kèm lý do ngay ở bước thanh toán.' },
     { g: 'payment', o: 14, q: 'Mã giảm giá của shop A có dùng được cho sản phẩm của shop B không?', a: 'Không. Mã của gian hàng chỉ có hiệu lực với sản phẩm của đúng gian hàng đó. Nếu nhập mã của shop không có trong giỏ, hệ thống báo "Mã này dành cho gian hàng không có trong giỏ hàng của bạn". Bạn có thể thêm sản phẩm của shop đó vào giỏ để dùng mã, hoặc dùng mã của sàn cho toàn giỏ.' },
     { g: 'payment', o: 15, q: 'Mã giảm giá của sàn được chia về từng đơn của từng shop như thế nào?', a: 'Mã sàn được tính trên cả giỏ hàng rồi phân bổ về các đơn của từng shop theo tỉ lệ giá trị hàng (riêng mã miễn phí vận chuyển phân bổ theo phí ship của từng shop). Mỗi đơn hiển thị phần giảm của riêng nó và tổng các đơn luôn bằng đúng số tiền bạn phải trả. Một đơn không bao giờ được giảm quá giá trị hàng cộng phí vận chuyển của chính nó.' },
-    { g: 'payment', o: 16, q: 'Thanh toán PayOS (QR/chuyển khoản tự động) hoạt động thế nào?', a: 'Chọn PayOS ở bước thanh toán, hệ thống tạo liên kết và mã QR cho đơn; bạn quét QR bằng ứng dụng ngân hàng hoặc mở liên kết để thanh toán. Khi tiền về, đơn được xác nhận tự động trong ít phút, không cần gửi ảnh chuyển khoản. Liên kết giữ chỗ 30 phút, quá hạn đơn chưa thanh toán sẽ tự huỷ và nhả tồn kho. Nếu không thấy PayOS ở bước thanh toán, phương thức này tạm chưa được bật — hãy chọn VNPay hoặc chuyển khoản.' },
-    { g: 'payment', o: 17, q: 'Tôi đã bị trừ tiền qua VNPay/PayOS nhưng đơn vẫn chưa được xác nhận, phải làm sao?', a: 'Hãy chờ vài phút rồi tải lại trang Đơn hàng của tôi vì ngân hàng đôi khi xác nhận chậm. Nếu đơn vẫn ở trạng thái chưa thanh toán, bạn chụp màn hình giao dịch (có mã giao dịch, thời gian, số tiền) rồi gửi qua mục Liên hệ hoặc chat với trợ lý để gặp nhân viên. Bộ phận kế toán sẽ đối chiếu giao dịch và xác nhận đơn, hoặc hoàn tiền cho bạn nếu giao dịch không được ghi nhận.' },
-    { g: 'payment', o: 18, q: 'Vì sao tôi không chọn được thanh toán khi nhận hàng (COD) cho một gian hàng?', a: 'Có hai nguyên nhân thường gặp. Thứ nhất, gian hàng đó đang tạm ngừng nhận COD: sàn tự khoá COD khi quỹ COD của shop hết số dư (không còn đủ để trừ hoa hồng); các đơn COD đang giao dở dang vẫn được giao bình thường. Thứ hai, đơn của shop đó vượt hạn mức COD (mặc định 5.000.000₫ mỗi đơn). Bạn có thể chọn VNPay, PayOS hoặc chuyển khoản, hoặc bỏ sản phẩm của shop đó khỏi giỏ để đặt phần còn lại bằng COD.' },
-    { g: 'payment', o: 19, q: 'Giỏ hàng có nhiều shop và chọn COD thì tôi trả tiền như thế nào?', a: 'Mỗi shop giao hàng riêng nên bạn trả tiền mặt cho từng kiện khi nhận, đúng bằng tổng của đơn shop đó. Hạn mức COD cũng được kiểm theo từng đơn của từng shop chứ không cộng gộp cả giỏ, và mọi shop trong giỏ đều phải đang bật COD thì bạn mới chọn được phương thức này cho toàn bộ giỏ.' },
-    { g: 'payment', o: 20, q: 'Quá hạn mà tôi chưa thanh toán online thì đơn hàng ra sao?', a: 'Đơn VNPay/PayOS chưa thanh toán sau 30 phút và đơn chuyển khoản chưa được xác nhận sau 24 giờ sẽ tự huỷ, số lượng hàng được nhả về kho. Bạn vẫn có thể đặt lại bình thường nếu hàng còn.' },
+    { g: 'payment', o: 16, q: 'Thanh toán PayOS (QR/chuyển khoản tự động) hoạt động thế nào?', a: 'Chọn PayOS ở bước thanh toán, hệ thống tạo liên kết và mã QR cho đơn; bạn quét QR bằng ứng dụng ngân hàng hoặc mở liên kết để thanh toán. Khi tiền về, đơn được xác nhận tự động trong ít phút, không cần gửi ảnh chuyển khoản. Liên kết giữ chỗ 30 phút, quá hạn đơn chưa thanh toán sẽ tự huỷ và nhả tồn kho. Nếu không thấy PayOS ở bước thanh toán, phương thức này tạm chưa được bật — hãy chọn thanh toán khi nhận hàng (COD).' },
+    { g: 'payment', o: 17, q: 'Tôi đã bị trừ tiền qua PayOS nhưng đơn vẫn chưa được xác nhận, phải làm sao?', a: 'Hãy chờ vài phút rồi tải lại trang Đơn hàng của tôi vì ngân hàng đôi khi xác nhận chậm. Nếu đơn vẫn ở trạng thái chưa thanh toán, bạn chụp màn hình giao dịch (có mã giao dịch, thời gian, số tiền) rồi gửi qua mục Liên hệ hoặc chat với trợ lý để gặp nhân viên. Bộ phận kế toán sẽ đối chiếu giao dịch và xác nhận đơn, hoặc hoàn tiền cho bạn nếu giao dịch không được ghi nhận.' },
+    { g: 'payment', o: 18, q: 'Vì sao tôi không chọn được thanh toán khi nhận hàng (COD) cho một gian hàng?', a: 'Nguyên nhân thường gặp là đơn của một shop trong giỏ vượt hạn mức COD (mặc định 5.000.000₫ mỗi đơn). Bạn có thể chọn PayOS để thanh toán online, hoặc bỏ bớt sản phẩm của shop đó khỏi giỏ để đơn nằm trong hạn mức rồi đặt bằng COD.' },
+    { g: 'payment', o: 19, q: 'Giỏ hàng có nhiều shop và chọn COD thì tôi trả tiền như thế nào?', a: 'Mỗi shop giao hàng riêng nên bạn trả tiền mặt cho từng kiện khi nhận, đúng bằng tổng của đơn shop đó. Hạn mức COD được kiểm theo từng đơn của từng shop chứ không cộng gộp cả giỏ; mọi đơn trong giỏ đều phải nằm trong hạn mức thì bạn mới chọn được COD cho toàn bộ giỏ. Tiền mặt do shipper thu hộ cho sàn.' },
+    { g: 'payment', o: 20, q: 'Quá hạn mà tôi chưa thanh toán online thì đơn hàng ra sao?', a: 'Đơn PayOS chưa thanh toán sau 30 phút sẽ tự huỷ, số lượng hàng được nhả về kho. Bạn vẫn có thể đặt lại bình thường nếu hàng còn.' },
 
     /* ---- Vận chuyển */
     { g: 'shipping', o: 10, q: 'Phí vận chuyển khi mua của nhiều gian hàng được tính thế nào?', a: 'Phí vận chuyển tính riêng cho từng shop vì mỗi shop gửi một kiện hàng riêng. Mức phí theo bảng phí chung của sàn dựa trên tỉnh/thành nhận hàng (TP.HCM 20.000₫, miền Nam 30.000₫, miền Trung 35.000₫, miền Bắc 40.000₫). Ở bước thanh toán bạn thấy phí và tiền giảm của từng shop, cùng tổng cộng phải trả.' },
@@ -141,7 +141,7 @@ function buildFaqs(): FaqDef[] {
     { g: 'returns', o: 13, q: 'Điện thoại, laptop đã mở hộp hoặc kích hoạt thì còn đổi trả được không?', a: 'Bạn nên quay video mở hộp liền mạch từ lúc cắt niêm phong. Nếu máy có lỗi kỹ thuật, thiếu phụ kiện hoặc giao sai mẫu, bạn vẫn được đổi trả trong 7 ngày kể từ khi nhận. Trường hợp đổi ý sau khi đã bóc niêm phong hoặc kích hoạt, máy rơi vỡ, vào nước thì không thuộc diện đổi trả, trừ khi gian hàng có chính sách riêng ghi trên trang sản phẩm.' },
     { g: 'returns', o: 14, q: 'Mỹ phẩm, thực phẩm có hạn dùng thì kiểm tra và đổi trả thế nào?', a: 'Khi nhận hàng hãy kiểm tra ngày sản xuất, hạn dùng, tem phụ tiếng Việt và niêm phong. Hàng hết hạn, cận date bất thường, bao bì rách/rò rỉ hoặc sai sản phẩm được đổi trả hay hoàn tiền trong 7 ngày kèm ảnh/video. Hàng đã mở nắp, dùng thử hoặc đã bóc bao bì thực phẩm thì không đổi trả trừ khi có lỗi chất lượng. Nếu mỹ phẩm gây kích ứng, hãy ngừng dùng và liên hệ shop; thực phẩm chức năng không thay thế thuốc, cần hỏi bác sĩ khi có bệnh lý.' },
     { g: 'returns', o: 15, q: 'Sản phẩm cho mẹ và bé, đồ dùng thú cưng có được đổi trả không?', a: 'Có khi hàng lỗi, giao sai hoặc hư hỏng khi nhận. Các mặt hàng tiếp xúc trực tiếp như sữa, tã, đồ ăn dặm, thức ăn thú cưng, đồ vệ sinh chỉ đổi khi còn nguyên bao bì, chưa mở và còn hạn dùng; đã mở gói hoặc đã dùng chỉ xử lý khi có lỗi chất lượng. Với đồ chơi, xe đẩy và phụ kiện, bạn kiểm tra độ tuổi/kích cỡ phù hợp và các chi tiết nhỏ ngay khi nhận để yêu cầu đổi nếu có vấn đề.' },
-    { g: 'returns', o: 16, q: 'Đơn dùng mã giảm giá được hoàn tiền như thế nào?', a: 'Số tiền hoàn là số tiền thực tế bạn đã thanh toán cho đơn hoặc phần hàng được duyệt trả, nghĩa là đã trừ phần giảm giá của mã áp dụng. Tiền hoàn về phương thức thanh toán ban đầu (VNPay, PayOS) hoặc chuyển khoản cho đơn COD/chuyển khoản, trong 3–5 ngày làm việc sau khi shop nhận lại hàng và yêu cầu được duyệt.' },
+    { g: 'returns', o: 16, q: 'Đơn dùng mã giảm giá được hoàn tiền như thế nào?', a: 'Số tiền hoàn là số tiền thực tế bạn đã thanh toán cho đơn hoặc phần hàng được duyệt trả, nghĩa là đã trừ phần giảm giá của mã áp dụng. Tiền hoàn về tài khoản đã thanh toán qua PayOS, hoặc chuyển khoản thủ công cho đơn COD (sàn đã thu hộ tiền COD), trong 3–5 ngày làm việc sau khi shop nhận lại hàng và yêu cầu được duyệt.' },
     { g: 'returns', o: 17, q: 'Mua của nhiều shop, tôi nhận tiền hoàn ở đâu và khi nào?', a: 'Tiền hoàn được xử lý riêng cho từng đơn của từng shop, nên nếu trả hàng ở hai shop bạn có thể nhận hai khoản hoàn vào hai thời điểm khác nhau. Thời gian là 3–5 ngày làm việc kể từ khi yêu cầu được duyệt, về đúng phương thức bạn đã dùng để thanh toán.' },
     { g: 'returns', o: 18, q: 'Mũ bảo hiểm và phụ kiện ô tô, xe máy chọn thế nào để không phải đổi trả?', a: 'Với mũ bảo hiểm hãy đo vòng đầu và đối chiếu bảng size của shop, ưu tiên mũ có tem/nhãn hợp quy ghi rõ trên sản phẩm. Với phụ kiện, dầu nhớt, camera… kiểm tra kỹ tương thích với dòng xe và đời xe trước khi đặt. Hàng đã lắp lên xe hoặc đã sử dụng không được đổi trả trừ khi có lỗi từ nhà sản xuất; một số shop hỗ trợ lắp đặt tại cửa hàng nội thành, thông tin ghi trong mô tả sản phẩm.' },
 
@@ -151,7 +151,7 @@ function buildFaqs(): FaqDef[] {
     { g: 'general', o: 12, q: 'Đơn của một gian hàng gặp vấn đề, tôi liên hệ ai?', a: 'Bạn liên hệ trực tiếp FITLY qua mục Liên hệ, hotline 1900 6868 hoặc email hotro@ecofashion.vn, kèm mã đơn của shop liên quan; bạn cũng có thể chat với trợ lý FITLY và chọn gặp nhân viên. Sàn đứng giữa làm việc với gian hàng để xử lý giao chậm, giao sai, hàng lỗi hoặc yêu cầu đổi trả.' },
     { g: 'general', o: 13, q: 'Tôi muốn bán hàng trên FITLY thì đăng ký như thế nào?', a: 'Hiện việc mở gian hàng do sàn tiếp nhận và xét duyệt hồ sơ. Bạn gửi thông tin qua mục Liên hệ (hoặc hotline 1900 6868, email hotro@ecofashion.vn) gồm: tên gian hàng, ngành hàng dự kiến, thông tin người liên hệ và tài khoản ngân hàng nhận tiền. Sau khi sàn duyệt, bạn nhận tài khoản chủ shop để đăng nhập cổng người bán, đăng sản phẩm, quản lý kho, đơn hàng, voucher và theo dõi đối soát. Gian hàng chỉ hiển thị với khách khi đã được duyệt.' },
     { g: 'general', o: 14, q: 'Bán hàng trên FITLY thì sàn thu những khoản phí nào?', a: 'Sàn thu hoa hồng theo phần trăm doanh thu của mỗi đơn thành công. Mức hoa hồng được ghi trên hồ sơ của từng gian hàng và thoả thuận khi duyệt shop; mức này được chốt vào đơn tại thời điểm khách đặt hàng nên điều chỉnh sau đó chỉ áp dụng cho đơn mới. Chi tiết xem trang Chính sách hoa hồng & đối soát.' },
-    { g: 'general', o: 15, q: 'Người bán nhận tiền hàng khi nào?', a: 'Với đơn thanh toán online (VNPay, PayOS, chuyển khoản), sàn giữ tiền hộ và đối soát theo kỳ: chỉ tính các đơn đã qua hạn đổi trả (7 ngày kể từ khi giao), trừ hoa hồng và các khoản hoàn tiền cho khách rồi chuyển phần còn lại cho shop qua PayOS hoặc chuyển khoản. Với đơn COD, shop trực tiếp thu tiền mặt và hoa hồng được trừ vào ví quỹ COD khi đơn hoàn tất.' },
+    { g: 'general', o: 15, q: 'Người bán nhận tiền hàng khi nào?', a: 'Sàn thu mọi khoản tiền (PayOS online lẫn COD do shipper thu hộ), giữ tiền qua hạn đổi trả (7 ngày kể từ khi giao) rồi tự động chi trả cho shop mỗi ngày lúc 02:00, sau khi trừ hoa hồng và các khoản hoàn tiền cho khách; phần còn lại được chuyển cho shop qua PayOS hoặc kế toán chuyển khoản thủ công.' },
     { g: 'general', o: 16, q: 'Ai trả lời đánh giá của tôi về sản phẩm?', a: 'Chỉ khách đã nhận hàng mới đánh giá được. Gian hàng bán sản phẩm đó có thể trả lời đánh giá của bạn trong cổng người bán, còn sàn kiểm duyệt các đánh giá vi phạm (lăng mạ, quảng cáo, lộ thông tin cá nhân). Đánh giá chân thật giúp những khách khác chọn shop và sản phẩm tốt hơn.' },
   ];
 }
@@ -204,11 +204,11 @@ Chính sách này áp dụng cho mọi gian hàng bán trên sàn FITLY. Khi đ�
 - Trả lời đánh giá của khách lịch sự, trung thực; không gây áp lực để khách xoá hay sửa đánh giá.
 
 ## 7. Xử lý vi phạm
-Tuỳ mức độ, sàn có thể nhắc nhở, ẩn sản phẩm, tạm khoá nhận COD, trừ khoản hoàn tiền cho khách vào kỳ đối soát hoặc khoá gian hàng. Người bán có quyền khiếu nại qua email hotro@ecofashion.vn hoặc hotline 1900 6868.`;
+Tuỳ mức độ, sàn có thể nhắc nhở, ẩn sản phẩm, trừ khoản hoàn tiền cho khách vào kỳ đối soát hoặc khoá gian hàng. Người bán có quyền khiếu nại qua email hotro@ecofashion.vn hoặc hotline 1900 6868.`;
 
 const COMMISSION_POLICY = `# Chính sách hoa hồng & đối soát
 
-Trang này mô tả cách FITLY tính hoa hồng, đối soát và chi trả tiền hàng cho gian hàng; người bán tra cứu số liệu trong cổng người bán (mục Đối soát và Ví quỹ COD).
+Trang này mô tả cách FITLY tính hoa hồng, đối soát và chi trả tiền hàng cho gian hàng; người bán tra cứu số liệu trong cổng người bán (mục Đối soát).
 
 ## 1. Hoa hồng
 - Hoa hồng là tỉ lệ phần trăm sàn thu trên doanh thu của mỗi đơn thành công. Tỉ lệ ghi trên hồ sơ gian hàng, do sàn và người bán thoả thuận khi duyệt shop.
@@ -219,26 +219,22 @@ Trang này mô tả cách FITLY tính hoa hồng, đối soát và chi trả ti�
 - Voucher của gian hàng do gian hàng chịu: phần giảm làm giảm doanh thu của shop, hoa hồng tính trên số tiền khách thực trả.
 - Ví dụ (chưa tính phí vận chuyển): đơn 1.000.000₫, hoa hồng 8%. Với voucher sàn 50.000₫, khách trả 950.000₫, hoa hồng 80.000₫, shop nhận 920.000₫. Với voucher shop 50.000₫, khách trả 950.000₫, hoa hồng 76.000₫, shop nhận 874.000₫.
 
-## 3. Hai dòng tiền: đơn online và đơn COD
-- Đơn thanh toán online (VNPay, PayOS, chuyển khoản): sàn thu tiền của khách, giữ hộ và chi trả cho shop theo kỳ đối soát.
-- Đơn COD: shop trực tiếp thu tiền mặt từ khách; hoa hồng của đơn được trừ vào ví quỹ COD khi đơn hoàn tất. Hai dòng tiền này tách bạch, hệ thống không tự bù trừ giữa chúng.
+## 3. Sàn thu mọi khoản tiền
+- Đơn PayOS: khách thanh toán online, tiền về tài khoản của sàn.
+- Đơn COD: shipper thu tiền mặt hộ sàn và nộp về sàn; khi đơn giao thành công, sàn ghi nhận đã thu.
+- Cả hai loại đều được sàn giữ qua hạn đổi trả rồi chi trả cho shop theo cùng một quy trình đối soát, sau khi trừ hoa hồng.
 
 ## 4. Đối soát theo kỳ
-- Mỗi kỳ, sàn gom các đơn online đã qua hạn đổi trả (hiện là 7 ngày kể từ khi giao) và chưa nằm trong kỳ nào trước đó. Đơn chưa qua hạn được dồn sang kỳ kế tiếp, không bị mất.
+- Mỗi kỳ, sàn gom các đơn (PayOS và COD) đã thu tiền và qua hạn đổi trả (hiện là 7 ngày kể từ khi giao) và chưa nằm trong kỳ nào trước đó. Đơn chưa qua hạn được dồn sang kỳ kế tiếp, không bị mất.
 - Thực nhận = doanh thu − hoa hồng − tiền đã hoàn cho khách − khoản nợ mang sang từ kỳ trước.
 - Nếu thực nhận âm (hoàn tiền lớn hơn doanh thu), kỳ này không chi tiền và số âm được trừ vào kỳ kế tiếp. Nếu bằng 0, kỳ được ghi nhận là đã quyết toán.
 
 ## 5. Chi trả
-- Khi sàn đã cấu hình cổng chi tiền PayOS và gian hàng đã khai tài khoản ngân hàng, tiền được chuyển tự động. Lệnh chi lỗi có thể chạy lại mà không chi trùng.
+- Hệ thống tự động đối soát và chi trả mỗi ngày lúc 02:00. Khi sàn đã cấu hình cổng chi tiền PayOS và gian hàng đã khai tài khoản ngân hàng, tiền được chuyển tự động. Lệnh chi lỗi có thể chạy lại mà không chi trùng.
 - Nếu chưa cấu hình hoặc thiếu thông tin ngân hàng, kỳ ở trạng thái chờ; kế toán sàn chuyển khoản thủ công rồi đánh dấu đã trả.
 
-## 6. Ví quỹ COD
-- Mỗi đơn COD hoàn tất trừ đúng một lần hoa hồng của đơn đó khỏi ví quỹ COD của gian hàng.
-- Khi số dư ví về 0 hoặc âm, sàn tự khoá COD cho các đơn mới của shop; đơn đang giao dở không bị huỷ.
-- Để mở lại COD, shop gửi yêu cầu nộp quỹ kèm chứng từ chuyển khoản; sau khi sàn duyệt, số tiền được cộng vào ví. COD chỉ mở lại khi số dư sau khi cộng lớn hơn 0.
-
-## 7. Tra soát
-Người bán có thể gửi thắc mắc về kỳ đối soát hoặc ví quỹ COD đến kế toán sàn qua email hotro@ecofashion.vn, kèm mã kỳ hoặc mã đơn liên quan.`;
+## 6. Tra soát
+Người bán có thể gửi thắc mắc về kỳ đối soát đến kế toán sàn qua email hotro@ecofashion.vn, kèm mã kỳ hoặc mã đơn liên quan.`;
 
 const CATEGORY_RETURNS_POLICY = `# Chính sách đổi trả theo ngành hàng
 
@@ -406,39 +402,33 @@ Mã sàn được tính trên cả giỏ rồi chia về các đơn của từng
 ## Vì sao mã không dùng được
 Mã có thể bị từ chối vì chưa đạt giá trị đơn tối thiểu, đã hết hạn hoặc hết lượt dùng, không áp dụng cho ngành hàng trong giỏ, hoặc vi phạm quy tắc 1 mã sàn + 1 mã mỗi shop. Thông báo lỗi nêu rõ lý do và số tiền còn thiếu (nếu có) để bạn mua thêm cho đủ điều kiện.`;
 
-const OPS_PAYMENT = `# Thanh toán PayOS, VNPay, chuyển khoản và COD
+const OPS_PAYMENT = `# Thanh toán PayOS và COD
 
 ## Các phương thức
-FITLY hỗ trợ thanh toán khi nhận hàng (COD), chuyển khoản ngân hàng qua mã VietQR, thẻ ATM/Visa/Mastercard/QR qua VNPay và PayOS (QR hoặc liên kết chuyển khoản tự động). Phương thức nào chưa được bật sẽ không hiện ở bước thanh toán.
+FITLY hỗ trợ hai cách thanh toán: PayOS (QR hoặc liên kết chuyển khoản tự động) và thanh toán khi nhận hàng (COD). Sàn thu mọi khoản tiền, giữ qua hạn đổi trả rồi tự động chi trả cho shop (mỗi ngày lúc 02:00) sau khi trừ hoa hồng. Phương thức nào chưa được bật sẽ không hiện ở bước thanh toán.
 
 ## PayOS
 Chọn PayOS, hệ thống tạo liên kết và mã QR cho đơn; bạn quét bằng ứng dụng ngân hàng hoặc mở liên kết. Khi tiền về, đơn được xác nhận tự động, không cần gửi ảnh chuyển khoản. Liên kết giữ chỗ 30 phút; quá hạn đơn chưa thanh toán sẽ tự huỷ và nhả tồn kho, bạn đặt lại bình thường.
 
-## VNPay và chuyển khoản VietQR
-VNPay giữ đơn 30 phút. Chuyển khoản VietQR giữ đơn 24 giờ — hãy nhập đúng số tiền và nội dung chuyển khoản là mã đơn để kế toán đối chiếu nhanh. Đơn chuyển khoản được xác nhận thủ công nên có thể chậm hơn PayOS.
-
 ## COD
-Trả tiền mặt cho người giao khi nhận hàng, tối đa 5.000.000₫ mỗi đơn (xét theo từng shop). COD chỉ dùng được khi gian hàng đang bật COD: sàn tự khoá COD của shop khi quỹ COD của shop hết số dư. Bạn được báo rõ ở bước thanh toán và có thể chọn phương thức khác.
+Trả tiền mặt cho shipper khi nhận hàng, tối đa 5.000.000₫ mỗi đơn (xét theo từng shop). Shipper thu hộ cho sàn nên bạn chỉ trả đúng tổng tiền của đơn; sàn ghi nhận đã thu khi đơn giao thành công. Đơn vượt hạn mức sẽ không chọn được COD, bạn có thể chọn PayOS.
 
 ## Đã bị trừ tiền nhưng đơn chưa xác nhận
 Chờ vài phút rồi tải lại trang đơn hàng. Nếu vẫn chưa xác nhận, gửi ảnh chụp giao dịch (mã giao dịch, thời gian, số tiền) qua mục Liên hệ hoặc chat với trợ lý để gặp nhân viên; kế toán sẽ đối chiếu và xác nhận đơn hoặc hoàn tiền.
 
 ## Hoàn tiền
-Đơn VNPay được hoàn về thẻ/tài khoản đã thanh toán. Đơn PayOS, COD và chuyển khoản có thể cần kế toán chuyển khoản thủ công nên đôi khi cần bạn cung cấp số tài khoản nhận tiền. Thời gian xử lý 3–5 ngày làm việc sau khi yêu cầu được duyệt.`;
+Đơn PayOS được hoàn về tài khoản đã thanh toán. Đơn COD do kế toán chuyển khoản thủ công nên cần bạn cung cấp số tài khoản nhận tiền. Thời gian xử lý 3–5 ngày làm việc sau khi yêu cầu được duyệt.`;
 
-const OPS_SELLER = `# Hướng dẫn người bán: hoa hồng, ví quỹ COD và đối soát
+const OPS_SELLER = `# Hướng dẫn người bán: hoa hồng và đối soát
 
 ## Hoa hồng
 Sàn thu hoa hồng theo phần trăm doanh thu mỗi đơn thành công; tỉ lệ ghi trên hồ sơ gian hàng và được chốt vào đơn lúc khách đặt hàng (đổi tỉ lệ sau đó chỉ áp dụng cho đơn mới). Doanh thu tính hoa hồng bằng số tiền khách trả cộng phần giảm của voucher sàn. Voucher sàn do sàn chịu, voucher shop do shop chịu. Ví dụ đơn 1.000.000₫, hoa hồng 8% (chưa tính phí vận chuyển): voucher sàn 50.000₫ thì shop nhận 920.000₫; voucher shop 50.000₫ thì shop nhận 874.000₫.
 
-## Ví quỹ COD
-Đơn COD do shop trực tiếp thu tiền mặt nên hoa hồng được trừ vào ví quỹ COD khi đơn hoàn tất, đúng một lần cho mỗi đơn. Khi số dư ví về 0 hoặc âm, COD của shop tự khoá cho các đơn mới (đơn đang giao dở không bị huỷ). Để mở lại, shop gửi yêu cầu nộp quỹ kèm chứng từ chuyển khoản; khi sàn duyệt, số tiền được cộng vào ví và COD mở lại nếu số dư lớn hơn 0.
-
-## Đối soát đơn online
-Với đơn VNPay, PayOS, chuyển khoản, sàn giữ tiền hộ. Mỗi kỳ đối soát chỉ tính các đơn đã qua hạn đổi trả (7 ngày kể từ khi giao); đơn chưa qua hạn dồn sang kỳ sau. Thực nhận bằng doanh thu trừ hoa hồng, trừ tiền đã hoàn cho khách, trừ nợ mang sang. Nếu âm thì kỳ này không chi tiền và số âm trừ tiếp vào kỳ sau.
+## Đối soát đơn PayOS và COD
+Sàn thu mọi khoản tiền: đơn PayOS khách trả online, đơn COD do shipper thu hộ rồi nộp về sàn (shop không thu tiền mặt). Mỗi kỳ đối soát chỉ tính các đơn đã qua hạn đổi trả (7 ngày kể từ khi giao); đơn chưa qua hạn dồn sang kỳ sau. Thực nhận bằng doanh thu trừ hoa hồng, trừ tiền đã hoàn cho khách, trừ nợ mang sang. Nếu âm thì kỳ này không chi tiền và số âm trừ tiếp vào kỳ sau.
 
 ## Chi trả và tra soát
-Khi sàn đã cấu hình chi tiền PayOS và shop khai đúng ngân hàng, số tài khoản, tên chủ tài khoản thì tiền được chuyển tự động; nếu chưa, kế toán chuyển khoản thủ công rồi đánh dấu đã trả. Lệnh lỗi có thể chạy lại và không bao giờ chi trùng. Thắc mắc về kỳ đối soát hoặc ví quỹ COD, gửi kế toán sàn qua hotro@ecofashion.vn kèm mã kỳ hoặc mã đơn.`;
+Khi sàn đã cấu hình chi tiền PayOS và shop khai đúng ngân hàng, số tài khoản, tên chủ tài khoản thì tiền được chuyển tự động; nếu chưa, kế toán chuyển khoản thủ công rồi đánh dấu đã trả. Lệnh lỗi có thể chạy lại và không bao giờ chi trùng. Thắc mắc về kỳ đối soát, gửi kế toán sàn qua hotro@ecofashion.vn kèm mã kỳ hoặc mã đơn.`;
 
 function buildDocs(faqs: FaqDef[]): DocDef[] {
   const docs: DocDef[] = [];
@@ -453,8 +443,8 @@ function buildDocs(faqs: FaqDef[]): DocDef[] {
   docs.push(
     { title: 'Mua hàng của nhiều gian hàng trong một giỏ', kind: 'guide', content: OPS_MULTI_SHOP },
     { title: 'Mã giảm giá của sàn và của gian hàng', kind: 'guide', content: OPS_VOUCHER },
-    { title: 'Thanh toán PayOS, VNPay, chuyển khoản và COD', kind: 'guide', content: OPS_PAYMENT },
-    { title: 'Hướng dẫn người bán: hoa hồng, ví quỹ COD và đối soát', kind: 'policy', content: OPS_SELLER },
+    { title: 'Thanh toán PayOS và COD', kind: 'guide', content: OPS_PAYMENT },
+    { title: 'Hướng dẫn người bán: hoa hồng và đối soát', kind: 'policy', content: OPS_SELLER },
     { title: 'Câu hỏi thường gặp về sàn đa gian hàng', kind: 'faq', content: faqs.map((f) => `**${f.q}**\n${f.a}`).join('\n\n') },
     ...NEW_PAGES.map((p) => ({ title: p.title, kind: 'policy' as const, content: p.content })),
   );

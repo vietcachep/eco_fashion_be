@@ -4475,6 +4475,181 @@
    "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/catalog/collections/dien-thoai-cong-nghe.jpg",
    "publicId": "ecofashion/seed/catalog/collections/dien-thoai-cong-nghe",
    "sha1": "998363da7d99dde37d758dc3b0139cc2906dfb77"
+  },
+  "banners/dien-thoai-phu-kien.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/dien-thoai-phu-kien.jpg",
+   "publicId": "ecofashion/seed/banners/dien-thoai-phu-kien",
+   "sha1": "e22e506da3b46842854f6a6ab2e62f4e5b9c8b5f"
+  },
+  "banners/home-3.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/home-3.jpg",
+   "publicId": "ecofashion/seed/banners/home-3",
+   "sha1": "39cefabef0ef32f64860ab2a3e70b8cd331d7aec"
+  },
+  "banners/home-2.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/home-2.jpg",
+   "publicId": "ecofashion/seed/banners/home-2",
+   "sha1": "62bbcf0dc8274367d5e7c9e3d13250a63cc3cfdf"
+  },
+  "banners/dong-ho-phu-kien.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/dong-ho-phu-kien.jpg",
+   "publicId": "ecofashion/seed/banners/dong-ho-phu-kien",
+   "sha1": "38d72c64b670de7ba94baed5740f31492a344746"
+  },
+  "banners/home-1.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/home-1.jpg",
+   "publicId": "ecofashion/seed/banners/home-1",
+   "sha1": "c6c23bf97259a6e4e919d0a2b04ae057c1c7fef7"
+  },
+  "banners/giay-dep-tui-xach.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/giay-dep-tui-xach.jpg",
+   "publicId": "ecofashion/seed/banners/giay-dep-tui-xach",
+   "sha1": "1dcddb7b3ea1679be73a268f398c66650a6f1891"
+  },
+  "banners/nha-cua-doi-song.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/nha-cua-doi-song.jpg",
+   "publicId": "ecofashion/seed/banners/nha-cua-doi-song",
+   "sha1": "9c8cdce0019acb6618443aa64e846dedf8af9eb3"
+  },
+  "banners/may-tinh-thiet-bi-dien-tu.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/may-tinh-thiet-bi-dien-tu.jpg",
+   "publicId": "ecofashion/seed/banners/may-tinh-thiet-bi-dien-tu",
+   "sha1": "a10678922acf7bfbed0584b8ae27af2b567c5f01"
+  },
+  "banners/o-to-xe-may.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/o-to-xe-may.jpg",
+   "publicId": "ecofashion/seed/banners/o-to-xe-may",
+   "sha1": "f459c91087ddc705c9a967dd8934a755a13948a6"
+  },
+  "banners/sac-dep-suc-khoe.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/sac-dep-suc-khoe.jpg",
+   "publicId": "ecofashion/seed/banners/sac-dep-suc-khoe",
+   "sha1": "93ef5c4e7c7de65899820611c2208c452c9c82b0"
+  },
+  "banners/me-be.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/me-be.jpg",
+   "publicId": "ecofashion/seed/banners/me-be",
+   "sha1": "ea19f70955f5447fda3f1d5960f72346878505e1"
+  },
+  "banners/sach-van-phong-pham.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/sach-van-phong-pham.jpg",
+   "publicId": "ecofashion/seed/banners/sach-van-phong-pham",
+   "sha1": "9147689087b21fc106603def1cbc8203c3a68779"
+  },
+  "banners/thu-cung.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/thu-cung.jpg",
+   "publicId": "ecofashion/seed/banners/thu-cung",
+   "sha1": "301a21e84b424eef4e026f8c8bb9ac668d08a0c9"
+  },
+  "banners/thuc-pham-do-uong.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/thuc-pham-do-uong.jpg",
+   "publicId": "ecofashion/seed/banners/thuc-pham-do-uong",
+   "sha1": "401ea10045ff0e93c5381bc50a8268126dcff557"
+  },
+  "banners/the-thao-da-ngoai.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/banners/the-thao-da-ngoai.jpg",
+   "publicId": "ecofashion/seed/banners/the-thao-da-ngoai",
+   "sha1": "7094b79227275ef782045305fe3eff1bfaeacb1d"
+  },
+  "catalog/collections/dam-du-tiec.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/catalog/collections/dam-du-tiec.jpg",
+   "publicId": "ecofashion/seed/catalog/collections/dam-du-tiec",
+   "sha1": "26e75e062b2ebb0342c622cb487227ee3ff19997"
+  },
+  "catalog/collections/hang-moi.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/catalog/collections/hang-moi.jpg",
+   "publicId": "ecofashion/seed/catalog/collections/hang-moi",
+   "sha1": "34d9fcbfb5a18d801fff2ad79ad4cc1ec38ed033"
+  },
+  "catalog/collections/nam.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/catalog/collections/nam.jpg",
+   "publicId": "ecofashion/seed/catalog/collections/nam",
+   "sha1": "b00a79fd50bff818c2a155cbac2c5c1fa585ffa8"
+  },
+  "catalog/collections/nu.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/catalog/collections/nu.jpg",
+   "publicId": "ecofashion/seed/catalog/collections/nu",
+   "sha1": "a00580d989b3bba16381100f48e28a116f720392"
+  },
+  "product/ban-lam-viec-go-cong-nghiep/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/ban-lam-viec-go-cong-nghiep/main.jpg",
+   "publicId": "ecofashion/seed/product/ban-lam-viec-go-cong-nghiep/main",
+   "sha1": "f1e7d4bc72d6f5bd33798b79c80e7f8074e90543"
+  },
+  "product/cap-sac-nhanh-type-c-20w/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/cap-sac-nhanh-type-c-20w/main.jpg",
+   "publicId": "ecofashion/seed/product/cap-sac-nhanh-type-c-20w/main",
+   "sha1": "a7fe1d7c21b6ac94e9cdb318e469f5a916d181f5"
+  },
+  "product/bo-dao-inox-6-mon/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/bo-dao-inox-6-mon/main.jpg",
+   "publicId": "ecofashion/seed/product/bo-dao-inox-6-mon/main",
+   "sha1": "1361768cfa80c3c71eb29e02123bc3c76733cf3a"
+  },
+  "product/dien-thoai-pho-thong-smart-lite/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/dien-thoai-pho-thong-smart-lite/main.jpg",
+   "publicId": "ecofashion/seed/product/dien-thoai-pho-thong-smart-lite/main",
+   "sha1": "0a88e8d2f91a39b138789a400c737775b28cfa5b"
+  },
+  "product/binh-giu-nhiet-500ml/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/binh-giu-nhiet-500ml/main.jpg",
+   "publicId": "ecofashion/seed/product/binh-giu-nhiet-500ml/main",
+   "sha1": "44f8fb22178131299a57d8c81b9870a28ec27c7b"
+  },
+  "product/dien-thoai-thong-minh-galaxy-x10/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/dien-thoai-thong-minh-galaxy-x10/main.jpg",
+   "publicId": "ecofashion/seed/product/dien-thoai-thong-minh-galaxy-x10/main",
+   "sha1": "b8f70a68b35921db8e1a6925e7dbb70312a81d4d"
+  },
+  "product/dien-thoai-thong-minh-note-pro-5g/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/dien-thoai-thong-minh-note-pro-5g/main.jpg",
+   "publicId": "ecofashion/seed/product/dien-thoai-thong-minh-note-pro-5g/main",
+   "sha1": "2b00e4d69c4ec98bb1187a81485c2e09896fe8f6"
+  },
+  "product/noi-chien-khong-dau-5l/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/noi-chien-khong-dau-5l/main.jpg",
+   "publicId": "ecofashion/seed/product/noi-chien-khong-dau-5l/main",
+   "sha1": "ad71c11ab5eeb0bfe221db2e2dbce41783363b5a"
+  },
+  "product/nuoc-hoa-hong-can-bang-da/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/nuoc-hoa-hong-can-bang-da/main.jpg",
+   "publicId": "ecofashion/seed/product/nuoc-hoa-hong-can-bang-da/main",
+   "sha1": "03f1bd4520c91c36203f4ad1a399c39fcdd719e6"
+  },
+  "product/kem-duong-am-ban-dem/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/kem-duong-am-ban-dem/main.jpg",
+   "publicId": "ecofashion/seed/product/kem-duong-am-ban-dem/main",
+   "sha1": "235cf1c2d0d9a17581c5ca4a815043d434820951"
+  },
+  "product/ghe-van-phong-luoi-thoang-khi/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/ghe-van-phong-luoi-thoang-khi/main.jpg",
+   "publicId": "ecofashion/seed/product/ghe-van-phong-luoi-thoang-khi/main",
+   "sha1": "d5d37f374f317b10c4674084ad8e26908e9c648f"
+  },
+  "product/op-lung-silicon-chong-soc/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/op-lung-silicon-chong-soc/main.jpg",
+   "publicId": "ecofashion/seed/product/op-lung-silicon-chong-soc/main",
+   "sha1": "08abca7c419d8c8f5791ef51d94395a3accbfe90"
+  },
+  "product/phan-phu-kiem-dau/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/phan-phu-kiem-dau/main.jpg",
+   "publicId": "ecofashion/seed/product/phan-phu-kiem-dau/main",
+   "sha1": "bb05cbe41ad7e9c9169b6b0e5e72961d108fb002"
+  },
+  "product/son-li-lau-troi/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/son-li-lau-troi/main.jpg",
+   "publicId": "ecofashion/seed/product/son-li-lau-troi/main",
+   "sha1": "4f3d8e7f5e0dbb5015f9bbe0176bd3a61d00b0cd"
+  },
+  "product/sua-rua-mat-tra-xanh/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/sua-rua-mat-tra-xanh/main.jpg",
+   "publicId": "ecofashion/seed/product/sua-rua-mat-tra-xanh/main",
+   "sha1": "c95e3071a6c73f7ec6e4bafcf13d5988112ece91"
+  },
+  "product/tai-nghe-bluetooth-khong-day/main.jpg": {
+   "url": "https://res.cloudinary.com/dn4l1otfz/image/upload/ecofashion/seed/product/tai-nghe-bluetooth-khong-day/main.jpg",
+   "publicId": "ecofashion/seed/product/tai-nghe-bluetooth-khong-day/main",
+   "sha1": "5549f35f48b1a3e4a79c2a7e92761f8583449724"
   }
  }
 }
