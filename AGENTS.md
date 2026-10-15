@@ -9,7 +9,7 @@ category mới (điện tử, gia dụng, mỹ phẩm...) tự định nghĩa b�
 buộc gender/color/size như thời trang. Hai giao diện dùng chung backend này:
 
 - **Web bán hàng** (khách): xem/tìm sản phẩm theo ngành hàng & gian hàng, giỏ hàng nhóm theo shop, đặt hàng nhiều shop trong một lần,
-  thanh toán PayOS/VNPay/chuyển khoản/COD, theo dõi đơn, đánh giá, trợ lý AI.
+  thanh toán PayOS/COD (mọi khoản tiền đều về SÀN), theo dõi đơn, đánh giá, trợ lý AI.
 - **Web quản trị** (hai cổng, một repo FE): **nhân viên SÀN** — NHIỀU VAI TRÒ (admin, quản lý, bán hàng & CSKH, kho, kế toán, marketing), mỗi vai
   một bộ quyền `supplier.*`/`module.resource.action`, quyền cấp/chặn riêng theo từng người; **vendor** (chủ/nhân viên gian hàng — vai `shop_owner`/`shop_staff`)
   tự vận hành CHÍNH shop mình qua `/shop/**` (quyền `shop.*`, kiểm bằng `ShopContextGuard`).
@@ -18,9 +18,9 @@ buộc gender/color/size như thời trang. Hai giao diện dùng chung backend 
 
 | Khác biệt | Hệ quả trong code |
 |---|---|
-| Marketplace nhiều gian hàng (PLAN-0014/0017) | Module `shop`; một lần checkout = 1 `OrderGroup` + N đơn CON (mỗi shop 1 đơn, 1 Payment riêng); hoa hồng sàn ghi trên đơn con (`commissionRateSnapshot`); ví quỹ COD + đối soát chi trả shop (module payment); vendor chỉ thấy dữ liệu shop mình (`ShopContextGuard`, `shopId` CHỈ từ ngữ cảnh) |
+| Marketplace nhiều gian hàng (PLAN-0014/0017) | Module `shop`; một lần checkout = 1 `OrderGroup` + N đơn CON (mỗi shop 1 đơn, 1 Payment riêng); hoa hồng sàn ghi trên đơn con (`commissionRateSnapshot`); sàn thu MỌI khoản tiền (PayOS + COD) rồi tự động đối soát + chi trả shop (module payment, PLAN-0018); vendor chỉ thấy dữ liệu shop mình (`ShopContextGuard`, `shopId` CHỈ từ ngữ cảnh) |
 | Chỉ tiếng Việt | KHÔNG bảng dịch, không module translation/language, không `lang` param; chữ giao diện nằm ở FE; tiền tệ duy nhất VND |
-| Thanh toán thật ở Việt Nam | VNPay (thẻ ATM / Visa-Master / QR) + **PayOS** (QR/chuyển khoản tự động; khoá để TRỐNG thì method `payos` tự tắt) + chuyển khoản VietQR có đối soát + COD; IPN/webhook là nguồn sự thật, chữ ký HMAC bắt buộc |
+| Thanh toán thật ở Việt Nam | **PayOS** (QR/chuyển khoản tự động; khoá để TRỐNG thì method `payos` tự tắt) + COD (đơn vị vận chuyển thu hộ rồi nộp về sàn); chỉ 2 phương thức `payos`/`cod`; webhook là nguồn sự thật, chữ ký HMAC bắt buộc |
 
 Phần còn lại giữ như EcoShop: danh mục · sản phẩm nhiều biến thể (trục thuộc tính theo ngành hàng) · tồn kho · giỏ · đơn ·
 khuyến mãi (voucher sàn + voucher từng shop) · đánh giá · thông báo · báo cáo · **trợ lý AI** (gợi ý, chatbot RAG, tóm tắt đánh giá,
@@ -66,13 +66,13 @@ Frontend (repo riêng, không nằm đây): Next.js + React + TypeScript + Tailw
 | 3 | product | `product` | sản phẩm thuộc MỘT gian hàng (`shopId`), biến thể (màu×size hoặc trục động; SKU duy nhất TRONG shop), ảnh, giá, **tồn kho + phiếu nhập/điều chỉnh**, tìm kiếm (tsvector tiếng Việt + trigram), trạng thái; trang gian hàng công khai `GET /shops` (`product/storefront`); route vendor `/shop/products`, `/shop/inventory` |
 | 4 | cart | `cart` | giỏ hàng theo biến thể (dòng có `shopId`, FE nhóm theo shop), wishlist |
 | 5 | order | `order` | đơn cha (`OrderGroup`) + đơn CON theo shop, dòng hàng snapshot, vòng đời trạng thái, giữ/trừ/nhả kho qua gateway, phí ship theo tỉnh (tính riêng từng đơn con), mã đơn tuần tự, yêu cầu đổi trả, voucher sàn+shop (`applyVouchers`), `/shop/orders/**` cho vendor |
-| 6 | payment | `payment` | phương thức (COD, VNPay, **PayOS**, chuyển khoản), giao dịch, create-url/return/webhook, đối soát chuyển khoản, hoàn tiền (có khoá chiếm + idempotent); **ví quỹ COD** (`shop-wallet`: hoa hồng COD, nộp quỹ, khoá COD khi ví ≤ 0); **đối soát chi trả shop** (`shop-payout`, `PaymentSettlementModule`: escrow theo hạn đổi trả, hoa hồng, nợ mang sang, chi PayOS hoặc kế toán đánh dấu đã trả) |
+| 6 | payment | `payment` | phương thức (chỉ COD + **PayOS**), giao dịch, webhook/return PayOS, thu COD (`markCodCollected`), hoàn tiền (có khoá chiếm + idempotent); **đối soát chi trả shop** (`shop-payout`, `PaymentSettlementModule`: gom CẢ đơn PayOS lẫn COD, escrow theo hạn đổi trả, trừ hoa hồng, nợ mang sang, **cron tự động chi PayOS** hoặc kế toán đánh dấu đã trả; PLAN-0018) |
 | 7 | promotion | `promotion` | mã giảm giá (%, số tiền, freeship) phạm vi `platform` (sàn chịu, cả giỏ) hoặc `shop` (shop chịu, chỉ đơn con của shop; vendor tự quản `/shop/promotions`), phạm vi sản phẩm/ngành, hạn mức dùng, lượt dùng theo đơn |
 | 8 | review | `review` | đánh giá đã mua, ảnh, trả lời của shop (hiển thị tên shop), kiểm duyệt, ghi điểm về product qua gateway; `/shop/reviews` cho vendor (chỉ đánh giá đã duyệt) |
 | 9 | system | `system` | tham số vận hành, banner, thông báo (kể cả cho thành viên shop: đơn mới, sắp hết hàng, đổi TK ngân hàng), tỉnh/thành + phí ship, hộp thư (mail), FAQ/trang, upload ảnh |
 | 10 | reporting | `reporting` | dashboard + doanh thu + bán chạy + tồn kho TOÀN SÀN (`daily_sales`, đọc chéo schema CHỈ SELECT) và `/shop/reports` tính riêng từng shop (SQL lọc `shop_id`) |
 | 11 | ai | `ai` | embedding pgvector, kho tri thức, chatbot RAG tool-calling, gợi ý, tóm tắt đánh giá, kiểm duyệt đề xuất, FAQ, **tìm sản phẩm bằng ảnh**, sổ chi phí & hạn mức (cổng AI), soạn mô tả cho nhân viên; thử đồ 2D + phân tích ảnh người (tính năng thời trang cũ) |
-| 12 | shop | `shop` | gian hàng, thành viên (vai `shop_owner`/`shop_staff`) do **chủ shop THÊM TRỰC TIẾP** — tạo tài khoản khách cho nhân viên, có hiệu lực ngay, không mời/không chờ chấp nhận (`POST /shop/members`; tài khoản tạo qua `identity/applicationapi`; mỗi người một shop active — unique DB `uq_shop_members_one_active_per_user`; trần 50 thành viên active/shop), `ShopContextGuard` + `@RequireShopPermission`, hồ sơ + tài khoản ngân hàng nhận tiền (che số), phiên vendor `GET /shop/session`, duyệt/khoá/hoa hồng do sàn (`/admin/shops/**`) |
+| 12 | shop | `shop` | gian hàng, thành viên (vai `shop_owner`/`shop_staff`) do **chủ shop THÊM TRỰC TIẾP** — tạo tài khoản khách cho nhân viên, có hiệu lực ngay, không mời/không chờ chấp nhận (`POST /shop/members`; tài khoản tạo qua `identity/applicationapi`; mỗi người một shop active — unique DB `uq_shop_members_one_active_per_user`; trần 50 thành viên active/shop), `ShopContextGuard` + `@RequireShopPermission`, hồ sơ + tài khoản ngân hàng nhận tiền (che số), phiên vendor `GET /shop/session`, duyệt/khoá/hoa hồng do sàn (`/admin/shops/**`), người bán **TỰ ĐĂNG KÝ** gian hàng (`POST /shop/registrations` → shop `pending` + hồ sơ `shop_registrations`; sàn duyệt thì người nộp thành chủ shop — PLAN-0019) |
 
 ## Ownership Rule (thay cho Department Ownership của ERP)
 
@@ -82,7 +82,7 @@ Sàn TMĐT KHÔNG có `owner_department_id`. Thay vào đó mọi bản ghi nghi
 - `created_by`, `created_at`, `updated_by`, `updated_at`, `version`, `is_deleted` (soft delete)
 - Dữ liệu CỦA KHÁCH (địa chỉ, giỏ, đơn, đánh giá, phiên chat) luôn lọc theo `user_id` lấy từ JWT —
   KHÔNG BAO GIỜ nhận `user_id` từ body/query để đọc dữ liệu khách khác.
-- Dữ liệu THUỘC GIAN HÀNG (sản phẩm, biến thể, phiếu nhập, đơn con, đánh giá, voucher shop, ví, đối soát) có cột `shop_id` (id trần trỏ `shop.shops.id`, không FK xuyên schema); với vendor `shop_id` CHỈ lấy từ ngữ cảnh phiên
+- Dữ liệu THUỘC GIAN HÀNG (sản phẩm, biến thể, phiếu nhập, đơn con, đánh giá, voucher shop, đối soát) có cột `shop_id` (id trần trỏ `shop.shops.id`, không FK xuyên schema); với vendor `shop_id` CHỈ lấy từ ngữ cảnh phiên
   (`ShopContextGuard`), không từ URL/body — xem Marketplace / Vendor Rule.
 - Phân quyền nhân viên theo **mã quyền** (`module.resource.action`; nhân viên sàn thêm `supplier.*`, vendor `shop.*`), không theo tên vai; vai chỉ là preset.
 
@@ -210,10 +210,10 @@ JWT stateless. Không session/cookie phiên.
   trên CHÍNH shop mình, kiểm bằng `ShopContextGuard` + `@RequireShopPermission` (mã lấy từ `ShopMember.roleId`; vai `scope=shop` không bao giờ gán vào `User.roleId`, nên `shop.*` KHÔNG có trong `GET /auth/me` — FE đọc ở `GET /shop/session`).
 - **`shopId` của vendor CHỈ từ ngữ cảnh** (`@CurrentShop()` ← ShopMember active của JWT), không bao giờ từ URL/query/body; mọi repository/service vendor lọc thêm theo `shopId`; dữ liệu shop khác ⇒ **404** (không lộ tồn tại).
   `ShopContextGuard` đọc THẲNG `Shop.status` (khác `approved` ⇒ 403 `SHOP_NOT_APPROVED`; chỉ route `@AllowAnyShopStatus` — `GET /shop/session`, `POST /shop/members/leave` — chạy được khi shop chờ duyệt/bị khoá).
-- **DTO vendor là whitelist riêng**: không lộ `userId`/email/PII khách, `paymentUrl`/`paymentIntent`/`transactionCode`, ghi chú kiểm duyệt; số tài khoản ngân hàng che (chỉ nhân viên sàn thấy đầy đủ); hoa hồng/ví/đối soát/TK ngân hàng KHÔNG ra web bán hàng.
+- **DTO vendor là whitelist riêng**: không lộ `userId`/email/PII khách, `paymentUrl`/`paymentIntent`/`transactionCode`, ghi chú kiểm duyệt; số tài khoản ngân hàng che (chỉ nhân viên sàn thấy đầy đủ); hoa hồng/đối soát/TK ngân hàng KHÔNG ra web bán hàng.
 - **Đơn & tiền**: một lần checkout = 1 `OrderGroup` (đơn cha, không vòng đời) + N đơn CON (mỗi shop một đơn, một `Payment` riêng); hoa hồng đóng băng ở `commissionRateSnapshot`; voucher sàn do SÀN chịu, voucher shop do SHOP chịu.
-  Ví quỹ COD là sổ cái APPEND-ONLY (mọi đổi số dư = transaction + `FOR UPDATE` ví + dòng sổ + audit; ví ≤ 0 ⇒ tắt `Shop.codEnabled`); đối soát chi trả shop idempotent (UNIQUE kỳ + dòng đối soát, idempotency-key chi PayOS); gọi PayOS/VNPay NGOÀI transaction.
-- Khoá bên thứ ba (PayOS thu/chi, VNPay, OpenAI, Cloudinary…) để TRỐNG vẫn chạy được, tính năng tương ứng tự tắt/lùi — danh sách ở `docs/07_KEYS_CHECKLIST.md`.
+  **Sàn thu mọi khoản tiền** (PLAN-0018): khách trả PayOS vào tài khoản sàn, hoặc COD do đơn vị vận chuyển thu hộ nộp về sàn (sàn ghi nhận `markCodCollected` khi giao thành công) — KHÔNG còn ví quỹ COD, `Shop.codEnabled`, nạp quỹ. Sàn tự động trừ hoa hồng và chi trả shop sau hạn đổi trả (cron trong worker 02:00 Asia/Ho_Chi_Minh, setting `payout.auto_enabled`); đối soát chi trả shop idempotent (UNIQUE kỳ + dòng đối soát, idempotency-key chi PayOS); gọi PayOS NGOÀI transaction.
+- Khoá bên thứ ba (PayOS thu/chi — chủ dự án cung cấp sau —, OpenAI, Cloudinary…) để TRỐNG vẫn chạy được, tính năng tương ứng tự tắt/lùi — danh sách ở `docs/07_KEYS_CHECKLIST.md`.
 
 ## Rate Limit Rule
 
@@ -305,19 +305,18 @@ và nằm sẵn trong `scripts/seed/assets` (commit cùng repo).
 - Xong module = plan tick "seed" + README §Tài khoản demo cập nhật + đã kiểm bằng clone mới `docker compose up`
   trên project riêng (xem `docs/05_SEED_AND_REPRODUCE.md`).
 
-## Payment Rule (VNPay / PayOS / chuyển khoản / COD)
+## Payment Rule (PayOS / COD — sàn thu mọi khoản tiền, PLAN-0018)
 
 - **PayOS** (thu): `POST /payments/payos/webhook` kiểm chữ ký HMAC-SHA256 bằng checksum key TRƯỚC khi đọc dữ liệu (khoá trống ⇒ từ chối 401, method `payos` tự ẩn), số tiền PayOS là VND (không nhân 100), idempotent theo (type, provider_ref = orderCode PayOS);
   `GET /payments/payos/return` hỏi lại PayOS rồi settle cùng đường idempotent. **Chi** (Lệnh chi — hoàn tiền tự động + chi trả shop) dùng cặp khoá RIÊNG, idempotency-key ổn định (`refund.id` / mã kỳ đối soát); chữ ký `x-signature` của API chi CHƯA xác nhận
   — xem `docs/plans/PLAN-0017-marketplace-completion.md` §12 trước khi bật chi tự động.
 - Hoàn tiền: CHIẾM yêu cầu (`requested|failed → processing`, compare-and-set) rồi mới gọi cổng; không gọi mạng trong transaction.
-- Không bao giờ lưu/nhận số thẻ, CVV, OTP thẻ — khách nhập trên trang VNPay; backend chỉ nhận mã giao dịch.
-- Mọi callback (`return`, `IPN`) phải kiểm chữ ký `HMAC-SHA512` với `vnp_HashSecret` TRƯỚC khi đọc dữ liệu.
-- **IPN là nguồn sự thật** đổi trạng thái thanh toán; `return` chỉ để hiện màn kết quả. IPN idempotent
-  theo `vnp_TxnRef` + `vnp_TransactionNo`; gọi lại trả đúng mã VNPay yêu cầu (`00`, `02` đã xác nhận, `97` sai chữ ký…).
-- Số tiền IPN phải khớp số tiền đơn (VND × 100 theo VNPay) — lệch là `04`, không ghi nhận.
-- Đơn chưa thanh toán quá hạn (tham số vận hành) thì job huỷ + nhả kho; chuyển khoản VietQR đối soát
-  bằng nội dung chuyển khoản = mã đơn, kế toán xác nhận (audit) hoặc webhook đối soát khi tích hợp.
+- Chỉ còn HAI phương thức `payos` và `cod`; KHÔNG có VNPay, chuyển khoản VietQR đối soát tay, ví quỹ COD.
+- Không bao giờ lưu/nhận số thẻ, CVV, OTP — khách thanh toán trên trang PayOS; backend chỉ nhận mã giao dịch.
+- **Webhook PayOS là nguồn sự thật** đổi trạng thái thanh toán; `return` chỉ hỏi lại PayOS rồi settle cùng đường idempotent. Số tiền phải khớp số tiền đơn con.
+- **COD**: đơn vị vận chuyển thu hộ rồi nộp về sàn; sàn xác nhận thu khi giao thành công (`markCodCollected` ⇒ `Payment=paid`); vendor KHÔNG có nút thu COD. Đơn COD chỉ vào đối soát khi `Payment=paid`.
+- **Đối soát & chi trả tự động**: cùng MỘT đường cho PayOS và COD (escrow theo hạn đổi trả → trừ hoa hồng → trừ hoàn tiền + nợ mang sang → chi PayOS "Lệnh chi"); cron chạy khi `payout.auto_enabled` = true và khoá chi đã cấu hình; chạy tay chỉ để chạy bù.
+- Đơn chưa thanh toán quá hạn (tham số vận hành) thì job huỷ + nhả kho.
 
 ## ERP Correctness Rule (áp cho shop)
 
@@ -327,7 +326,7 @@ Trước khi làm use case ghi, trả lời rõ:
 Cái gì chạy đồng thời? (nhiều instance API + worker + job)
 Cái gì phải idempotent? (checkout, IPN, webhook, huỷ đơn, nhập kho)
 Bản ghi nào cần optimistic lock (version)? Thao tác nào cần FOR UPDATE? (tồn kho, lượt mã giảm giá, số đơn)
-Ranh giới transaction ở đâu? (service; không gọi mạng trong transaction — gọi VNPay/OpenAI NGOÀI)
+Ranh giới transaction ở đâu? (service; không gọi mạng trong transaction — gọi PayOS/OpenAI NGOÀI)
 Audit/outbox gì phải ghi?
 ```
 

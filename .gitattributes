@@ -1,3 +1,6 @@
 * text=auto eol=lf
 *.png binary
 *.jpg binary
+# Dump dữ liệu mẫu (pg_dump custom format) là nhị phân — không được đổi cuối dòng.
+*.dump binary
+*.webp binary
