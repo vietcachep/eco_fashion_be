@@ -6,6 +6,7 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import type { IdentityQueryApi, UserBrief } from '@modules/identity/queryapi/identity.queryapi';
 import type { ShopAuditLogService } from './audit/shop-audit-log.service';
 import type { ShopOutboxService } from './outbox/shop-outbox.service';
+import type { ShopRegistrationService } from './registration/service/shop-registration.service';
 import { toShopResponse } from './shop/mapper/shop.mapper';
 import type { ShopRepository, ShopRow } from './shop/repository/shop.repository';
 import { ShopService } from './shop/service/shop.service';
@@ -28,7 +29,6 @@ function shopRow(id: string, ownerUserId: string, overrides: Partial<ShopRow> = 
     description: null,
     status: 'pending',
     commissionRate: new Prisma.Decimal('10.00'),
-    codEnabled: true,
     bankCode: '970436',
     bankAccountNumber: '123456789012',
     bankAccountName: 'NGUYEN VAN A',
@@ -67,7 +67,9 @@ function build(opts: { shops: ShopRow[]; users: UserBrief[] }) {
   const outbox = { publish: jest.fn(() => Promise.resolve()) };
   const prisma = { $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn({}) };
 
-  const service = new ShopService(prisma as unknown as PrismaService, repo as unknown as ShopRepository, audit as unknown as ShopAuditLogService, outbox as unknown as ShopOutboxService, identity as unknown as IdentityQueryApi);
+  // Shop seed/admin tạo không có hồ sơ đăng ký (PLAN-0019): prepareStatusChange trả null ⇒ changeStatus giữ hành vi cũ.
+  const registrations = { prepareStatusChange: () => Promise.resolve(null), recordDecision: () => Promise.resolve() };
+  const service = new ShopService(prisma as unknown as PrismaService, repo as unknown as ShopRepository, audit as unknown as ShopAuditLogService, outbox as unknown as ShopOutboxService, identity as unknown as IdentityQueryApi, registrations as unknown as ShopRegistrationService);
   return { service, repo, identity };
 }
 

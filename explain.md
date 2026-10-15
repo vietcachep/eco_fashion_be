@@ -34,7 +34,7 @@ trong plan**. Bước viết test không cần sơ đồ — chỉ liệt kê ca
 
 - **Ranh giới module**: chỗ gọi cross-module (qua gateway/queryapi), không import module khác.
 - **Transaction**: mở/đóng ở đâu (`DataSource.transaction` / `EntityManager` trong service); gọi mạng
-  (VNPay, OpenAI, Cloudinary, mail) phải NGOÀI transaction.
+  (PayOS, OpenAI, Cloudinary, mail) phải NGOÀI transaction.
 - **Audit**: action nào ghi audit DB.
 - **Outbox/event**: có ghi không, `event_type` gì, listener nào xử lý.
 - **Concurrency/lock**: optimistic (`version`) hay pessimistic (`FOR UPDATE`), unique index nào là chốt cuối.

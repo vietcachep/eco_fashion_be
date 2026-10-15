@@ -1,0 +1,10 @@
+# Reverse proxy cho API. SITE_ADDRESS (env) = tên miền của API (vd api.fitly.vn) → Caddy tự xin/gia hạn chứng chỉ HTTPS.
+# Domain phải trỏ A record về IP máy chủ và cổng 80/443 phải mở. Không có tên miền riêng: dùng sslip.io, vd api.160.191.242.112.sslip.io.
+{$SITE_ADDRESS} {
+	encode gzip zstd
+	# Bỏ qua log truy cập chi tiết của file tĩnh; log ứng dụng đã có ở API.
+	reverse_proxy api:4000 {
+		health_uri /api/v1/health
+		health_interval 15s
+	}
+}

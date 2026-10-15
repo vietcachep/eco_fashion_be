@@ -1,5 +1,7 @@
 # PLAN-0014 — Pivot sang sàn thương mại điện tử đa gian hàng (Shop/Vendor domain + RBAC 2 tầng + tách đơn theo shop)
 
+> **Lưu ý (2026-10-15):** luồng ví COD / `Shop.codEnabled` bị thay bởi PLAN-0018 — sàn thu mọi khoản (PayOS + COD); nội dung bên dưới là lịch sử.
+
 > Status: In progress — phần backend (bước 1–10) ĐÃ XONG theo mã nguồn (rà soát tài liệu 2026-10-03, cập nhật lại 2026-10-04; bước 7–10 làm tiếp trong PLAN-0017). Tài liệu (bước 11) đã cập nhật xong trừ `PLANS.md` ở thư mục gốc (ngoài phạm vi lượt rà soát tài liệu — còn ghi "một cửa hàng thời trang"). Còn lại: bước 5b-2 (`Shop.ratingAvg` không tính lại khi ẩn/sửa/xoá đánh giá), chạy lại `npm run verify` + `migration:check` + boot app, và các giới hạn đã biết ở **mục 14**.
 > Owner: Agent
 > Related Phase: Phase 5 — Marketplace pivot (mới, sau Phase 4 AI)

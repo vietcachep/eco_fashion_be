@@ -14,7 +14,7 @@ nhân viên), chỉ tiếng Việt, thanh toán thật tại Việt Nam. Kiến 
 - Luồng nghiệp vụ (checkout, vòng đời đơn, hoàn tiền, nhập kho)
 - Đổi authentication/authorization
 - Thêm giao tiếp liên module (gateway, outbox)
-- Tích hợp ngoài (VNPay, Cloudinary, OpenAI, email)
+- Tích hợp ngoài (PayOS, Cloudinary, OpenAI, email)
 - Báo cáo/dashboard
 - Refactor kiến trúc, deploy
 

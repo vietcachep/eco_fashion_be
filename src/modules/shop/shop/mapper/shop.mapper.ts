@@ -29,7 +29,6 @@ export function toShopResponse(s: ShopRow): ShopResponse {
     status: s.status,
     statusLabel: SHOP_STATUS_LABEL[s.status] ?? s.status,
     commissionRate: s.commissionRate.toString(),
-    codEnabled: s.codEnabled,
     bankCode: s.bankCode ?? null,
     bankAccountName: s.bankAccountName ?? null,
     bankAccountNumberMasked: maskBankAccountNumber(s.bankAccountNumber),

@@ -11,7 +11,6 @@ export class ShopResponse {
   @ApiProperty({ example: 'approved' }) status: string;
   @ApiProperty({ example: 'Đã duyệt' }) statusLabel: string;
   @ApiProperty({ example: '10.00', description: '% hoa hồng sàn thu' }) commissionRate: string;
-  @ApiProperty() codEnabled: boolean;
   @ApiPropertyOptional({ nullable: true, example: '4.80' }) ratingAvg: string | null;
   @ApiProperty() totalProducts: number;
   @ApiProperty() ownerUserId: string;

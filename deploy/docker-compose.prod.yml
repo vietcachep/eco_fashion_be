@@ -1,0 +1,127 @@
+# =====================================================================
+# FITLY backend — TRIỂN KHAI PRODUCTION (1 máy chủ, Docker). Khác docker-compose.yml (dev):
+#   - KHÔNG mở cổng Postgres/Redis ra ngoài (chỉ mạng nội bộ Docker); Redis có mật khẩu;
+#   - NODE_ENV=production (bắt buộc secret/mật khẩu admin không phải giá trị mẫu, EF_PUBLIC_URL https);
+#   - Caddy đứng trước API: tự xin và gia hạn chứng chỉ HTTPS (Let's Encrypt) cho tên miền SITE_ADDRESS; chỉ Caddy mở cổng 80/443;
+#   - không có mailpit — dùng SMTP thật (EF_MAIL_*).
+# Chạy:  ./deploy.sh            (hoặc)  docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# Nạp dữ liệu mẫu (xoá DB hiện có!):  docker compose --env-file .env.production -f docker-compose.prod.yml --profile demo-data run --rm demo-data
+# Cấu hình: copy .env.production.example → .env.production rồi điền (file này KHÔNG commit).
+# =====================================================================
+name: fitly
+
+x-backend-env: &backend-env
+  env_file:
+    - .env.production
+  environment:
+    NODE_ENV: production
+    EF_PORT: 4000
+    EF_DATABASE_URL: postgresql://ecofashion:${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env.production}@db:5432/ecofashion
+    EF_REDIS_URL: redis://:${REDIS_PASSWORD:?đặt REDIS_PASSWORD trong .env.production}@redis:6379/0
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecofashion
+      POSTGRES_USER: ecofashion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env.production}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecofashion -d ecofashion"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?đặt REDIS_PASSWORD trong .env.production}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Chạy MỘT LẦN mỗi lần deploy: migration + đồng bộ catalog quyền + đảm bảo có tài khoản admin (EF_ADMIN_*). api/worker chờ nó thành công.
+  migrate:
+    <<: *backend-env
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: fitly-backend:prod
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run -s perms:sync && npm run -s seed:admin"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    <<: *backend-env
+    image: fitly-backend:prod
+    restart: unless-stopped
+    expose:
+      - "4000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend-env
+    image: fitly-backend:prod
+    restart: unless-stopped
+    command: ["node", "dist/src/worker.js"]
+    # Image dùng chung với api có HEALTHCHECK gọi HTTP :4000 — worker không mở cổng nên tắt, kẻo báo "unhealthy" oan.
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?đặt SITE_ADDRESS (tên miền của API) trong .env.production}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  # Chỉ chạy khi gọi tường minh (--profile demo-data): XOÁ dữ liệu ứng dụng rồi nạp bản dump mẫu trong repo, sau đó ĐỔI mật khẩu admin
+  # (EF_ADMIN_PASSWORD) và khoá/đổi mật khẩu nhân viên sàn mẫu (EF_STAFF_PASSWORD) — mật khẩu mẫu công khai không được còn dùng được.
+  demo-data:
+    <<: *backend-env
+    image: fitly-backend:prod
+    profiles: ["demo-data"]
+    restart: "no"
+    command: ["sh", "-c", "npm run -s db:restore -- --yes && npm run -s db:secure"]
+    environment:
+      NODE_ENV: production
+      EF_PORT: 4000
+      EF_DATABASE_URL: postgresql://ecofashion:${POSTGRES_PASSWORD}@db:5432/ecofashion
+      EF_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      EF_DB_MODE: local
+      EF_STAFF_PASSWORD: ${EF_STAFF_PASSWORD:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pg_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

@@ -10,4 +10,6 @@ export const SHOP_EVENT = {
   MEMBER_LEFT: 'SHOP_MEMBER_LEFT',
   /* Chủ shop vừa thêm một nhân viên (tài khoản mới) vào shop — payload {shopId, memberId, roleId}; chưa có listener. */
   MEMBER_JOINED: 'SHOP_MEMBER_JOINED',
+  /* Người bán nộp hồ sơ đăng ký gian hàng (PLAN-0019) — payload {shopId, code, name, applicantUserId}, KHÔNG có SĐT/email; chưa có listener. */
+  REGISTRATION_SUBMITTED: 'SHOP_REGISTRATION_SUBMITTED',
 } as const;

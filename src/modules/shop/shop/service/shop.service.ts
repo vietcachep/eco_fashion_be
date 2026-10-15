@@ -7,6 +7,7 @@ import { IdentityQueryApi } from '@modules/identity/queryapi/identity.queryapi';
 import { ShopAuditLogService } from '../../audit/shop-audit-log.service';
 import { SHOP_AUDIT, SHOP_ERR, SHOP_EVENT, SHOP_STATUS, SHOP_STATUS_LABEL, SHOP_TRANSITIONS } from '../../foundation/shop.constants';
 import { ShopOutboxService } from '../../outbox/shop-outbox.service';
+import { ShopRegistrationService } from '../../registration/service/shop-registration.service';
 import { ShopResponse, AdminShopResponse, AdminShopSummaryResponse } from '../dto/shop.responses';
 import { ShopOwnerBrief, toShopResponse, toAdminShopResponse, toAdminShopSummaryResponse } from '../mapper/shop.mapper';
 import { ShopListFilter, ShopRepository, ShopRow } from '../repository/shop.repository';
@@ -49,6 +50,7 @@ export class ShopService {
     private readonly audit: ShopAuditLogService,
     private readonly outbox: ShopOutboxService,
     private readonly identity: IdentityQueryApi,
+    private readonly registrations: ShopRegistrationService,
   ) {}
 
   /* Lưới SHOP_TRANSITIONS — tách static để test thuần không cần DB (shop.spec.ts). */
@@ -87,17 +89,22 @@ export class ShopService {
   /*
    * Chuyển trạng thái theo SHOP_TRANSITIONS (approve/suspend/reject dùng chung hàm này, chỉ khác `target`).
    * Khoá dòng (FOR UPDATE) trước khi kiểm — 2 nhân viên sàn duyệt/khoá cùng lúc không race nhau.
+   * Shop do người bán TỰ ĐĂNG KÝ (có hồ sơ — PLAN-0019): duyệt lần đầu (pending → approved) tạo luôn ShopMember chủ shop cho người đăng ký, trong CÙNG
+   * transaction (không tạo được ⇒ 409 SHOP_OWNER_UNAVAILABLE, trạng thái giữ nguyên); quyết định đầu tiên (duyệt/từ chối) được ghi vào hồ sơ để người
+   * đăng ký đọc lý do. Shop không có hồ sơ (seed/admin tạo) và mở khoá suspended → approved giữ hành vi cũ — xem ShopRegistrationService.
    */
   async changeStatus(actor: AuthenticatedActor, id: string, target: string, reason: string | null): Promise<AdminShopSummaryResponse> {
     const after = await this.prisma.$transaction(async (tx) => {
       const s = await this.repo.findByIdForUpdate(id, tx);
       if (!s) throw new NotFoundException(SHOP_ERR.NOT_FOUND, 'Không tìm thấy gian hàng');
       ShopService.assertTransition(s.status, target);
+      const registration = await this.registrations.prepareStatusChange(tx, actor, s, target);
       const updated = await this.repo.update(s.id, { status: target, updatedBy: actor.userId }, tx);
+      if (registration) await this.registrations.recordDecision(tx, actor, registration, reason);
       const auditAction = target === SHOP_STATUS.APPROVED ? SHOP_AUDIT.APPROVED : target === SHOP_STATUS.SUSPENDED ? SHOP_AUDIT.SUSPENDED : SHOP_AUDIT.REJECTED;
       await this.audit.write(tx, actor, { action: auditAction, entityType: 'shop', entityId: s.id, entityCode: s.code, before: { status: s.status }, after: { status: target, reason } });
       const eventType = target === SHOP_STATUS.APPROVED ? SHOP_EVENT.APPROVED : target === SHOP_STATUS.SUSPENDED ? SHOP_EVENT.SUSPENDED : SHOP_EVENT.REJECTED;
-      await this.outbox.publish(tx, { eventType, aggregateType: 'shop', aggregateId: s.id, payload: { shopId: s.id, code: s.code, name: s.name, status: target, reason } });
+      await this.outbox.publish(tx, { eventType, aggregateType: 'shop', aggregateId: s.id, payload: { shopId: s.id, code: s.code, name: s.name, status: target, reason, ownerUserId: s.ownerUserId, viaRegistration: registration !== null } });
       return updated;
     });
     this.logger.log({ shopId: id, status: after.status, by: actor.userId }, 'Đã đổi trạng thái gian hàng');

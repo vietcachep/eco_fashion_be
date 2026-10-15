@@ -13,7 +13,6 @@ export const SHOP_SELECT = {
   description: true,
   status: true,
   commissionRate: true,
-  codEnabled: true,
   bankCode: true,
   bankAccountNumber: true,
   bankAccountName: true,
@@ -63,9 +62,13 @@ export class ShopRepository {
     return { items, total };
   }
 
-  /* Shop KHÔNG được bán công khai (chờ duyệt / bị khoá / từ chối) — product dùng để ẩn hàng khỏi danh sách và chi tiết. */
+  /*
+   * Shop KHÔNG được bán công khai (chờ duyệt / bị khoá / từ chối) — product dùng để ẩn hàng khỏi danh sách và chi tiết (`shopId NOT IN (...)`).
+   * Chỉ tính shop ĐÃ TỪNG có thành viên (`members.some`): hồ sơ tự đăng ký (PLAN-0019) chưa duyệt/đã bị từ chối chưa bao giờ có thành viên nên
+   * không thể có sản phẩm; nếu để lọt vào đây thì mỗi lượt đăng ký thêm một id vào MỌI truy vấn sản phẩm công khai (phình `NOT IN`, chậm dần).
+   */
   async listNonApprovedIds(): Promise<string[]> {
-    const rows = await this.prisma.shop.findMany({ where: { isDeleted: false, status: { not: 'approved' } }, select: { id: true } });
+    const rows = await this.prisma.shop.findMany({ where: { isDeleted: false, status: { not: 'approved' }, members: { some: {} } }, select: { id: true } });
     return rows.map((r) => r.id);
   }
 

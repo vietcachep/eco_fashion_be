@@ -11,6 +11,9 @@ node_modules/
 .env.*
 !.env.example
 
+# cấu hình triển khai THẬT (mật khẩu/khoá) — chỉ commit deploy/.env.production.example
+deploy/.env.production
+
 # ide / os
 .idea/
 .vscode/
@@ -20,6 +23,9 @@ Thumbs.db
 # logs
 *.log
 npm-debug.log*
+
+# manifest link ảnh Cloudinary CỦA MÁY NÀY khi dùng tài khoản khác với manifest đóng gói (EF_SEED_IMAGE_SOURCE=upload)
+scripts/seed/assets/.cloudinary-manifest.local.json
 
 # Prisma client sinh ra (prisma generate) — không commit
 src/generated/

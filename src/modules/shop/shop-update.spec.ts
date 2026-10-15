@@ -6,6 +6,7 @@ import type { IdentityQueryApi } from '@modules/identity/queryapi/identity.query
 import type { ShopAuditLogService } from './audit/shop-audit-log.service';
 import { SHOP_AUDIT, SHOP_ERR, SHOP_EVENT } from './foundation/shop.constants';
 import type { ShopOutboxService } from './outbox/shop-outbox.service';
+import type { ShopRegistrationService } from './registration/service/shop-registration.service';
 import type { ShopRepository, ShopRow } from './shop/repository/shop.repository';
 import { ShopService } from './shop/service/shop.service';
 import { VN_BANK_BINS, isKnownBankBin } from './shop/service/vn-bank-bins';
@@ -26,7 +27,6 @@ function makeShopRow(overrides: Partial<ShopRow> = {}): ShopRow {
     description: null,
     status: 'approved',
     commissionRate: new Prisma.Decimal('10.00'),
-    codEnabled: true,
     bankCode: '970436',
     bankAccountNumber: '123456789012',
     bankAccountName: 'NGUYEN VAN A',
@@ -175,7 +175,7 @@ describe('ShopService.updateMe — transaction / audit / outbox', () => {
     const audit = { write: auditWrite } as unknown as ShopAuditLogService;
     const outbox = { publish } as unknown as ShopOutboxService;
     // updateMe không tra chủ shop (response vendor) nên identity chỉ là stub trống.
-    service = new ShopService(prisma, repo, audit, outbox, {} as unknown as IdentityQueryApi);
+    service = new ShopService(prisma, repo, audit, outbox, {} as unknown as IdentityQueryApi, {} as unknown as ShopRegistrationService);
   });
 
   const auditActions = (): string[] => auditWrite.mock.calls.map((c) => c[2].action);

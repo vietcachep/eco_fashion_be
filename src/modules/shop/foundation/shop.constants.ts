@@ -28,6 +28,21 @@ export const SHOP_ERR = {
   LAST_OWNER: 'SHOP_LAST_OWNER',
   /* Tài khoản ngân hàng gửi thiếu trường: lần đầu khai phải đủ 3 trường; đổi số tài khoản/BIN phải gửi lại tên chủ TK. */
   BANK_FIELD_INCOMPLETE: 'SHOP_BANK_FIELD_INCOMPLETE',
+  /* PLAN-0019 — người bán tự đăng ký gian hàng (POST /shop/registrations). */
+  /* 409: người nộp đã có một shop đang chờ duyệt. */
+  REGISTRATION_PENDING: 'SHOP_REGISTRATION_PENDING',
+  /* 409: người nộp đã là thành viên active của một gian hàng (mỗi người một shop active). */
+  REGISTRATION_ALREADY_MEMBER: 'SHOP_REGISTRATION_ALREADY_MEMBER',
+  /* 403: tài khoản nhân viên sàn (vai ≠ customer) hoặc tài khoản không còn active. */
+  REGISTRATION_NOT_ELIGIBLE: 'SHOP_REGISTRATION_NOT_ELIGIBLE',
+  /* 400: ngành hàng không tồn tại hoặc không hoạt động. */
+  REGISTRATION_CATEGORY_INVALID: 'SHOP_REGISTRATION_CATEGORY_INVALID',
+  /* 400: SĐT không phải số di động VN (đã chặn ở Request DTO — đây là lưới phòng thủ khi service được gọi không qua HTTP). */
+  REGISTRATION_PHONE_INVALID: 'SHOP_REGISTRATION_PHONE_INVALID',
+  /* 409: trùng tên (không phân biệt hoa/thường) với gian hàng đang chờ duyệt/đã duyệt/đang bị khoá. */
+  NAME_TAKEN: 'SHOP_NAME_TAKEN',
+  /* 409 khi DUYỆT: người đăng ký nay đã thuộc shop khác / tài khoản không còn hợp lệ — sàn không duyệt được (nên từ chối); trạng thái KHÔNG đổi. */
+  OWNER_UNAVAILABLE: 'SHOP_OWNER_UNAVAILABLE',
 } as const;
 
 /* Tên hành động audit của module — ổn định, dùng lọc trên màn audit. */
@@ -44,6 +59,8 @@ export const SHOP_AUDIT = {
   MEMBER_REMOVED: 'SHOP_MEMBER_REMOVED',
   /* Thành viên tự rời gian hàng (POST /shop/members/leave). */
   MEMBER_LEFT: 'SHOP_MEMBER_LEFT',
+  /* Người bán nộp hồ sơ tự đăng ký gian hàng (POST /shop/registrations, PLAN-0019). */
+  REGISTRATION_SUBMITTED: 'SHOP_REGISTRATION_SUBMITTED',
 } as const;
 
 /* Sự kiện outbox module shop phát — định nghĩa ở enums/shop-events.ts (phần công khai cho module khác nghe). */
@@ -87,8 +104,8 @@ export const SHOP_STATUS_LABEL: Record<string, string> = {
 /*
  * Lưới chuyển trạng thái do NHÂN VIÊN SÀN thao tác (AdminShopController — quyền `supplier.shop.*`), cùng kiểu
  * với STAFF_TRANSITIONS của order: pending → approved|rejected (duyệt/từ chối lần đầu); approved → suspended
- * (khoá vi phạm); suspended → approved (mở khoá lại); rejected là trạng thái cuối (đăng ký lại là luồng khác,
- * ngoài phạm vi PLAN-0014 bước 1-4).
+ * (khoá vi phạm); suspended → approved (mở khoá lại); rejected là trạng thái cuối (đăng ký lại = người bán nộp hồ sơ MỚI
+ * → tạo shop mới, PLAN-0019 — không "mở lại" shop đã từ chối).
  */
 export const SHOP_TRANSITIONS: Record<string, string[]> = {
   pending: [SHOP_STATUS.APPROVED, SHOP_STATUS.REJECTED],

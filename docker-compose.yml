@@ -1,7 +1,7 @@
 # =====================================================================
 # EcoFashion Backend — MỘT LỆNH LÀ CHẠY ĐƯỢC trên máy trống:
 #
-#     Copy-Item .env.example .env      # điền EF_OPENAI_API_KEY, EF_CLOUDINARY_*, EF_VNPAY_* nếu có
+#     Copy-Item .env.example .env      # điền EF_OPENAI_API_KEY, EF_CLOUDINARY_*, EF_PAYOS_* nếu có
 #     docker compose up -d --build
 #
 # Thứ tự: db/redis/mailpit (healthy) → migrate (chạy 1 lần: migration + sync catalog quyền) → seed (chạy 1 lần,

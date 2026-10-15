@@ -1,5 +1,7 @@
 # PLAN-0017 — Hoàn thiện sàn đa gian hàng, đa ngành hàng (vendor vận hành · PayOS/ví/đối soát · dữ liệu mẫu · FE nối API thật)
 
+> **Lưu ý (2026-10-15):** luồng ví COD / VNPay bị thay bởi PLAN-0018 — sàn thu mọi khoản (PayOS + COD), tự động đối soát/chi trả; các phần ví COD, VNPay, chuyển khoản bên dưới là lịch sử.
+
 > Status: In progress — **BE xong** (Wave 0–2 + Track D dữ liệu mẫu, rà soát tài liệu theo mã nguồn 2026-10-04); còn: Wave 3 (FE — theo dõi ở plan của hai repo FE), Wave 4 (chạy lại `verify`/`migration:check`/boot app/click-through + review) và các giới hạn đã biết ở **§12**.
 > **Đổi 2026-10-13**: luồng "mời nhân viên gian hàng có chấp nhận" (2026-10-04) **ĐÃ BỎ** — chủ dự án chọn **chủ shop THÊM nhân viên trực tiếp** (tạo tài khoản cho nhân viên, có hiệu lực ngay). Xem mục 18/20 ở §3b, nhật ký §9 và §12 › Shop / vendor.
 > Owner: Agent (Sonnet điều phối; Haiku code song song; Sonnet tự làm phần lõi rủi ro cao)
@@ -46,7 +48,7 @@ tự lùi về đường không-khoá, người dùng điền sau.
 3. **Ví COD không có vùng đệm âm** (đúng PLAN-0015 §1): hoa hồng đơn COD hoàn tất trừ vào ví, `balance<=0` ⇒ `Shop.codEnabled=false` trong CÙNG tx.
 4. **Escrow** theo hạn đổi trả hiện có của module order (không đặt số ngày mới); **payout âm mang sang kỳ sau** (`carriedDebt`).
 5. **Voucher cộng dồn**: tối đa 1 voucher `platform` / OrderGroup + tối đa 1 voucher `shop` / đơn con (PLAN-0014 bước 8, đã chốt).
-6. **Đăng ký shop vẫn do admin tạo** (đã xác nhận ở PLAN-0014) — KHÔNG làm form tự đăng ký đợt này.
+6. **Đăng ký shop vẫn do admin tạo** (đã xác nhận ở PLAN-0014) — KHÔNG làm form tự đăng ký đợt này. **→ Đảo ngược 2026-10-15:** chủ dự án chọn làm luồng người bán tự đăng ký — xem PLAN-0019.
 7. **Báo cáo vendor tính trực tiếp bằng SQL có lọc `shop_id`** (cache Redis ngắn như báo cáo sàn) — KHÔNG đổi bảng `DailySales`.
 8. **Ảnh dữ liệu mẫu**: tự sinh (nền gradient + biểu tượng đúng loại hàng, `scripts/seed/tools`), KHÔNG tải ảnh từ bên ngoài.
    Muốn ảnh thật: điền `EF_PEXELS_API_KEY` rồi chạy `npm run seed:images:pexels` (script thay ảnh theo từ khoá của từng SP). **Thực tế (2026-10-04):** `package.json` từng khai lệnh (đã gỡ)

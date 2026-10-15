@@ -24,7 +24,7 @@ export const envSchema = z.object({
   EF_PORT: intFrom(4000),
   /* URL công khai của API (FE/ảnh tĩnh seed trỏ về) — dev: http://localhost:4000 */
   EF_API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
-  /* URL web bán hàng — VNPay redirect về, link trong email */
+  /* URL web bán hàng — PayOS redirect về, link trong email */
   EF_WEB_URL: z.string().url().default('http://localhost:3000'),
   EF_API_PREFIX: z.string().default('api/v1'),
   EF_SWAGGER_ENABLED: boolean,
@@ -55,13 +55,6 @@ export const envSchema = z.object({
   EF_MAIL_PASSWORD: z.string().default(''),
   EF_MAIL_FROM: z.string().default('EcoFashion <no-reply@ecofashion.vn>'),
 
-  EF_VNPAY_TMN_CODE: z.string().default(''),
-  EF_VNPAY_HASH_SECRET: z.string().default(''),
-  EF_VNPAY_PAY_URL: z.string().url().default('https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'),
-  EF_VNPAY_API_URL: z.string().url().default('https://sandbox.vnpayment.vn/merchant_webapi/api/transaction'),
-  EF_BANK_TRANSFER_BANK_CODE: z.string().default(''),
-  EF_BANK_TRANSFER_ACCOUNT_NO: z.string().default(''),
-  EF_BANK_TRANSFER_ACCOUNT_NAME: z.string().default(''),
 
   /* PayOS (PLAN-0015/0017). Trống = phương thức `payos` tự tắt, đối soát chi trả lùi về "đánh dấu đã trả tay".
      Thu tiền (payment link) và chi tiền (payout) là HAI cặp khoá khác nhau trong dashboard PayOS. */
@@ -107,7 +100,7 @@ export function assertSecretsSafe(env: Env): void {
     throw new Error('EF_ADMIN_PASSWORD đang là mật khẩu mẫu — production bắt buộc đổi.');
   }
   if (!env.EF_PUBLIC_URL.startsWith('https://')) {
-    throw new Error('EF_PUBLIC_URL production phải là https (VNPay gọi IPN về đây).');
+    throw new Error('EF_PUBLIC_URL production phải là https (PayOS gọi webhook về đây).');
   }
 }
 

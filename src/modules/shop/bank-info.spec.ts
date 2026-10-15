@@ -21,7 +21,6 @@ function makeShopRow(overrides: Partial<ShopRow> = {}): ShopRow {
     description: null,
     status: 'approved',
     commissionRate: new Prisma.Decimal('10.00'),
-    codEnabled: true,
     bankCode: '970436',
     bankAccountNumber: '123456789012',
     bankAccountName: 'NGUYEN VAN A',

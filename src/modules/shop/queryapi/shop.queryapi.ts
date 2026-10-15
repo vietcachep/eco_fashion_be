@@ -13,7 +13,6 @@ export interface ShopBrief {
   ratingAvg: number | null;
   status: string;
   commissionRate: string;
-  codEnabled: boolean;
 }
 
 /* Hồ sơ CÔNG KHAI của gian hàng đã duyệt (web bán hàng: trang shop). Không chứa hoa hồng/ngân hàng/chủ sở hữu. */
@@ -113,7 +112,7 @@ export class ShopQueryApi {
     return { id: s.id, slug: s.slug, name: s.name, logoUrl: s.logoUrl, bannerUrl: s.bannerUrl, description: s.description, ratingAvg: s.ratingAvg == null ? null : Number(s.ratingAvg) };
   }
 
-  private static toBrief(s: { id: string; code: string; slug: string; name: string; logoUrl: string | null; ratingAvg: unknown; status: string; commissionRate: unknown; codEnabled: boolean }): ShopBrief {
-    return { id: s.id, code: s.code, slug: s.slug, name: s.name, logoUrl: s.logoUrl, ratingAvg: s.ratingAvg == null ? null : Number(s.ratingAvg), status: s.status, commissionRate: String(s.commissionRate), codEnabled: s.codEnabled };
+  private static toBrief(s: { id: string; code: string; slug: string; name: string; logoUrl: string | null; ratingAvg: unknown; status: string; commissionRate: unknown }): ShopBrief {
+    return { id: s.id, code: s.code, slug: s.slug, name: s.name, logoUrl: s.logoUrl, ratingAvg: s.ratingAvg == null ? null : Number(s.ratingAvg), status: s.status, commissionRate: String(s.commissionRate) };
   }
 }

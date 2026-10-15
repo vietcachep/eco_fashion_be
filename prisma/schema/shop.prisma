@@ -7,7 +7,7 @@
 // Không FK xuyên schema tới identity (ownerUserId/userId/roleId là id trần — docs/03_DATABASE_RULES.md).
 // =====================================================================
 
-/// Gian hàng. status/commissionRate/codEnabled do sàn quản (AdminShopController); profile do chính vendor
+/// Gian hàng. status/commissionRate do sàn quản (AdminShopController); profile do chính vendor
 /// sửa (ShopController, quyền shop.profile.update, shopId luôn suy từ ShopMember — không nhận qua param).
 model Shop {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -25,7 +25,6 @@ model Shop {
    * % hoa hồng sàn thu — đóng băng vào Order.commissionRateSnapshot lúc đặt hàng (PLAN-0014 bước 7, chưa làm ở đây).
    */
   commissionRate Decimal  @default(10.00) @map("commission_rate") @db.Decimal(5, 2)
-  codEnabled     Boolean  @default(true) @map("cod_enabled")
   /**
    * PLAN-0017 — tài khoản ngân hàng nhận tiền đối soát (payout). Vendor tự khai ở hồ sơ shop; sàn xác minh ngoài hệ thống.
    * bankCode = BIN ngân hàng chuẩn Napas/PayOS (6 số) — dùng làm `toBin` khi chi tiền.

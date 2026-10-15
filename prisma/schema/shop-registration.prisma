@@ -1,0 +1,39 @@
+// =====================================================================
+// Module shop (PLAN-0019) — hồ sơ ĐĂNG KÝ BÁN HÀNG của người bán tự đăng ký gian hàng.
+// Cùng schema "shop" nhưng nằm file riêng để không đụng shop.prisma (có thể gộp vào shop.prisma sau — prisma-boundaries.spec.ts
+// đọc @@schema nên vẫn gác đúng). KHÔNG khai @relation tới Shop: toàn vẹn do service (cùng transaction với việc tạo shop) + UNIQUE shop_id,
+// và để `migrate diff` không lệch vì thiếu quan hệ phía Shop.
+// =====================================================================
+
+/// Hồ sơ đăng ký đi kèm MỘT gian hàng (1–1). TRẠNG THÁI duyệt vẫn là `Shop.status` (nguồn sự thật duy nhất — hồ sơ không chép trạng thái
+/// thứ hai); hồ sơ chỉ giữ thông tin người bán khai lúc nộp + lý do/dấu mốc của quyết định đầu tiên (duyệt/từ chối) của sàn.
+/// `shopId`/`applicantUserId`/`categoryId` là id TRẦN (shop.shops / identity.users / catalog.categories) — không FK; `categoryName` là snapshot lúc nộp.
+/// Nộp lại sau khi bị từ chối = TẠO shop + hồ sơ MỚI (shop `rejected` là trạng thái cuối), nên bảng giữ lịch sử mọi lần nộp của một người.
+model ShopRegistration {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// id shop.shops (id trần) — UNIQUE: mỗi shop tối đa một hồ sơ.
+  shopId             String    @unique @map("shop_id") @db.Uuid
+  /// id identity.users của người nộp — bằng Shop.ownerUserId lúc nộp; thành chủ shop (ShopMember shop_owner) khi sàn duyệt.
+  applicantUserId    String    @map("applicant_user_id") @db.Uuid
+  representativeName String    @map("representative_name") @db.VarChar(120)
+  /// SĐT di động VN đã chuẩn hoá về dạng `0xxxxxxxxx` — PII: chỉ nhân viên sàn (supplier.shop.read) và chính người nộp được đọc.
+  phone              String    @db.VarChar(20)
+  categoryId         String?   @map("category_id") @db.Uuid
+  categoryName       String?   @map("category_name") @db.VarChar(200)
+  description        String?   @db.VarChar(1000)
+  termsAcceptedAt    DateTime  @map("terms_accepted_at") @db.Timestamptz
+  /// Lý do từ chối (chép từ `reason` của PATCH /admin/shops/:id/reject) — chỉ ghi ở LẦN QUYẾT ĐỊNH ĐẦU TIÊN.
+  decisionReason     String?   @map("decision_reason") @db.VarChar(500)
+  decidedAt          DateTime? @map("decided_at") @db.Timestamptz
+  decidedBy          String?   @map("decided_by") @db.Uuid
+  version            Int       @default(0)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy          String?   @map("created_by") @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy          String?   @map("updated_by") @db.Uuid
+  isDeleted          Boolean   @default(false) @map("is_deleted")
+
+  @@index([applicantUserId, createdAt(sort: Desc)])
+  @@map("shop_registrations")
+  @@schema("shop")
+}

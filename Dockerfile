@@ -18,7 +18,8 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache tini curl
+# postgresql16-client: pg_dump/pg_restore/psql cho `npm run db:restore` / `db:dump` chạy TRONG container (EF_DB_MODE=local) — khớp Postgres 16 của compose.
+RUN apk add --no-cache tini curl postgresql16-client
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json prisma.config.ts tsconfig.json ./
