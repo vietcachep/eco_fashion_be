@@ -42,7 +42,7 @@ const SPECS: Spec[] = [
 ];
 
 const STATUS_CHAIN: Status[] = ['pending', 'confirmed', 'packing', 'shipping', 'delivered', 'completed'];
-const STAFF_EMAIL = { sales: 'sales@ecofashion.vn', warehouse: 'warehouse@ecofashion.vn', accountant: 'accountant@ecofashion.vn' };
+const STAFF_EMAIL = { sales: 'sales@ecofashion.vn', warehouse: 'sales@ecofashion.vn', accountant: 'accountant@ecofashion.vn' };
 
 function daysAgo(n: number, hourOffset = 0): Date {
   const d = new Date(Date.now() - n * 86_400_000 + hourOffset * 3_600_000);

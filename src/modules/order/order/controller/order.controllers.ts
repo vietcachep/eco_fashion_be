@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
@@ -7,7 +7,7 @@ import { RateLimit } from '@common/security/rate-limit.guard';
 import { PageQuery } from '@common/utils/pagination';
 import { ReturnService } from '../../return/return.service';
 import { CheckoutSummaryResponse, OrderGroupResponse, OrderResponse, OrderSummaryResponse, ReturnRequestResponse } from '../dto/order.responses';
-import { AdminOrderListQuery, CancelOrderRequest, CheckoutSummaryQuery, CreateOrderRequest, CreateReturnRequest, MyOrderListQuery, ProcessReturnRequest, ReturnListQuery, UpdateOrderStatusRequest } from '../request/order.requests';
+import { AdminOrderListQuery, CancelOrderRequest, CheckoutSummaryQuery, CreateOrderRequest, CreateReturnRequest, MyOrderListQuery, ProcessReturnRequest, ReturnListQuery } from '../request/order.requests';
 import { OrderService } from '../service/order.service';
 
 /* Khách: bảng tiền checkout, đặt hàng (Idempotency-Key), đơn của tôi, huỷ, đổi trả (docs/06 mục order). */
@@ -81,17 +81,12 @@ export class AdminOrderController {
 
   @Get('orders') @RequirePermission('order.order.read') @ApiOkResponse({ type: PageResponse })
   async list(@Query() q: AdminOrderListQuery): Promise<ApiResponse<PageResponse<OrderSummaryResponse>>> {
-    return ApiResponse.ok(await this.orders.listAdmin({ status: q.status, paymentStatus: q.paymentStatus, paymentMethodCode: q.paymentMethodCode, q: q.q }, q.page, q.size));
+    return ApiResponse.ok(await this.orders.listAdmin({ status: q.status, paymentStatus: q.paymentStatus, paymentMethodCode: q.paymentMethodCode, q: q.q, shopId: q.shopId }, q.page, q.size));
   }
 
   @Get('orders/:code') @RequirePermission('order.order.read') @ApiOkResponse({ type: OrderResponse })
   async get(@Param('code') code: string): Promise<ApiResponse<OrderResponse>> {
     return ApiResponse.ok(await this.orders.getAdmin(code.toUpperCase()));
-  }
-
-  @Put('orders/:code/status') @RequirePermission('order.order.status.update') @ApiOperation({ summary: 'confirmed (trừ kho) → packing → shipping (trackingUrl) → delivered (COD thu tiền) → completed' }) @ApiOkResponse({ type: OrderResponse })
-  async status(@CurrentActor() actor: AuthenticatedActor, @Param('code') code: string, @Body() body: UpdateOrderStatusRequest): Promise<ApiResponse<OrderResponse>> {
-    return ApiResponse.ok(await this.orders.updateStatus(actor, code.toUpperCase(), body.status, { trackingUrl: body.trackingUrl, note: body.note }), 'Đã cập nhật trạng thái');
   }
 
   @Post('orders/:code/cancel') @HttpCode(HttpStatus.OK) @RequirePermission('order.order.cancel') @ApiOkResponse({ type: OrderResponse })
@@ -101,7 +96,7 @@ export class AdminOrderController {
 
   @Get('returns') @RequirePermission('order.return.read') @ApiOkResponse({ type: PageResponse })
   async returnsList(@Query() q: ReturnListQuery): Promise<ApiResponse<PageResponse<ReturnRequestResponse>>> {
-    return ApiResponse.ok(await this.returns.listAdmin(q.page, q.size, q.status));
+    return ApiResponse.ok(await this.returns.listAdmin(q.page, q.size, q.status, q.shopId));
   }
 
   @Get('returns/:id') @RequirePermission('order.return.read') @ApiOkResponse({ type: ReturnRequestResponse })

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpException, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor, Public, RequirePermission } from '@common/security/decorators';
@@ -19,9 +19,11 @@ class PaymentListQuery extends PageQuery {
   @ApiPropertyOptional() @IsOptional() @IsIn(['pending', 'processing', 'paid', 'failed', 'expired', 'cancelled', 'refunded', 'partially_refunded']) status?: string;
   @ApiPropertyOptional() @IsOptional() @IsIn(['cod', 'payos', 'vnpay', 'bank_transfer']) methodCode?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(60) q?: string;
+  @ApiPropertyOptional({ description: 'Chỉ giao dịch của đơn thuộc gian hàng này' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }
 class RefundListQuery extends PageQuery {
   @ApiPropertyOptional() @IsOptional() @IsIn(['requested', 'processing', 'done', 'failed']) status?: string;
+  @ApiPropertyOptional({ description: 'Chỉ hoàn tiền của đơn thuộc gian hàng này' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }
 
 /* Công khai: phương thức (cod · payos); webhook PayOS (server-to-server) và return (FE trang kết quả). */
@@ -84,7 +86,7 @@ export class AdminPaymentController {
 
   @Get('payments') @RequirePermission('payment.payment.read')
   async list(@Query() q: PaymentListQuery): Promise<ApiResponse<PageResponse<PaymentResponse>>> {
-    return ApiResponse.ok(await this.payments.listPayments(q.page, q.size, { status: q.status, methodCode: q.methodCode, q: q.q }));
+    return ApiResponse.ok(await this.payments.listPayments(q.page, q.size, { status: q.status, methodCode: q.methodCode, q: q.q, shopId: q.shopId }));
   }
 
   @Get('payments/:id') @RequirePermission('payment.payment.read')
@@ -94,7 +96,7 @@ export class AdminPaymentController {
 
   @Get('refunds') @RequirePermission('payment.payment.read')
   async refunds(@Query() q: RefundListQuery): Promise<ApiResponse<PageResponse<RefundResponse>>> {
-    return ApiResponse.ok(await this.payments.listRefunds(q.page, q.size, q.status));
+    return ApiResponse.ok(await this.payments.listRefunds(q.page, q.size, q.status, q.shopId));
   }
 
   @Post('refunds/:id/process') @HttpCode(HttpStatus.OK) @RequirePermission('payment.refund.process') @ApiOperation({ summary: 'Thực hiện hoàn tiền: PayOS payout (gateway, khi đủ số TK) hoặc ghi nhận đã chuyển tay (providerRef — hoàn đơn COD luôn là tay). Refund `processing` quá 10 phút chưa có providerRef được chiếm lại; đã có providerRef chỉ ghi sổ (không gọi cổng).' })

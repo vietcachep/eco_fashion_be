@@ -96,8 +96,8 @@ export class ReturnService {
     return PageResponse.of(items.map(toReturnResponse), page, size, total);
   }
 
-  async listAdmin(page: number, size: number, status?: string): Promise<PageResponse<ReturnRequestResponse>> {
-    const where = status ? { status } : {};
+  async listAdmin(page: number, size: number, status?: string, shopId?: string): Promise<PageResponse<ReturnRequestResponse>> {
+    const where = { ...(status ? { status } : {}), ...(shopId ? { order: { shopId } } : {}) };
     const [items, total] = await Promise.all([this.prisma.returnRequest.findMany({ where, include: RETURN_INCLUDE, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }), this.prisma.returnRequest.count({ where })]);
     return PageResponse.of(items.map(toReturnResponse), page, size, total);
   }

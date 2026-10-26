@@ -4,36 +4,46 @@
 // =====================================================================
 
 model Promotion {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code              String    @db.VarChar(40)
-  name              String    @db.VarChar(200)
-  description       String?   @db.VarChar(500)
-  /* percentage | fixed_amount | free_shipping */
-  type              String    @db.VarChar(20)
-  /* % (0–100) hoặc số tiền VND; free_shipping = 0 */
-  value             Decimal   @default(0) @db.Decimal(14, 2)
-  maxDiscount       Decimal?  @map("max_discount") @db.Decimal(14, 0)
-  minOrderAmount    Decimal   @default(0) @map("min_order_amount") @db.Decimal(14, 0)
-  usageLimit        Int?      @map("usage_limit")
-  usageLimitPerUser Int?      @map("usage_limit_per_user")
-  usedCount         Int       @default(0) @map("used_count")
-  /* all | category | product — target ở promotion_targets */
-  appliesTo         String    @default("all") @map("applies_to") @db.VarChar(20)
-  startsAt          DateTime  @map("starts_at") @db.Timestamptz
-  endsAt            DateTime  @map("ends_at") @db.Timestamptz
-  isActive          Boolean   @default(true) @map("is_active")
-  /* Hiện trên web (phiếu voucher) hay chỉ nhập tay. */
-  isPublic          Boolean   @default(true) @map("is_public")
-  /* platform = voucher SÀN (áp trên tổng OrderGroup) | shop = voucher GIAN HÀNG (chỉ áp cho đơn con của đúng
-     `shopId`) — PLAN-0017. CHECK ở migration: platform ⇒ shop_id NULL, shop ⇒ shop_id NOT NULL. */
-  scope             String    @default("platform") @db.VarChar(10)
-  shopId            String?   @map("shop_id") @db.Uuid
-  version           Int       @default(0)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  createdBy         String?   @map("created_by") @db.Uuid
-  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  updatedBy         String?   @map("updated_by") @db.Uuid
-  isDeleted         Boolean   @default(false) @map("is_deleted")
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String   @db.VarChar(40)
+  name              String   @db.VarChar(200)
+  description       String?  @db.VarChar(500)
+  /**
+   * percentage | fixed_amount | free_shipping
+   */
+  type              String   @db.VarChar(20)
+  /**
+   * % (0–100) hoặc số tiền VND; free_shipping = 0
+   */
+  value             Decimal  @default(0) @db.Decimal(14, 2)
+  maxDiscount       Decimal? @map("max_discount") @db.Decimal(14, 0)
+  minOrderAmount    Decimal  @default(0) @map("min_order_amount") @db.Decimal(14, 0)
+  usageLimit        Int?     @map("usage_limit")
+  usageLimitPerUser Int?     @map("usage_limit_per_user")
+  usedCount         Int      @default(0) @map("used_count")
+  /**
+   * all | category | product — target ở promotion_targets
+   */
+  appliesTo         String   @default("all") @map("applies_to") @db.VarChar(20)
+  startsAt          DateTime @map("starts_at") @db.Timestamptz
+  endsAt            DateTime @map("ends_at") @db.Timestamptz
+  isActive          Boolean  @default(true) @map("is_active")
+  /**
+   * Hiện trên web (phiếu voucher) hay chỉ nhập tay.
+   */
+  isPublic          Boolean  @default(true) @map("is_public")
+  /**
+   * platform = voucher SÀN (áp trên tổng OrderGroup) | shop = voucher GIAN HÀNG (chỉ áp cho đơn con của đúng
+   * `shopId`) — PLAN-0017. CHECK ở migration: platform ⇒ shop_id NULL, shop ⇒ shop_id NOT NULL.
+   */
+  scope             String   @default("platform") @db.VarChar(10)
+  shopId            String?  @map("shop_id") @db.Uuid
+  version           Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy         String?  @map("created_by") @db.Uuid
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy         String?  @map("updated_by") @db.Uuid
+  isDeleted         Boolean  @default(false) @map("is_deleted")
 
   targets PromotionTarget[]
   usages  PromotionUsage[]
@@ -47,9 +57,13 @@ model Promotion {
 model PromotionTarget {
   id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   promotionId String @map("promotion_id") @db.Uuid
-  /* category | product */
+  /**
+   * category | product
+   */
   targetType  String @map("target_type") @db.VarChar(20)
-  /* slug ngành hàng hoặc id sản phẩm (không FK xuyên schema) */
+  /**
+   * slug ngành hàng hoặc id sản phẩm (không FK xuyên schema)
+   */
   targetRef   String @map("target_ref") @db.VarChar(160)
 
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
@@ -66,7 +80,9 @@ model PromotionUsage {
   orderCode      String    @map("order_code") @db.VarChar(30)
   discountAmount Decimal   @map("discount_amount") @db.Decimal(14, 0)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  /* Huỷ đơn → nhả lượt (giữ dòng để truy vết) */
+  /**
+   * Huỷ đơn → nhả lượt (giữ dòng để truy vết)
+   */
   releasedAt     DateTime? @map("released_at") @db.Timestamptz
 
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)

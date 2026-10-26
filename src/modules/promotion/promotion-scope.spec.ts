@@ -783,8 +783,11 @@ describe('PromotionService — voucher sàn & voucher gian hàng (PLAN-0017)', (
         const got = await f.service.getAdmin(id('A1'), SHOP_A);
         const listed = (await f.service.listAdmin(1, 20, undefined, undefined, 'shop', SHOP_A)).content.find((p) => p.code === 'A1');
         expect([updated.shopName, got.shopName, listed?.shopName]).toEqual(['Shop A', 'Shop A', 'Shop A']);
-        // sàn sửa mã của shop B (không có ownerShopId): vẫn ra tên shop B chứ không null.
-        expect((await f.service.update(actor, id('B1'), { name: 'Sàn sửa' })).shopName).toBe('Shop B');
+        // PLAN-0021: sàn KHÔNG sửa / xoá mã của shop B (403); sàn vẫn sửa được mã của sàn.
+        const err = await catchBusiness(f.service.update(actor, id('B1'), { name: 'Sàn sửa' }));
+        expect(err.errorCode).toBe(PROMO_ERR.SHOP_OWNED);
+        const err2 = await catchBusiness(f.service.remove(actor, id('B1')));
+        expect(err2.errorCode).toBe(PROMO_ERR.SHOP_OWNED);
         expect((await f.service.update(actor, id('PLATX'), { name: 'Sàn sửa mã sàn' })).shopName).toBeNull();
       });
 

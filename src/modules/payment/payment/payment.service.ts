@@ -2,7 +2,7 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AuditEntry, writeAuditLog } from '@common/audit/audit';
 import { BusinessException, NotFoundException, ServiceUnavailableException } from '@common/exception/business.exception';
-import { ORDER_PAYMENT_GATEWAY, OrderPaymentGateway, PaymentGateway, PaymentInitiateInput, PaymentInitiateResult } from '@common/gateway/payment.gateway';
+import { CodSale, ORDER_PAYMENT_GATEWAY, OrderPaymentGateway, PaymentGateway, PaymentInitiateInput, PaymentInitiateResult } from '@common/gateway/payment.gateway';
 import { OutboxEventInput, writeOutboxEvent } from '@common/outbox/outbox';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma, Tx } from '@common/prisma/types';
@@ -14,6 +14,7 @@ import { ENV } from '@config/config.module';
 import type { Env } from '@config/env';
 import { METHOD, PAY_STATUS, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, PAYMENT_MODULE, REFUND_KIND, REFUND_STATUS, REFUND_STUCK_MS, TX_TYPE } from '../foundation/payment.constants';
 import { PayosService } from '../payos/payos.service';
+import { ShopWalletService } from '../shop-wallet/shop-wallet.service';
 
 export interface PaymentMethodResponse {
   code: string;
@@ -71,7 +72,7 @@ interface RefundDisbursement {
 
 /*
  * Thanh toán (PLAN-0007/0018). Cài PaymentGateway cho order. CHỈ CÒN HAI phương thức, mọi khoản tiền đều về SÀN:
- *  - cod: giao dịch pending, đến khi giao thành công sàn xác nhận đã thu hộ (markCodCollected) → paid; sau đó đối soát/chi trả shop như đơn PayOS.
+ *  - cod (PLAN-0020): giao dịch pending, đến khi giao thành công sàn xác nhận đã thu (markCodCollected) → paid và TỰ TRỪ hoa hồng khỏi ví đặt cọc của shop; tiền mặt do shop giữ, KHÔNG vào đối soát chi trả.
  *  - payos: link thanh toán PayOS; webhook/return xác minh chữ ký + số tiền, IDEMPOTENT theo (type, provider_ref) → paid.
  * Mọi chuyển paid/refunded gọi OrderPaymentGateway TRONG CÙNG tx. Hoàn tiền: yêu cầu → kế toán xử lý (PayOS payout khi đủ số TK, hoặc chuyển tay).
  * Payment lịch sử có methodCode vnpay/bank_transfer vẫn đọc/hoàn tay được (mapper không phụ thuộc phương thức), nhưng không tạo mới.
@@ -84,6 +85,7 @@ export class PaymentService implements PaymentGateway {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payos: PayosService,
+    private readonly wallet: ShopWalletService,
     @Inject(ENV) private readonly env: Env,
     private readonly moduleRef: ModuleRef,
   ) {}
@@ -135,6 +137,7 @@ export class PaymentService implements PaymentGateway {
       data: {
         orderId: input.orderId,
         orderCode: input.orderCode,
+        shopId: input.shopId,
         userId: input.userId,
         methodCode: input.methodCode,
         amount: input.amount.toString(),
@@ -184,13 +187,19 @@ export class PaymentService implements PaymentGateway {
     await this.audit(tx, null, { action: PAYMENT_AUDIT.CANCELLED, entityType: 'payment', entityId: live.id, entityCode: orderCode, after: { reason } });
   }
 
-  async markCodCollected(orderCode: string, actorUserId: string | null, tx: Tx): Promise<void> {
+  async codAvailability(shopIds: string[], tx?: Tx): Promise<Map<string, boolean>> {
+    return this.wallet.codAvailability(shopIds, tx);
+  }
+
+  async markCodCollected(orderCode: string, actorUserId: string | null, tx: Tx, sale: CodSale): Promise<void> {
     const p = await tx.payment.findFirst({ where: { orderCode, methodCode: METHOD.COD, status: PAY_STATUS.PENDING } });
     if (!p) return;
     const now = new Date();
     await tx.payment.update({ where: { id: p.id }, data: { status: PAY_STATUS.PAID, paidAt: now, updatedBy: actorUserId, version: { increment: 1 } } });
     await tx.paymentTransaction.create({ data: { paymentId: p.id, type: TX_TYPE.COD_COLLECT, status: 'ok', amount: p.amount, providerRef: `cod:${orderCode}` } });
     await this.audit(tx, actorUserId ? { userId: actorUserId, email: '' } : null, { action: PAYMENT_AUDIT.PAID, entityType: 'payment', entityId: p.id, entityCode: orderCode, after: { method: METHOD.COD } });
+    // PLAN-0020: đơn COD thu thành công ⇒ sàn tự trừ hoa hồng của đơn khỏi ví đặt cọc của shop (cùng tx: không bao giờ đã thu mà chưa trừ).
+    await this.wallet.applyCodCommission(tx, { shopId: sale.shopId, orderCode, gross: sale.gross, commissionRate: sale.commissionRate });
     await this.orders.onPaid(orderCode, { paymentId: p.id, methodCode: METHOD.COD, transactionCode: null, bankCode: null, paidAt: now }, tx);
   }
 
@@ -243,7 +252,7 @@ export class PaymentService implements PaymentGateway {
     const expiresAt = await this.expiryFor(METHOD.PAYOS);
     const url = await this.prisma.$transaction(async (tx) => {
       if (last.status === PAY_STATUS.PENDING) await tx.payment.update({ where: { id: last.id }, data: { status: PAY_STATUS.CANCELLED, version: { increment: 1 } } });
-      const p = await tx.payment.create({ data: { orderId: last.orderId, orderCode, userId: actor.userId, methodCode: METHOD.PAYOS, amount: last.amount, status: PAY_STATUS.PENDING, expiresAt, createdBy: actor.userId } });
+      const p = await tx.payment.create({ data: { orderId: last.orderId, orderCode, shopId: last.shopId, userId: actor.userId, methodCode: METHOD.PAYOS, amount: last.amount, status: PAY_STATUS.PENDING, expiresAt, createdBy: actor.userId } });
       return (await this.createPayosLink(tx, p.id, orderCode, vnd(last.amount.toString()), expiresAt)).checkoutUrl;
     }, { timeout: 20_000 }); // gọi PayOS (tối đa 8s) trong tx — mặc định Prisma 5s sẽ P2028 và để lại link mồ côi
     if (last.status === PAY_STATUS.PENDING) this.cancelPayosLinkLater(last.id); // link cũ không còn trả được
@@ -532,6 +541,7 @@ export class PaymentService implements PaymentGateway {
       await tx.paymentTransaction.create({ data: { paymentId: r.paymentId, type: TX_TYPE.REFUND, status: 'ok', amount: r.amount, providerRef, rawResponse: (raw ?? { manual: true }) } });
       await this.audit(tx, actor, { action: PAYMENT_AUDIT.REFUND_PROCESSED, entityType: 'refund', entityId: r.id, entityCode: r.orderCode, after: { amount: r.amount.toString(), method: r.method, providerRef, kind: r.kind, ...meta } });
       if (r.kind === REFUND_KIND.DUPLICATE_PAYMENT) return true;
+      if (r.payment.methodCode === METHOD.COD && r.shopId) await this.wallet.applyCodRefund(tx, { shopId: r.shopId, orderCode: r.orderCode, refundId: r.id, amount: vnd(r.amount.toString()) });
       await this.orders.onRefunded(r.orderCode, vnd(r.amount.toString()), r.id, tx, full);
       if (r.returnRequestId) await this.orders.markReturnRefunded(r.returnRequestId, tx);
       // payload mang refundId, phương thức, shop — đối soát chi trả shop trừ hoàn tiền theo refund `done` (cả đơn COD lẫn PayOS).
@@ -568,14 +578,14 @@ export class PaymentService implements PaymentGateway {
     return PaymentService.toPayment(p);
   }
 
-  async listPayments(page: number, size: number, f: { status?: string; methodCode?: string; q?: string }): Promise<PageResponse<PaymentResponse>> {
-    const where: Prisma.PaymentWhereInput = { ...(f.status ? { status: f.status } : {}), ...(f.methodCode ? { methodCode: f.methodCode } : {}), ...(f.q ? { OR: [{ orderCode: { contains: f.q.toUpperCase() } }, { transactionCode: { contains: f.q } }] } : {}) };
+  async listPayments(page: number, size: number, f: { status?: string; methodCode?: string; q?: string; shopId?: string }): Promise<PageResponse<PaymentResponse>> {
+    const where: Prisma.PaymentWhereInput = { ...(f.shopId ? { shopId: f.shopId } : {}), ...(f.status ? { status: f.status } : {}), ...(f.methodCode ? { methodCode: f.methodCode } : {}), ...(f.q ? { OR: [{ orderCode: { contains: f.q.toUpperCase() } }, { transactionCode: { contains: f.q } }] } : {}) };
     const [items, total] = await Promise.all([this.prisma.payment.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }), this.prisma.payment.count({ where })]);
     return PageResponse.of(items.map((p) => PaymentService.toPayment(p)), page, size, total);
   }
 
-  async listRefunds(page: number, size: number, status?: string): Promise<PageResponse<RefundResponse>> {
-    const where = status ? { status } : {};
+  async listRefunds(page: number, size: number, status?: string, shopId?: string): Promise<PageResponse<RefundResponse>> {
+    const where = { ...(status ? { status } : {}), ...(shopId ? { shopId } : {}) };
     const [items, total] = await Promise.all([this.prisma.refund.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }), this.prisma.refund.count({ where })]);
     return PageResponse.of(items.map((r) => PaymentService.toRefund(r)), page, size, total);
   }

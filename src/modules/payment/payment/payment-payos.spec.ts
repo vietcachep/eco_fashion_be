@@ -22,6 +22,7 @@ import { METHOD, PAY_STATUS, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, REFUND_K
 import { PayosService } from '../payos/payos.service';
 import { AdminPaymentController, PaymentController, PaymentPublicController } from './payment.controllers';
 import { PaymentService } from './payment.service';
+import type { ShopWalletService } from '../shop-wallet/shop-wallet.service';
 
 /*
  * Test luồng PayOS của PaymentService (webhook · return · initiate · retry · hoàn tiền · extras) + controller.
@@ -497,7 +498,8 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
     markReturnRefunded: jest.fn((_returnRequestId: string, _tx: unknown): Promise<void> => Promise.resolve()),
   };
   const moduleRef = { get: jest.fn((_token: unknown, _options: unknown) => orders) };
-  const service = new PaymentService(db as unknown as PrismaService, payos, env, moduleRef as unknown as ModuleRef);
+  const wallet = { codAvailability: jest.fn(), applyCodCommission: jest.fn((): Promise<void> => Promise.resolve()), applyCodRefund: jest.fn((): Promise<void> => Promise.resolve()) };
+  const service = new PaymentService(db as unknown as PrismaService, payos, wallet as unknown as ShopWalletService, env, moduleRef as unknown as ModuleRef);
 
   /* ---- hạt giống dữ liệu ---- */
   const seedPayment = (o: Partial<PaymentRow> = {}): PaymentRow => {
@@ -610,7 +612,7 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
 }
 type Fixture = ReturnType<typeof buildFixture>;
 
-const initiateInput = (o: Partial<PaymentInitiateInput> = {}): PaymentInitiateInput => ({ orderId: 'order-1', orderCode: ORDER_CODE, userId: USER, amount: BigInt(AMOUNT), methodCode: METHOD.PAYOS, clientIp: '203.0.113.9', ...o });
+const initiateInput = (o: Partial<PaymentInitiateInput> = {}): PaymentInitiateInput => ({ orderId: 'order-1', orderCode: ORDER_CODE, shopId: 'shop-1', userId: USER, amount: BigInt(AMOUNT), methodCode: METHOD.PAYOS, clientIp: '203.0.113.9', ...o });
 
 /* ================================================================ test ================================================================ */
 

@@ -1887,7 +1887,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     };
     const argOf = (m: jest.Mock<Promise<unknown[]>, [unknown]>) => m.mock.calls[0][0] as { where: Record<string, unknown>; select: Record<string, unknown> };
 
-    it('where đủ mọi điều kiện: chưa xoá, completed, đã thanh toán (paid/partially_refunded), CẢ COD lẫn online (PLAN-0018), qua hạn đổi trả, KHÔNG có yêu cầu đổi trả đang mở', async () => {
+    it('where đủ mọi điều kiện: chưa xoá, completed, đã thanh toán (paid/partially_refunded), CHỈ đơn online — đơn COD đi qua ví đặt cọc (PLAN-0020), qua hạn đổi trả, KHÔNG có yêu cầu đổi trả đang mở', async () => {
       const { prisma, api } = build();
       prisma.order.findMany.mockResolvedValue([]);
       const periodEnd = new Date('2025-03-31T00:00:00.000Z');
@@ -1898,6 +1898,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(argOf(prisma.order.findMany).where).toEqual({
         isDeleted: false,
         status: 'completed',
+        paymentMethodCode: { not: 'cod' },
         paymentStatus: { in: ['paid', 'partially_refunded'] },
         OR: [{ deliveredAt: { lte: cutoff } }, { deliveredAt: null, completedAt: { lte: cutoff } }],
         // đơn đang có yêu cầu đổi trả CHƯA xử lý xong (requested/approved) thì giữ lại, không đưa vào kỳ

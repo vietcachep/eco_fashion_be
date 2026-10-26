@@ -509,11 +509,11 @@ describe('PayosService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('thành công: POST /v1/payouts với khoá CHI tiền + x-idempotency-key, body amount là số', async () => {
-      fetchMock.mockResolvedValueOnce(reply({ code: '00', message: 'ok', data: { transactionId: 'TX-123' } }));
+    it('thành công: POST /v1/payouts với khoá CHI tiền + x-idempotency-key + x-signature, body amount là số', async () => {
+      fetchMock.mockResolvedValueOnce(reply({ code: '00', desc: 'success', data: { id: 'PO-123' } }));
       const r = await makeService().payout(payoutInput);
 
-      expect(r).toMatchObject({ ok: true, code: '00', message: 'ok', transactionId: 'TX-123' });
+      expect(r).toMatchObject({ ok: true, code: '00', message: 'success', transactionId: 'PO-123' });
       const call = callAt();
       expect(call.url).toBe(`${API_URL}/v1/payouts`);
       expect(call.method).toBe('POST');
@@ -522,27 +522,29 @@ describe('PayosService', () => {
       expect(call.body).toEqual({ referenceId: 'refund-1', amount: 100000, toBin: '970436', toAccountNumber: '0011223344', description: 'Hoan tien don FT1' });
     });
 
-    it('category chỉ có trong body khi được truyền', async () => {
-      fetchMock.mockResolvedValueOnce(reply({ code: '00' }));
-      await makeService().payout({ ...payoutInput, category: 'refund' });
-      expect(callAt().body).toMatchObject({ category: 'refund' });
+    it('x-signature = HMAC-SHA256(checksum key CHI tiền, body sắp theo khoá, khoá+giá trị mã hoá encodeURIComponent) — KHÔNG dùng checksum key thu tiền', async () => {
+      fetchMock.mockResolvedValueOnce(reply({ code: '00', data: { id: 'PO-1' } }));
+      await makeService().payout(payoutInput);
+      const canonical = 'amount=100000&description=Hoan%20tien%20don%20FT1&referenceId=refund-1&toAccountNumber=0011223344&toBin=970436';
+      expect(callAt().headers['x-signature']).toBe(hmac(canonical, 'test-payout-checksum-key'));
+      expect(callAt().headers['x-signature']).not.toBe(hmac(canonical));
     });
 
-    it('code "SUCCESS" cũng là thành công', async () => {
-      fetchMock.mockResolvedValueOnce(reply({ code: 'SUCCESS', message: 'done' }));
-      expect(await makeService().payout(payoutInput)).toMatchObject({ ok: true, code: 'SUCCESS' });
-    });
-
-    it('code lỗi ⇒ ok=false, giữ code + message của PayOS và raw', async () => {
-      const body = { code: '231', message: 'Số dư không đủ' };
+    it('PayOS từ chối (code lỗi) ⇒ ok=false, giữ code + desc + raw', async () => {
+      const body = { code: '231', desc: 'Số dư không đủ' };
       fetchMock.mockResolvedValueOnce(reply(body));
       const r = await makeService().payout(payoutInput);
       expect(r).toMatchObject({ ok: false, code: '231', message: 'Số dư không đủ', raw: body });
     });
 
-    it('phản hồi không có code ⇒ coi là lỗi "99" (không bao giờ ok)', async () => {
-      fetchMock.mockResolvedValueOnce(reply({ message: 'lạ' }));
-      expect(await makeService().payout(payoutInput)).toMatchObject({ ok: false, code: '99' });
+    it('HTTP 401 (chữ ký / khoá sai) ⇒ ok=false dù không có code trong body', async () => {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ desc: 'Unauthorized' }), { status: 401 }));
+      expect(await makeService().payout(payoutInput)).toMatchObject({ ok: false, code: '401', message: 'Unauthorized' });
+    });
+
+    it('phản hồi 200 nhưng không có code ⇒ không bao giờ ok', async () => {
+      fetchMock.mockResolvedValueOnce(reply({ desc: 'lạ' }));
+      expect((await makeService().payout(payoutInput)).ok).toBe(false);
     });
 
     it('lỗi mạng/timeout ⇒ ok=false, code "99", raw null, không ném', async () => {
@@ -551,9 +553,33 @@ describe('PayosService', () => {
       expect(warnSpy).toHaveBeenCalled();
     });
 
-    it('JSON hỏng ⇒ ok=false, code "99"', async () => {
+    it('JSON hỏng (HTTP 500) ⇒ ok=false, mang mã HTTP', async () => {
       fetchMock.mockResolvedValueOnce(new Response('not json', { status: 500 }));
-      await expect(makeService().payout(payoutInput)).resolves.toMatchObject({ ok: false, code: '99' });
+      await expect(makeService().payout(payoutInput)).resolves.toMatchObject({ ok: false, code: '500' });
+    });
+  });
+
+  describe('getPayout / payoutState', () => {
+    it('mọi giao dịch SUCCEEDED ⇒ succeeded; đang PROCESSING ⇒ processing; có FAILED / approvalState bị từ chối ⇒ failed', () => {
+      expect(PayosService.payoutState('APPROVED', ['SUCCEEDED'])).toMatchObject({ state: 'succeeded' });
+      expect(PayosService.payoutState('APPROVED', ['PROCESSING'])).toMatchObject({ state: 'processing' });
+      expect(PayosService.payoutState(undefined, ['SUCCEEDED', 'PROCESSING'])).toMatchObject({ state: 'processing' });
+      expect(PayosService.payoutState('APPROVED', ['FAILED'])).toMatchObject({ state: 'failed' });
+      expect(PayosService.payoutState('REJECTED', [])).toMatchObject({ state: 'failed' });
+      expect(PayosService.payoutState('APPROVED', [])).toMatchObject({ state: 'processing' }); // chưa có giao dịch ⇒ không tự đánh đã trả
+    });
+
+    it('GET /v1/payouts/{id} với khoá CHI; lỗi / thiếu cấu hình ⇒ unknown (giữ nguyên, không tự đánh đã trả)', async () => {
+      fetchMock.mockResolvedValueOnce(reply({ code: '00', desc: 'success', data: { approvalState: 'APPROVED', transactions: [{ state: 'SUCCEEDED' }] } }));
+      expect(await makeService().getPayout('PO-1')).toMatchObject({ state: 'succeeded' });
+      expect(callAt().url).toBe(`${API_URL}/v1/payouts/PO-1`);
+      expect(callAt().headers).toEqual({ 'x-client-id': PAYOUT_CLIENT_ID, 'x-api-key': PAYOUT_API_KEY });
+
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ desc: 'Forbidden' }), { status: 403 }));
+      expect((await makeService().getPayout('PO-1')).state).toBe('unknown');
+      fetchMock.mockRejectedValueOnce(new Error('ETIMEDOUT'));
+      expect((await makeService().getPayout('PO-1')).state).toBe('unknown');
+      expect((await makeService({ EF_PAYOS_PAYOUT_API_KEY: '' }).getPayout('PO-1')).state).toBe('unknown');
     });
   });
 
@@ -587,5 +613,15 @@ describe('PayosService', () => {
       fetchMock.mockRejectedValueOnce(new Error('ECONNRESET'));
       await expect(makeService().payoutBalance()).resolves.toMatchObject({ balance: null, code: '99' });
     });
+  });
+});
+
+describe('PayosService.payoutCanonical — chuỗi ký lệnh chi', () => {
+  it('sắp khoá, mã hoá URI cả khoá lẫn giá trị, null → rỗng, mảng/đối tượng → JSON đã sắp khoá', () => {
+    expect(PayosService.payoutCanonical({ b: 'x y', a: 1, c: null, d: undefined })).toBe('a=1&b=x%20y&c=&d=');
+    expect(PayosService.payoutCanonical({ payouts: [{ toBin: '1', amount: 2 }], category: ['a', 'b'] })).toBe(
+      `category=${encodeURIComponent('["a","b"]')}&payouts=${encodeURIComponent('[{"amount":2,"toBin":"1"}]')}`,
+    );
+    expect(PayosService.payoutCanonical({ d: 'Tiếng Việt & ký tự=lạ' })).toBe('d=Ti%E1%BA%BFng%20Vi%E1%BB%87t%20%26%20k%C3%BD%20t%E1%BB%B1%3Dl%E1%BA%A1');
   });
 });

@@ -99,6 +99,7 @@ export class OrderSummaryResponse {
 export class CheckoutShopGroupResponse {
   @ApiProperty() shopId: string;
   @ApiProperty() shopName: string;
+  @ApiProperty({ description: 'PLAN-0020: gian hàng này nhận COD (đã đặt cọc, ví > 0) — false thì khách phải chọn PayOS cho giỏ có shop này' }) codAvailable: boolean;
   @ApiProperty() itemCount: number;
   @ApiProperty({ type: MoneyResponse }) subtotal: MoneyResponse;
   @ApiProperty({ type: MoneyResponse }) shippingFee: MoneyResponse;

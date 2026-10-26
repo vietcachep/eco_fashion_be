@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuditEntry, writeAuditLog } from '@common/audit/audit';
-import { BusinessException, ConflictException, NotFoundException } from '@common/exception/business.exception';
+import { BusinessException, ConflictException, ForbiddenException, NotFoundException } from '@common/exception/business.exception';
 import { BasketForPromotion, PromotionGateway, PromotionQuote } from '@common/gateway/promotion.gateway';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma, Tx } from '@common/prisma/types';
@@ -12,7 +12,7 @@ import { ShopQueryApi } from '@modules/shop/queryapi/shop.queryapi';
 
 export const PROMOTION_MODULE = 'promotion';
 export const PROMO_TYPE = { PERCENTAGE: 'percentage', FIXED: 'fixed_amount', FREE_SHIPPING: 'free_shipping' } as const;
-export const PROMO_ERR = { NOT_FOUND: 'PROMOTION_NOT_FOUND', CODE_EXISTS: 'PROMOTION_CODE_EXISTS', INVALID: 'PROMOTION_INVALID' } as const;
+export const PROMO_ERR = { NOT_FOUND: 'PROMOTION_NOT_FOUND', CODE_EXISTS: 'PROMOTION_CODE_EXISTS', INVALID: 'PROMOTION_INVALID', SHOP_OWNED: 'PROMOTION_SHOP_OWNED' } as const;
 
 /* Phiếu voucher cho web (FE `PromotionOfferResponse`): mức giảm THẬT cho giỏ hiện tại + đủ điều kiện hay còn thiếu. */
 export interface PromotionOfferResponse {
@@ -248,6 +248,16 @@ export class PromotionService implements PromotionGateway {
     return ownerShopId ? { scope: 'shop', shopId: ownerShopId } : {};
   }
 
+  /*
+   * Ghi (sửa / xoá): vendor chỉ động được mã của CHÍNH shop mình; SÀN chỉ động được mã scope=platform — mã của shop do shop tự quản, sàn chỉ xem
+   * (nếu mã vi phạm thì khoá shop hoặc báo shop gỡ, không sửa thay). Mã scope=shop mà sàn gọi ⇒ 403 PROMOTION_SHOP_OWNED.
+   */
+  private async findWritable(id: string, ownerShopId: string | undefined, withTargets: boolean): Promise<PromoRow | null> {
+    const row = await this.prisma.promotion.findFirst({ where: { id, isDeleted: false, ...this.ownerWhere(ownerShopId) }, include: { targets: withTargets } });
+    if (row && !ownerShopId && row.scope !== 'platform') throw new ForbiddenException(PROMO_ERR.SHOP_OWNED, 'Mã giảm giá của gian hàng do shop tự quản — sàn chỉ xem, không sửa hay xoá thay');
+    return row;
+  }
+
   async getAdmin(id: string, ownerShopId?: string): Promise<PromotionAdminResponse> {
     const p = await this.prisma.promotion.findFirst({ where: { id, isDeleted: false, ...this.ownerWhere(ownerShopId) }, include: { targets: true } });
     if (!p) throw new NotFoundException(PROMO_ERR.NOT_FOUND, 'Không tìm thấy mã khuyến mãi');
@@ -305,7 +315,7 @@ export class PromotionService implements PromotionGateway {
   }
 
   async update(actor: AuthenticatedActor, id: string, patch: PromotionInput, ownerShopId?: string): Promise<PromotionAdminResponse> {
-    const before = await this.prisma.promotion.findFirst({ where: { id, isDeleted: false, ...this.ownerWhere(ownerShopId) }, include: { targets: true } });
+    const before = await this.findWritable(id, ownerShopId, true);
     if (!before) throw new NotFoundException(PROMO_ERR.NOT_FOUND, 'Không tìm thấy mã khuyến mãi');
     this.validate(patch, before);
     if (patch.code && patch.code.toUpperCase() !== before.code && (await this.findByCode(patch.code))) throw new ConflictException(PROMO_ERR.CODE_EXISTS, `Mã '${patch.code}' đã tồn tại`);
@@ -343,7 +353,7 @@ export class PromotionService implements PromotionGateway {
   }
 
   async remove(actor: AuthenticatedActor, id: string, ownerShopId?: string): Promise<void> {
-    const before = await this.prisma.promotion.findFirst({ where: { id, isDeleted: false, ...this.ownerWhere(ownerShopId) } });
+    const before = await this.findWritable(id, ownerShopId, false);
     if (!before) throw new NotFoundException(PROMO_ERR.NOT_FOUND, 'Không tìm thấy mã khuyến mãi');
     await this.prisma.$transaction(async (tx) => {
       await tx.promotion.update({ where: { id }, data: { isDeleted: true, isActive: false, updatedBy: actor.userId } });

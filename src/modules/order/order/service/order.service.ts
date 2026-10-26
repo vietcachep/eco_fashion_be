@@ -246,10 +246,11 @@ export class OrderService {
   async checkoutSummary(actor: AuthenticatedActor, q: { voucherCode?: string; voucherCodes?: string[]; province?: string; addressId?: string }): Promise<CheckoutSummaryResponse> {
     const hint = await this.resolveProvinceHint(actor.userId, q);
     const p = await this.price(actor.userId, hint, OrderService.normalizeCodes(q));
+    const codOk = await this.payment.codAvailability(p.groups.map((g) => g.shopId));
     const shopGroups = await Promise.all(
       p.groups.map(async (g) => {
         const shop = await this.shops.findBrief(g.shopId);
-        return { shopId: g.shopId, shopName: shop?.name ?? 'Gian hàng', itemCount: g.lines.reduce((n, l) => n + l.quantity, 0), subtotal: money(g.subtotal), shippingFee: money(g.shippingFee), discount: money(g.discount), total: money(g.total) };
+        return { shopId: g.shopId, shopName: shop?.name ?? 'Gian hàng', codAvailable: codOk.get(g.shopId) ?? false, itemCount: g.lines.reduce((n, l) => n + l.quantity, 0), subtotal: money(g.subtotal), shippingFee: money(g.shippingFee), discount: money(g.discount), total: money(g.total) };
       }),
     );
     return {
@@ -334,6 +335,10 @@ export class OrderService {
 
         // 3c. Hạn mức COD kiểm THEO TỪNG ĐƠN CON — mỗi shop thu tiền độc lập (N gói hàng, N lần thu COD)
         if (methodCode === PAYMENT_METHOD.COD) {
+          // PLAN-0020: shop chỉ bán COD khi đã đặt cọc (ví > 0) — đọc THẲNG trong tx để không lọt đơn khi ví vừa về 0.
+          const codOk = await this.payment.codAvailability(p.groups.map((g) => g.shopId), tx);
+          const closed = p.groups.find((g) => !codOk.get(g.shopId));
+          if (closed) throw new BusinessException(ORDER_ERR.COD_NOT_AVAILABLE, `Gian hàng "${shopBriefs.get(closed.shopId)?.name ?? closed.shopId}" hiện không nhận thanh toán khi nhận hàng — vui lòng thanh toán trước (PayOS)`, 409);
           const max = await this.system.settingNumber(SETTING_KEY.ORDER_COD_MAX_AMOUNT);
           if (max > 0) {
             const over = p.groups.find((g) => g.total > BigInt(max));
@@ -444,7 +449,7 @@ export class OrderService {
           }
 
           // Khởi tạo thanh toán — MỖI đơn con gọi initiate() ĐỘC LẬP (không đụng payment module/interface)
-          await this.payment.initiate({ orderId: order.id, orderCode, userId: actor.userId, amount: g.total, methodCode, clientIp }, tx);
+          await this.payment.initiate({ orderId: order.id, orderCode, shopId: g.shopId, userId: actor.userId, amount: g.total, methodCode, clientIp }, tx);
 
           await this.audit.write(tx, actor, { action: ORDER_AUDIT.CREATED, entityType: 'order', entityId: order.id, entityCode: orderCode, after: { total: g.total.toString(), method: methodCode, items: g.lines.length, promotion: platformPromo?.code ?? null, shopPromotion: shopPromo?.code ?? null, discount: g.discount.toString(), shopId: g.shopId } });
           await this.notify.notifyMany(staff.map((userId) => ({ userId, type: 'order', title: `Đơn mới ${orderCode}`, content: `${address.recipientName} · ${money(g.total).display} · ${methodCode}`, link: `/orders/${orderCode}` })), tx);
@@ -572,7 +577,7 @@ export class OrderService {
       if (next === ORDER_STATUS.SHIPPING) stamps.shippedAt = now;
       if (next === ORDER_STATUS.DELIVERED) {
         stamps.deliveredAt = now;
-        if (o.paymentMethodCode === PAYMENT_METHOD.COD && o.paymentStatus !== PAYMENT_STATUS.PAID) await this.payment.markCodCollected(code, actor.userId, tx);
+        if (o.paymentMethodCode === PAYMENT_METHOD.COD && o.paymentStatus !== PAYMENT_STATUS.PAID) await this.payment.markCodCollected(code, actor.userId, tx, { shopId: o.shopId, gross: BigInt(o.total.toString()) + BigInt(o.platformDiscount.toString()), commissionRate: o.commissionRateSnapshot.toString() });
       }
       if (next === ORDER_STATUS.COMPLETED) {
         stamps.completedAt = now;

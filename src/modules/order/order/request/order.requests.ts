@@ -52,6 +52,7 @@ export class AdminOrderListQuery extends OrderListQuery {
   @ApiPropertyOptional({ description: 'Mã đơn / tên / SĐT người nhận' }) @IsOptional() @IsString() @MaxLength(100) q?: string;
   @ApiPropertyOptional() @IsOptional() @IsIn(['unpaid', 'processing', 'paid', 'refunded', 'partially_refunded']) paymentStatus?: string;
   @ApiPropertyOptional() @IsOptional() @IsIn([...Object.values(PAYMENT_METHOD)]) paymentMethodCode?: string;
+  @ApiPropertyOptional({ description: 'Chỉ đơn con của gian hàng này' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }
 
 export class UpdateOrderStatusRequest {
@@ -86,4 +87,5 @@ export class ProcessReturnRequest {
 
 export class ReturnListQuery extends PageQuery {
   @ApiPropertyOptional({ enum: ['requested', 'approved', 'rejected', 'refunded'] }) @IsOptional() @IsIn(['requested', 'approved', 'rejected', 'refunded']) status?: string;
+  @ApiPropertyOptional({ description: 'Chỉ đổi trả của đơn thuộc gian hàng này' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }

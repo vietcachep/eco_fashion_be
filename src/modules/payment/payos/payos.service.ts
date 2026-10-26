@@ -169,9 +169,13 @@ export class PayosService {
   }
 
   /*
-   * Chi trả (payout): POST /v1/payouts hoặc POST /v1/payouts/batch.
-   * Dùng cho hoàn tiền khách (nếu có số TK) và trả tiền shop.
-   * idempotencyKey: chuỗi ổn định để tránh chi đôi khi retry (từ Refund.id hoặc ShopPayout).
+   * Chi trả (payout): POST /v1/payouts (tài liệu https://payos.vn/docs/api/#tag/payout, đọc 2026-10-26).
+   * Header: x-client-id + x-api-key của KÊNH CHI, `x-idempotency-key` (bắt buộc — cùng key gửi lại không chi đôi), `x-signature` (bắt buộc).
+   * Body: { referenceId, amount (số nguyên), description, toBin, toAccountNumber, category? }. Phản hồi `{ code: "00", desc, data: { id, referenceId, transactions[{state}], approvalState } }`;
+   * "00" = PayOS ĐÃ NHẬN lệnh — tiền đi bất đồng bộ (state PROCESSING → SUCCEEDED) nên kết quả cuối lấy bằng `getPayout` (job đối chiếu), KHÔNG coi "00" là đã chuyển xong.
+   * x-signature: HMAC-SHA256 (checksum key của KÊNH CHI) trên `payoutCanonical(body)` — công thức theo mục lệnh chi của trang "Kiểm tra dữ liệu với signature" (có mã hoá URI,
+   *   khác payment-request). Tài liệu mẫu ký phần `data` của PHẢN HỒI; việc áp cùng công thức cho BODY của request là suy ra — chưa kiểm với tài khoản thật. Nếu PayOS trả 401 khi
+   *   chi thử, chỉnh `signPayout` (một chỗ) theo hướng dẫn của support@payos.vn.
    */
   async payout(input: {
     referenceId: string;
@@ -180,7 +184,6 @@ export class PayosService {
     toAccountNumber: string;
     description: string;
     idempotencyKey: string;
-    category?: string;
   }): Promise<{ ok: boolean; code: string; message: string; transactionId?: string; raw: unknown }> {
     if (!this.isPayoutConfigured) {
       return { ok: false, code: 'NOT_CONFIGURED', message: 'PayOS payout chưa được cấu hình', raw: null };
@@ -189,14 +192,12 @@ export class PayosService {
     const body = {
       referenceId: input.referenceId,
       amount: Number(input.amount),
+      description: input.description,
       toBin: input.toBin,
       toAccountNumber: input.toAccountNumber,
-      description: input.description,
-      ...(input.category ? { category: input.category } : {}),
     };
 
     try {
-      // CHƯA xác nhận công thức x-signature chính xác từ tài liệu — có thể cần điều chỉnh
       const res = await fetch(`${this.env.EF_PAYOS_API_URL}/v1/payouts`, {
         method: 'POST',
         headers: {
@@ -204,22 +205,80 @@ export class PayosService {
           'x-client-id': this.env.EF_PAYOS_PAYOUT_CLIENT_ID,
           'x-api-key': this.env.EF_PAYOS_PAYOUT_API_KEY,
           'x-idempotency-key': input.idempotencyKey,
-          // 'x-signature': <compute per PayOS payout API docs> — TODO: xác nhận công thức ký
+          'x-signature': this.signPayout(body),
         },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
 
-      const json = (await res.json()) as { code?: string; message?: string; data?: { transactionId?: string } };
-
-      const code = json.code ?? '99';
-      const ok = code === '00' || code === 'SUCCESS';
-
-      return { ok, code, message: json.message ?? '', transactionId: json.data?.transactionId, raw: json };
+      const text = await res.text();
+      let json: { code?: string; desc?: string; message?: string; data?: { id?: string } } = {};
+      try {
+        json = JSON.parse(text) as typeof json;
+      } catch {
+        // HTTP lỗi không phải JSON (401/403/429/5xx) — giữ nguyên mã HTTP làm lý do
+      }
+      const code = json.code ?? String(res.status);
+      const ok = res.ok && code === '00';
+      return { ok, code, message: json.desc ?? json.message ?? (ok ? 'success' : `HTTP ${res.status}`), transactionId: json.data?.id, raw: json };
     } catch (err) {
       this.logger.warn({ err: err instanceof Error ? err.message : err, referenceId: input.referenceId }, 'Gọi API payout PayOS lỗi');
       return { ok: false, code: '99', message: 'Không gọi được cổng PayOS', raw: null };
     }
+  }
+
+  /*
+   * Tra trạng thái một lệnh chi: GET /v1/payouts/{payoutId}. `state`: succeeded (mọi giao dịch SUCCEEDED) · failed (có giao dịch lỗi / bị từ chối / huỷ / hoàn)
+   * · processing (còn đang xử lý) · unknown (không tra được — giữ nguyên, thử lại lần sau).
+   */
+  async getPayout(payoutId: string): Promise<{ state: 'succeeded' | 'failed' | 'processing' | 'unknown'; detail: string }> {
+    if (!this.isPayoutConfigured) return { state: 'unknown', detail: 'PayOS payout chưa được cấu hình' };
+    try {
+      const res = await fetch(`${this.env.EF_PAYOS_API_URL}/v1/payouts/${encodeURIComponent(payoutId)}`, {
+        method: 'GET',
+        headers: { 'x-client-id': this.env.EF_PAYOS_PAYOUT_CLIENT_ID, 'x-api-key': this.env.EF_PAYOS_PAYOUT_API_KEY },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const json = (await res.json()) as { code?: string; desc?: string; data?: { approvalState?: string; transactions?: Array<{ state?: string }> } };
+      if (!res.ok || json.code !== '00' || !json.data) return { state: 'unknown', detail: json.desc ?? `HTTP ${res.status}` };
+      return PayosService.payoutState(json.data.approvalState, (json.data.transactions ?? []).map((t) => t.state ?? ''));
+    } catch (err) {
+      this.logger.warn({ err: err instanceof Error ? err.message : err, payoutId }, 'Tra cứu lệnh chi PayOS lỗi');
+      return { state: 'unknown', detail: 'Không gọi được cổng PayOS' };
+    }
+  }
+
+  /* Gộp approvalState + state từng giao dịch → trạng thái của hệ thống. Chữ lạ coi là "đang xử lý" (an toàn: không tự đánh đã trả / lỗi). */
+  static payoutState(approvalState: string | undefined, txStates: string[]): { state: 'succeeded' | 'failed' | 'processing'; detail: string } {
+    const bad = /FAIL|REJECT|CANCEL|REVERS|ERROR/i;
+    const approval = approvalState ?? '';
+    if (bad.test(approval)) return { state: 'failed', detail: `approvalState=${approval}` };
+    const badTx = txStates.find((s) => bad.test(s));
+    if (badTx) return { state: 'failed', detail: `state=${badTx}` };
+    if (txStates.length > 0 && txStates.every((s) => /^SUCCEED/i.test(s))) return { state: 'succeeded', detail: 'SUCCEEDED' };
+    return { state: 'processing', detail: txStates.join(',') || approval };
+  }
+
+  private signPayout(body: Record<string, unknown>): string {
+    return this.sign(PayosService.payoutCanonical(body), this.env.EF_PAYOS_PAYOUT_CHECKSUM_KEY);
+  }
+
+  /*
+   * Chuỗi ký của PAYOUT — KHÁC payment-request (tài liệu "Kiểm tra dữ liệu với signature", mục lệnh chi): khoá sắp alphabet ở MỌI cấp, mỗi cặp là
+   * `encodeURIComponent(khoá)=encodeURIComponent(giá trị)` nối bằng `&`; null/undefined → chuỗi rỗng; mảng / đối tượng lồng nhau → JSON.stringify sau khi sắp khoá (giữ thứ tự mảng).
+   * (Payment-request KHÔNG mã hoá URI — đừng dùng chung hàm.)
+   */
+  static payoutCanonical(data: Record<string, unknown>): string {
+    const deepSort = (v: unknown): unknown => {
+      if (Array.isArray(v)) return (v as unknown[]).map(deepSort);
+      if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((k) => [k, deepSort((v as Record<string, unknown>)[k])]));
+      return v;
+    };
+    const str = (v: unknown): string => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(deepSort(v)) : typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint' ? String(v) : '');
+    return Object.keys(data)
+      .sort()
+      .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(str(data[k]))}`)
+      .join('&');
   }
 
   /*

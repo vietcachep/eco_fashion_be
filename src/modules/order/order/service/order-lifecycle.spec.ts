@@ -131,7 +131,7 @@ function buildFixture(seed: OrderState[] = []) {
 
   const requestRefund = jest.fn((_input: { orderCode: string; shopId: string | null; amount: bigint; reason: string; returnRequestId: string | null; actorUserId: string | null; paymentId?: string }, _tx: Tx): Promise<{ refundId: string | null }> => Promise.resolve({ refundId: 'rf-1' }));
   const initiate = jest.fn((_input: { orderCode: string; amount: bigint; methodCode: string; bankCode?: string | null }, _tx: Tx): Promise<unknown> => Promise.resolve({}));
-  const payment = { isMethodActive: jest.fn((_m: string): Promise<boolean> => Promise.resolve(true)), initiate, requestRefund, cancel: jest.fn(), markCodCollected: jest.fn() } as unknown as PaymentGateway;
+  const payment = { isMethodActive: jest.fn((_m: string): Promise<boolean> => Promise.resolve(true)), initiate, requestRefund, cancel: jest.fn(), markCodCollected: jest.fn(), codAvailability: jest.fn((ids: string[]) => Promise.resolve(new Map(ids.map((i) => [i, true])))) } as unknown as PaymentGateway;
 
   const cart = {
     basketOf: jest.fn((_userId: string, _sel: boolean): Promise<Basket> => {

@@ -37,7 +37,7 @@ export class PromotionListQuery extends PageQuery {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100) q?: string;
   @ApiPropertyOptional() @IsOptional() @ToBoolean() @IsBoolean() active?: boolean;
   @ApiPropertyOptional({ enum: ['platform', 'shop'], description: 'Chỉ dành cho sàn: lọc mã sàn / mã gian hàng' }) @IsOptional() @IsIn(['platform', 'shop']) scope?: string;
-  @ApiPropertyOptional({ description: 'Chỉ dành cho sàn: mã của một gian hàng' }) @IsOptional() @IsUUID() shopId?: string;
+  @ApiPropertyOptional({ description: 'Chỉ dành cho sàn: mã của một gian hàng' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }
 
 /* Vendor (/shop/promotions): chỉ lọc q/active — scope + shopId luôn do server gắn từ ngữ cảnh, không nhận từ request. */

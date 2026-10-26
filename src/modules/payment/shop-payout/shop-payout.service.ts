@@ -55,7 +55,7 @@ const STUCK_PROCESSING_MS = 10 * 60_000;
 const isUniqueViolation = (e: unknown) => typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002';
 
 /*
- * Đối soát chi trả shop (PLAN-0017/0018): mỗi kỳ gom đơn ĐÃ THU TIỀN VỀ SÀN — cả PayOS lẫn COD (sàn thu hộ qua đơn vị vận chuyển) — đã qua hạn đổi trả (escrow, tính từ ngày giao) chưa nằm trong kỳ nào,
+ * Đối soát chi trả shop (PLAN-0017/0018/0020): mỗi kỳ gom đơn ĐÃ THU TIỀN VỀ SÀN qua PayOS (đơn COD không vào đây — shop giữ tiền mặt, sàn trừ hoa hồng từ ví cọc) — đã qua hạn đổi trả (escrow, tính từ ngày giao) chưa nằm trong kỳ nào,
  * trừ hoa hồng sàn (theo snapshot trên đơn) và hoàn tiền đã chi cho khách, trừ nợ mang sang (carriedDebt).
  *   net > 0  → chi PayOS tự động nếu đã có khoá payout + shop có TK ngân hàng; ngược lại để `pending` cho kế toán chuyển tay + mark-paid.
  *   net = 0  → `settled` (không có gì để chi) · net < 0 → `carried` (KHÔNG gọi PayOS, mang sang kỳ sau).
@@ -358,6 +358,40 @@ export class ShopPayoutService {
   }
 
   /* Gọi PayOS chi tiền cho kỳ đang `processing` rồi ghi kết quả. Idempotency-key = mã kỳ ⇒ gọi lại không chi đôi. */
+  /*
+   * Đối chiếu các kỳ đang `processing` với PayOS (PayOS nhận lệnh chi là "00" nhưng tiền đi bất đồng bộ, chưa có webhook payout): hỏi lại từng lệnh.
+   * succeeded → `paid` (paidAt, outbox PAYOUT_PAID → thông báo shop); failed → `failed` (kế toán thử lại / chuyển tay); processing / không tra được → để nguyên.
+   * Chỉ xét kỳ ĐÃ có mã lệnh chi (providerRef) và đã chờ ≥ 1 phút. Compare-and-set theo trạng thái nên chạy chồng hoặc kế toán bấm tay cùng lúc vẫn an toàn.
+   */
+  async reconcileProcessing(limit = 50): Promise<{ checked: number; paid: number; failed: number }> {
+    if (!this.payos.isPayoutConfigured) return { checked: 0, paid: 0, failed: 0 };
+    const rows = await this.prisma.shopPayout.findMany({
+      where: { status: PAYOUT_STATUS.PROCESSING, providerRef: { not: null }, updatedAt: { lt: new Date(Date.now() - 60_000) } },
+      orderBy: { updatedAt: 'asc' },
+      take: limit,
+    });
+    let paid = 0;
+    let failed = 0;
+    for (const p of rows) {
+      const r = await this.payos.getPayout(p.providerRef as string);
+      if (r.state === 'processing' || r.state === 'unknown') continue;
+      const next = r.state === 'succeeded' ? PAYOUT_STATUS.PAID : PAYOUT_STATUS.FAILED;
+      const failReason = next === PAYOUT_STATUS.FAILED ? `PayOS: ${r.detail}`.slice(0, 500) : null;
+      await this.prisma.$transaction(async (tx) => {
+        const u = await tx.shopPayout.updateMany({
+          where: { id: p.id, status: PAYOUT_STATUS.PROCESSING },
+          data: { status: next, failReason, ...(next === PAYOUT_STATUS.PAID ? { paidAt: new Date() } : {}), version: { increment: 1 } },
+        });
+        if (u.count === 0) return;
+        await this.audit.write(tx, null, { action: next === PAYOUT_STATUS.PAID ? PAYOUT_AUDIT.SENT : PAYOUT_AUDIT.FAILED, entityType: 'ShopPayout', entityId: p.id, entityCode: p.code, after: { status: next, detail: r.detail } });
+        await this.outbox.publish(tx, { eventType: next === PAYOUT_STATUS.PAID ? PAYMENT_EVENT.PAYOUT_PAID : PAYMENT_EVENT.PAYOUT_FAILED, aggregateType: 'ShopPayout', aggregateId: p.id, payload: this.eventPayload(p, next) });
+        if (next === PAYOUT_STATUS.PAID) paid += 1;
+        else failed += 1;
+      });
+    }
+    return { checked: rows.length, paid, failed };
+  }
+
   private async dispatch(payoutId: string, code: string, shopId: string, net: Dec, bank: BankSnapshot, actor: AuthenticatedActor | null): Promise<void> {
     const res = await this.payos.payout({
       referenceId: code,

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, Interval } from '@nestjs/schedule';
 import { SETTING_KEY } from '@modules/system/enums/setting-keys';
 import { SystemQueryApi } from '@modules/system/queryapi/system.queryapi';
 import { ShopPayoutService } from './shop-payout.service';
@@ -22,7 +22,7 @@ export type AutoPayoutOutcome =
 /*
  * Cron CHI TRẢ TỰ ĐỘNG (PLAN-0018) — mỗi ngày 02:00 Asia/Ho_Chi_Minh, chạy trong WORKER.
  * Tự gọi ShopPayoutService.run cho kỳ [mốc kết thúc kỳ gần nhất .. 00:00 hôm nay (hết hôm qua)]; chưa có kỳ nào thì kỳ đầu là [00:00 hôm qua .. 00:00 hôm nay]
- * (đơn đủ điều kiện cũ hơn vẫn được gom — `run` chọn đơn theo hạn đổi trả, không theo ngày bắt đầu kỳ). Đơn PayOS lẫn COD đi cùng MỘT đường.
+ * (đơn đủ điều kiện cũ hơn vẫn được gom — `run` chọn đơn theo hạn đổi trả, không theo ngày bắt đầu kỳ). Chỉ đơn PayOS (COD trừ hoa hồng qua ví cọc, PLAN-0020).
  *  - Chỉ chạy khi setting `payout.auto_enabled` = true (mặc định true, sửa ở màn tham số) VÀ PayOS chi đã cấu hình khoá; thiếu một trong hai ⇒ bỏ qua êm (log).
  *    Bản thân cron KHÔNG tự chi nếu chưa có khoá: thiếu khoá `run` vẫn tạo kỳ `pending` cho kế toán chuyển tay, nên cron chặn hẳn để không tạo kỳ ngoài ý muốn.
  *  - Idempotent: kỳ mới nối ngay sau kỳ gần nhất nên chạy lại cùng ngày ⇒ khoảng rỗng ⇒ bỏ qua; nếu vẫn chạy chồng (nhiều worker) thì UNIQUE(shop, kỳ) + dòng đối soát
@@ -52,6 +52,17 @@ export class AutoPayoutJob {
       this.logger.error({ err }, 'Đối soát chi trả tự động lỗi');
     } finally {
       this.running = false;
+    }
+  }
+
+  /* Mỗi 5 phút hỏi PayOS kết quả các lệnh chi đang `processing` → `paid` / `failed` (PayOS chưa có webhook payout). */
+  @Interval(300_000)
+  async reconcile(): Promise<void> {
+    try {
+      const r = await this.payouts.reconcileProcessing();
+      if (r.paid + r.failed > 0) this.logger.log(r, 'Đối chiếu lệnh chi PayOS');
+    } catch (err) {
+      this.logger.error({ err }, 'Đối chiếu lệnh chi PayOS lỗi');
     }
   }
 

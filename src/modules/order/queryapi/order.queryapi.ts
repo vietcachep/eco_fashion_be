@@ -88,8 +88,7 @@ export class OrderQueryApi {
     return new Map(rows.map((r) => [r.code, { total: r.total, platformDiscount: r.platformDiscount }]));
   }
 
-  /* Đơn đã thu tiền để tính đối soát (payout) — PLAN-0018: CẢ PayOS lẫn COD cùng một đường. status=completed, `paymentStatus` paid/partially_refunded
-     (đơn COD chỉ thành `paid` khi sàn xác nhận đã thu COD lúc giao — markCodCollected — nên không dựa vào trạng thái đơn đơn thuần),
+  /* Đơn ONLINE (PayOS) đã thu tiền về sàn để tính đối soát (payout) — PLAN-0020: đơn COD không đi đường này (ví đặt cọc). status=completed, `paymentStatus` paid/partially_refunded,
      đã qua hạn đổi trả (tính từ ngày giao) tính đến periodEnd — escrow: không đưa đơn còn trong hạn đổi trả vào kỳ. Payment tự loại đơn đã nằm trong kỳ trước. */
   async settlementOrders(returnWindowDays: number, periodEnd: Date): Promise<Array<{ orderCode: string; shopId: string; total: Prisma.Decimal; platformDiscount: Prisma.Decimal; commissionRateSnapshot: Prisma.Decimal; settleFrom: Date }>> {
     const cutoff = new Date(periodEnd.getTime() - returnWindowDays * 86_400_000);
@@ -97,6 +96,8 @@ export class OrderQueryApi {
       where: {
         isDeleted: false,
         status: 'completed',
+        // PLAN-0020: đơn COD shop tự cầm tiền mặt — sàn trừ hoa hồng từ ví đặt cọc nên KHÔNG đưa vào đối soát chi trả.
+        paymentMethodCode: { not: 'cod' },
         paymentStatus: { in: ['paid', 'partially_refunded'] },
         OR: [{ deliveredAt: { lte: cutoff } }, { deliveredAt: null, completedAt: { lte: cutoff } }],
         // Đơn đang có yêu cầu đổi trả CHƯA xử lý xong thì giữ lại (escrow) — chi trước rồi mới hoàn thì shop đã nhận tiền thừa, thành nợ mang sang.

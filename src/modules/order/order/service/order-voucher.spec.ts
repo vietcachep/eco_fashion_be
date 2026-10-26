@@ -382,7 +382,7 @@ function buildFixture(cfg: { lines?: Basket['lines']; vouchers?: VoucherDef[]; m
   const initiate = jest.fn((_input: { orderCode: string; amount: bigint }, _tx: Tx): Promise<unknown> => Promise.resolve({}));
   const paymentCancel = jest.fn((_code: string, _reason: string, _tx: Tx): Promise<void> => Promise.resolve());
   const requestRefund = jest.fn((_input: { orderCode: string; amount: bigint }, _tx: Tx): Promise<{ refundId: string | null }> => Promise.resolve({ refundId: null }));
-  const payment = { isMethodActive: jest.fn((_m: string): Promise<boolean> => Promise.resolve(true)), initiate, cancel: paymentCancel, requestRefund, markCodCollected: jest.fn() } as unknown as PaymentGateway;
+  const payment = { isMethodActive: jest.fn((_m: string): Promise<boolean> => Promise.resolve(true)), initiate, cancel: paymentCancel, requestRefund, markCodCollected: jest.fn(), codAvailability: jest.fn((ids: string[]) => Promise.resolve(new Map(ids.map((i) => [i, true])))) } as unknown as PaymentGateway;
 
   const audit = { write: jest.fn((..._a: unknown[]): Promise<void> => Promise.resolve()) };
   const outbox = { publish: jest.fn((..._a: unknown[]): Promise<void> => Promise.resolve()) };
