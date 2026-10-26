@@ -4,7 +4,7 @@
  * Dump/seed mang theo các tài khoản mẫu có mật khẩu CÔNG KHAI trong tài liệu (admin@… / Admin123456!, manager@… / NhanVien123!…). Trên server
  * có thể truy cập từ Internet thì ai đọc repo cũng đăng nhập được quyền quản trị ⇒ sau khi nạp dữ liệu PHẢI đổi:
  *  - admin (EF_ADMIN_EMAIL): đặt mật khẩu = EF_ADMIN_PASSWORD (không được là mật khẩu mẫu, tối thiểu 12 ký tự);
- *  - nhân viên sàn (manager/sales/warehouse/accountant/marketing): nếu có EF_STAFF_PASSWORD thì đặt mật khẩu = giá trị đó (tối thiểu 12 ký tự),
+ *  - nhân viên sàn (manager/sales/accountant/marketing): nếu có EF_STAFF_PASSWORD thì đặt mật khẩu = giá trị đó (tối thiểu 12 ký tự),
  *    không có thì KHÓA các tài khoản này (status=locked) — muốn dùng thì admin mở khoá + đặt lại mật khẩu trong màn Người dùng.
  * Mọi tài khoản bị đổi đều bị thu hồi phiên đăng nhập (refresh token) và tăng permission_version. Chủ shop/nhân viên shop/khách mẫu GIỮ NGUYÊN
  * (chỉ quản lý dữ liệu của chính shop/đơn của mình) — xoá hoặc khoá bằng tay nếu không muốn công khai.
@@ -17,7 +17,7 @@ import { loadEnv } from '../../src/config/env';
 import { PrismaClient } from '../../src/generated/prisma/client';
 import { createAdmin } from '../seed/create-admin';
 
-export const PLATFORM_STAFF_ROLES = ['manager', 'sales', 'warehouse', 'accountant', 'marketing'] as const;
+export const PLATFORM_STAFF_ROLES = ['manager', 'sales', 'accountant', 'marketing'] as const;
 const SAMPLE_PASSWORDS = new Set(['Admin123456!', 'NhanVien123!', 'Vendor123456!', 'Khach123456!']);
 const MIN_LENGTH = 12;
 

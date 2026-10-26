@@ -5,6 +5,7 @@ import type { AuthenticatedActor } from './authenticated-actor';
 export const IS_PUBLIC_KEY = 'ef:public';
 export const OPTIONAL_AUTH_KEY = 'ef:optional-auth';
 export const PERMISSIONS_KEY = 'ef:permissions';
+export const ANY_PERMISSIONS_KEY = 'ef:any-permissions';
 
 /* Route công khai — JwtAuthGuard bỏ qua (danh sách sản phẩm, đăng nhập, webhook PayOS…). */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -17,6 +18,9 @@ export const OptionalAuth = () => SetMetadata(OPTIONAL_AUTH_KEY, true);
  * (vai ∪ cấp riêng − chặn riêng). Nhiều mã = cần TẤT CẢ. Không kiểm theo tên vai.
  */
 export const RequirePermission = (...codes: string[]) => SetMetadata(PERMISSIONS_KEY, codes);
+
+/* Yêu cầu có ÍT NHẤT MỘT trong các mã quyền (dùng cho tra cứu dùng chung giữa nhiều màn, vd danh bạ gian hàng). */
+export const RequireAnyPermission = (...codes: string[]) => SetMetadata(ANY_PERMISSIONS_KEY, codes);
 
 export interface RequestWithActor extends Request {
   actor?: AuthenticatedActor;

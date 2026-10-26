@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ForbiddenException, UnauthorizedException } from '../exception/business.exception';
-import { PERMISSIONS_KEY, RequestWithActor } from './decorators';
+import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY, RequestWithActor } from './decorators';
 import {
   PERMISSION_AUTHORIZATION_GATEWAY,
   PermissionAuthorizationGateway,
@@ -29,7 +29,8 @@ export class PermissionGuard implements CanActivate {
       ctx.getHandler(),
       ctx.getClass(),
     ]);
-    if (!required || required.length === 0) return true;
+    const anyOf = this.reflector.getAllAndOverride<string[]>(ANY_PERMISSIONS_KEY, [ctx.getHandler(), ctx.getClass()]);
+    if ((!required || required.length === 0) && (!anyOf || anyOf.length === 0)) return true;
     const req = ctx.switchToHttp().getRequest<RequestWithActor>();
     const actor = req.actor;
     if (!actor) throw new UnauthorizedException('COMMON_UNAUTHORIZED', 'Bạn cần đăng nhập');
@@ -38,7 +39,11 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException('COMMON_FORBIDDEN', 'Hệ thống phân quyền chưa sẵn sàng');
     }
     const owned = await this.gateway.effectivePermissions(actor.userId);
-    const missing = required.filter((c) => !owned.has(c));
+    if (anyOf && anyOf.length > 0 && !anyOf.some((c) => owned.has(c))) {
+      this.logger.warn({ userId: actor.userId, anyOf }, 'Thiếu quyền (cần một trong)');
+      throw new ForbiddenException('COMMON_FORBIDDEN', `Bạn thiếu quyền: ${anyOf.join(' | ')}`, { required: anyOf[0] });
+    }
+    const missing = (required ?? []).filter((c) => !owned.has(c));
     if (missing.length > 0) {
       this.logger.warn({ userId: actor.userId, missing }, 'Thiếu quyền');
       throw new ForbiddenException('COMMON_FORBIDDEN', `Bạn thiếu quyền: ${missing.join(', ')}`, {

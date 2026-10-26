@@ -3,7 +3,7 @@
  * Idempotent: tìm theo email, có rồi thì bỏ qua (không đặt lại mật khẩu, không nhân đôi địa chỉ).
  * Vai/quyền do `perms:sync` lo; admin do `seed:admin` lo — file này KHÔNG đụng vào.
  *
- *   Nhân viên: manager@ecofashion.vn · sales@ · warehouse@ · accountant@ · marketing@   mật khẩu NhanVien123!
+ *   Nhân viên: manager@ecofashion.vn · sales@ · accountant@ · marketing@   mật khẩu NhanVien123!
  *   Khách:     khach1@ecofashion.vn … khach5@ecofashion.vn                              mật khẩu Khach123456!
  */
 import * as argon2 from 'argon2';
@@ -15,7 +15,6 @@ export const DEMO_CUSTOMER_PASSWORD = 'Khach123456!';
 const STAFF = [
   { email: 'manager@ecofashion.vn', fullName: 'Lê Thị Quản Lý', role: 'manager', phone: '0901000001' },
   { email: 'sales@ecofashion.vn', fullName: 'Trần Văn Bán Hàng', role: 'sales', phone: '0901000002' },
-  { email: 'warehouse@ecofashion.vn', fullName: 'Phạm Văn Kho', role: 'warehouse', phone: '0901000003' },
   { email: 'accountant@ecofashion.vn', fullName: 'Nguyễn Thị Kế Toán', role: 'accountant', phone: '0901000004' },
   { email: 'marketing@ecofashion.vn', fullName: 'Hoàng Thị Marketing', role: 'marketing', phone: '0901000005' },
 ];

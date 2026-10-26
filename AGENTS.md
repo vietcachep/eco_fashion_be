@@ -18,9 +18,9 @@ buộc gender/color/size như thời trang. Hai giao diện dùng chung backend 
 
 | Khác biệt | Hệ quả trong code |
 |---|---|
-| Marketplace nhiều gian hàng (PLAN-0014/0017) | Module `shop`; một lần checkout = 1 `OrderGroup` + N đơn CON (mỗi shop 1 đơn, 1 Payment riêng); hoa hồng sàn ghi trên đơn con (`commissionRateSnapshot`); sàn thu MỌI khoản tiền (PayOS + COD) rồi tự động đối soát + chi trả shop (module payment, PLAN-0018); vendor chỉ thấy dữ liệu shop mình (`ShopContextGuard`, `shopId` CHỈ từ ngữ cảnh) |
+| Marketplace nhiều gian hàng (PLAN-0014/0017) | Module `shop`; một lần checkout = 1 `OrderGroup` + N đơn CON (mỗi shop 1 đơn, 1 Payment riêng); hoa hồng sàn ghi trên đơn con (`commissionRateSnapshot`); PayOS: sàn thu rồi tự động đối soát + chi trả shop (module payment, PLAN-0018); COD (PLAN-0020): shop tự thu tiền mặt, CHỈ bán được khi đã nộp cọc — ví đặt cọc `balance > 0`, sàn tự trừ hoa hồng mỗi đơn COD giao thành công, ví ≤ 0 thì COD đóng; vendor chỉ thấy dữ liệu shop mình (`ShopContextGuard`, `shopId` CHỈ từ ngữ cảnh) |
 | Chỉ tiếng Việt | KHÔNG bảng dịch, không module translation/language, không `lang` param; chữ giao diện nằm ở FE; tiền tệ duy nhất VND |
-| Thanh toán thật ở Việt Nam | **PayOS** (QR/chuyển khoản tự động; khoá để TRỐNG thì method `payos` tự tắt) + COD (đơn vị vận chuyển thu hộ rồi nộp về sàn); chỉ 2 phương thức `payos`/`cod`; webhook là nguồn sự thật, chữ ký HMAC bắt buộc |
+| Thanh toán thật ở Việt Nam | **PayOS** (QR/chuyển khoản tự động; khoá để TRỐNG thì method `payos` tự tắt) + COD (shop tự thu tiền mặt, chỉ bán được khi đã đặt cọc — PLAN-0020); chỉ 2 phương thức `payos`/`cod`; webhook là nguồn sự thật, chữ ký HMAC bắt buộc |
 
 Phần còn lại giữ như EcoShop: danh mục · sản phẩm nhiều biến thể (trục thuộc tính theo ngành hàng) · tồn kho · giỏ · đơn ·
 khuyến mãi (voucher sàn + voucher từng shop) · đánh giá · thông báo · báo cáo · **trợ lý AI** (gợi ý, chatbot RAG, tóm tắt đánh giá,

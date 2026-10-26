@@ -77,6 +77,8 @@ export class PermissionService {
   async replaceRolePermissions(actor: AuthenticatedActor, roleCode: string, codes: string[]): Promise<string[]> {
     const role = await this.repo.findRoleByCode(roleCode);
     if (!role) throw new NotFoundException(IDENTITY_ERR.ROLE_NOT_FOUND, `Không có vai '${roleCode}'`);
+    // Vai scope=shop (chủ/nhân viên gian hàng): sàn KHÔNG sửa preset — quyền nhân viên do từng chủ shop tự đặt (PUT /shop/members/:id/permissions).
+    if (role.scope === 'shop') throw new ForbiddenException(IDENTITY_ERR.ROLE_SYSTEM_LOCKED, 'Vai của gian hàng do chủ từng shop tự phân quyền — sàn không sửa preset');
     if (role.code === 'admin') throw new ForbiddenException(IDENTITY_ERR.ROLE_SYSTEM_LOCKED, 'Vai admin luôn có toàn quyền, không sửa preset');
     const unique = [...new Set(codes)];
     const perms = await this.repo.findPermissionsByCodes(unique);

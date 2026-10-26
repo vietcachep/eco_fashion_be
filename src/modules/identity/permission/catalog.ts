@@ -36,16 +36,16 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('catalog', 'collection.manage', 'Tạo / sửa bộ sưu tập'),
   // product
   p('product', 'product.read', 'Xem sản phẩm (khu quản trị)'),
-  p('product', 'product.create', 'Tạo sản phẩm'),
-  p('product', 'product.update', 'Sửa sản phẩm, biến thể, ảnh, giá'),
+  { ...p('product', 'product.create', 'Tạo sản phẩm'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
+  { ...p('product', 'product.update', 'Sửa sản phẩm, biến thể, ảnh, giá'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   p('product', 'product.publish', 'Đăng bán / ẩn sản phẩm'),
-  p('product', 'product.delete', 'Xoá mềm sản phẩm'),
+  { ...p('product', 'product.delete', 'Xoá mềm sản phẩm'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   p('product', 'inventory.read', 'Xem tồn kho'),
-  p('product', 'inventory.receive', 'Lập phiếu nhập kho'),
-  p('product', 'inventory.adjust', 'Điều chỉnh / kiểm kê tồn kho'),
+  { ...p('product', 'inventory.receive', 'Lập phiếu nhập kho'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
+  { ...p('product', 'inventory.adjust', 'Điều chỉnh / kiểm kê tồn kho'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   // order
   p('order', 'order.read', 'Xem đơn hàng'),
-  p('order', 'order.status.update', 'Xác nhận / đóng gói / giao / hoàn tất đơn'),
+  { ...p('order', 'order.status.update', 'Xác nhận / đóng gói / giao / hoàn tất đơn'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   p('order', 'order.cancel', 'Huỷ đơn thay khách'),
   p('order', 'return.read', 'Xem yêu cầu đổi trả'),
   p('order', 'return.process', 'Duyệt / từ chối / hoàn tất đổi trả'),
@@ -61,13 +61,15 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   // review
   p('review', 'review.read', 'Xem đánh giá (khu quản trị)'),
   p('review', 'review.moderate', 'Duyệt / ẩn đánh giá'),
-  p('review', 'review.reply', 'Trả lời đánh giá thay cửa hàng'),
+  { ...p('review', 'review.reply', 'Trả lời đánh giá thay cửa hàng'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   // system
   p('system', 'setting.read', 'Xem tham số vận hành'),
   p('system', 'setting.update', 'Sửa tham số vận hành'),
   p('system', 'banner.manage', 'Quản lý banner trang chủ'),
   p('system', 'province.manage', 'Quản lý tỉnh/thành + phí ship'),
   p('system', 'notification.send', 'Gửi thông báo tới khách'),
+  p('system', 'contact.read', 'Xem tin khách gửi SÀN (form Liên hệ) và giám sát tin gửi các gian hàng'),
+  p('system', 'contact.reply', 'Trả lời tin khách gửi SÀN (tin gửi shop do shop tự trả lời)'),
   // reporting
   p('reporting', 'dashboard.read', 'Xem dashboard tổng quan'),
   p('reporting', 'revenue.read', 'Xem báo cáo doanh thu'),
@@ -107,17 +109,26 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('shop', 'promotion.read', 'Xem mã giảm giá của gian hàng mình'),
   p('shop', 'promotion.manage', 'Tạo / sửa / bật tắt mã giảm giá của gian hàng mình'),
   p('shop', 'report.read', 'Xem báo cáo doanh thu / đơn / tồn của gian hàng mình'),
+  p('shop', 'contact.read', 'Xem tin nhắn khách gửi gian hàng mình (hỏi sản phẩm / đơn)'),
+  p('shop', 'contact.reply', 'Trả lời tin nhắn khách gửi gian hàng mình'),
   p('shop', 'payout.read', 'Xem các kỳ đối soát / chi trả của gian hàng mình'),
   // PLAN-0017/0018 — nhân viên SÀN xem + chạy đối soát chi trả cho MỌI gian hàng (khác mã với shop.payout.*); PLAN-0018 bỏ ví quỹ COD nên không còn mã wallet
   p('supplier', 'payout.read', 'Xem các kỳ đối soát / chi trả của mọi gian hàng'),
   p('supplier', 'payout.process', 'Chạy kỳ đối soát và chi trả cho gian hàng'),
+  // PLAN-0020 — ví đặt cọc COD: shop xem ví + nộp cọc; sàn xem mọi ví, duyệt/từ chối khoản nộp và chỉnh ví
+  p('shop', 'wallet.read', 'Xem ví đặt cọc COD và lịch sử của gian hàng mình'),
+  p('shop', 'wallet.deposit_request', 'Gửi yêu cầu nộp tiền đặt cọc COD của gian hàng mình'),
+  p('supplier', 'wallet.read', 'Xem ví đặt cọc COD và các khoản nộp cọc của mọi gian hàng'),
+  p('supplier', 'wallet.approve', 'Đối chiếu và duyệt / từ chối khoản nộp cọc COD của gian hàng (không chỉnh được số dư)'),
+  p('supplier', 'wallet.adjust', 'Chỉnh tay số dư ví đặt cọc COD của gian hàng (có lý do) — chỉ Admin, vì tự cộng / trừ tiền không cần chứng từ'),
 ];
 
-export const ALL_PERMISSION_CODES: readonly string[] = PERMISSION_CATALOG.map((d) => d.code);
+/* Mã còn hiệu lực (bỏ mã deprecated) — vai admin = toàn bộ tập này. */
+export const ALL_PERMISSION_CODES: readonly string[] = PERMISSION_CATALOG.filter((d) => !d.deprecated).map((d) => d.code);
 
 export function codesOfModules(...modules: string[]): readonly string[] {
   const set = new Set(modules);
-  return PERMISSION_CATALOG.filter((d) => set.has(d.module)).map((d) => d.code);
+  return PERMISSION_CATALOG.filter((d) => set.has(d.module) && !d.deprecated).map((d) => d.code);
 }
 
 export function codes(...list: string[]): readonly string[] {
@@ -135,7 +146,6 @@ export const ROLE_CODES = {
   ADMIN: 'admin',
   MANAGER: 'manager',
   SALES: 'sales',
-  WAREHOUSE: 'warehouse',
   ACCOUNTANT: 'accountant',
   MARKETING: 'marketing',
   CUSTOMER: 'customer',
@@ -155,7 +165,6 @@ export const STAFF_ROLE_CODES: readonly RoleCode[] = [
   ROLE_CODES.ADMIN,
   ROLE_CODES.MANAGER,
   ROLE_CODES.SALES,
-  ROLE_CODES.WAREHOUSE,
   ROLE_CODES.ACCOUNTANT,
   ROLE_CODES.MARKETING,
 ];
@@ -183,44 +192,39 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
         'supplier.shop.approve',
         'supplier.shop.suspend',
         'supplier.shop.reject',
-        'supplier.shop.commission',
         'supplier.payout.read',
+        'supplier.wallet.read',
+        'system.contact.read',
       ),
     ],
     scope: 'platform',
   },
   sales: {
-    name: 'Bán hàng & CSKH',
-    description: 'Xử lý đơn, trả lời đánh giá, hỗ trợ khách từ chatbot',
+    name: 'Chăm sóc khách hàng',
+    description: 'Phân xử khiếu nại / đổi trả, huỷ đơn khi tranh chấp, kiểm duyệt đánh giá, hỗ trợ khách từ chatbot — sàn không bán hàng',
     codes: codes(
       'product.product.read',
-      'product.inventory.read',
       'order.order.read',
-      'order.order.status.update',
       'order.order.cancel',
       'order.return.read',
       'order.return.process',
       'payment.payment.read',
       'review.review.read',
-      'review.review.reply',
+      'review.review.moderate',
       'ai.support.read',
       'ai.support.resolve',
       'ai.chat.read',
       'ai.copy.create',
       'system.notification.send',
+      'system.contact.read',
+      'system.contact.reply',
     ),
-    scope: 'platform',
-  },
-  warehouse: {
-    name: 'Nhân viên kho',
-    description: 'Tồn kho, nhập kho, đóng gói / giao đơn',
-    codes: codes('product.product.read', 'product.inventory.read', 'product.inventory.receive', 'product.inventory.adjust', 'order.order.read', 'order.order.status.update', 'order.return.read', 'reporting.inventory.read'),
     scope: 'platform',
   },
   accountant: {
     name: 'Kế toán',
-    description: 'Thanh toán, hoàn tiền, đối soát chi trả shop, doanh thu',
-    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.payout.read', 'supplier.payout.process'),
+    description: 'Thanh toán, hoàn tiền, đối soát chi trả shop, ví đặt cọc COD, doanh thu',
+    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.payout.read', 'supplier.payout.process', 'supplier.wallet.read', 'supplier.wallet.approve'),
     scope: 'platform',
   },
   marketing: {
