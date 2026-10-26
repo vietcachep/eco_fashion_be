@@ -55,7 +55,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: fitly-backend:prod
+    image: ${FITLY_IMAGE:-fitly-backend:prod}
     command: ["sh", "-c", "npx prisma migrate deploy && npm run -s perms:sync && npm run -s seed:admin"]
     restart: "no"
     depends_on:
@@ -66,7 +66,7 @@ services:
 
   api:
     <<: *backend-env
-    image: fitly-backend:prod
+    image: ${FITLY_IMAGE:-fitly-backend:prod}
     restart: unless-stopped
     expose:
       - "4000"
@@ -76,7 +76,7 @@ services:
 
   worker:
     <<: *backend-env
-    image: fitly-backend:prod
+    image: ${FITLY_IMAGE:-fitly-backend:prod}
     restart: unless-stopped
     command: ["node", "dist/src/worker.js"]
     # Image dùng chung với api có HEALTHCHECK gọi HTTP :4000 — worker không mở cổng nên tắt, kẻo báo "unhealthy" oan.
@@ -105,7 +105,7 @@ services:
   # (EF_ADMIN_PASSWORD) và khoá/đổi mật khẩu nhân viên sàn mẫu (EF_STAFF_PASSWORD) — mật khẩu mẫu công khai không được còn dùng được.
   demo-data:
     <<: *backend-env
-    image: fitly-backend:prod
+    image: ${FITLY_IMAGE:-fitly-backend:prod}
     profiles: ["demo-data"]
     restart: "no"
     command: ["sh", "-c", "npm run -s db:restore -- --yes && npm run -s db:secure"]

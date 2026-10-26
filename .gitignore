@@ -10,6 +10,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+# mẫu cấu hình production (không chứa khoá thật) PHẢI nằm trong git — nếu không `.env.*` ở trên nuốt mất nó
+!.env.production.example
 
 # cấu hình triển khai THẬT (mật khẩu/khoá) — chỉ commit deploy/.env.production.example
 deploy/.env.production

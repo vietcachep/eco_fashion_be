@@ -33,7 +33,7 @@ nano .env.production        # điền SITE_ADDRESS, mật khẩu, EF_JWT_SECRET 
 Kiểm tra: `curl -s https://<SITE_ADDRESS>/api/v1/health` → `"status":"UP"`.
 
 - `--with-demo-data` chạy `npm run db:restore -- --yes` rồi `npm run db:secure` **trong container**: admin được đặt mật khẩu = `EF_ADMIN_PASSWORD`, nhân viên sàn mẫu (manager/sales/warehouse/accountant/marketing) được đặt `EF_STAFF_PASSWORD` hoặc bị **khoá** nếu để trống. Lý do: mật khẩu mẫu (`Admin123456!`, `NhanVien123!`…) công khai trong tài liệu — để nguyên trên server ra Internet là ai cũng vào được trang quản trị. Chủ shop mẫu (`techzone@…`/`Vendor123456!`) và khách mẫu giữ nguyên, chỉ thao tác được trong phạm vi shop/đơn của họ; xoá hoặc khoá bằng tay nếu không muốn công khai.
-- Cập nhật phiên bản mới: `./deploy.sh --pull`. Xem log: `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api worker`.
+- Cập nhật phiên bản mới: **tự động** bằng CD (push `main` → build image → máy chủ tự cập nhật, xem `docs/09_CD.md`) hoặc tay: `./deploy.sh --pull`. Xem log: `docker compose --env-file .env.production -f docker-compose.prod.yml logs -f api worker`.
 - Sao lưu DB: `docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db pg_dump -U ecofashion -Fc ecofashion > backup-$(date +%F).dump` (đặt cron hằng ngày, chép ra ngoài máy chủ).
 
 ## 3. Web trên Vercel
