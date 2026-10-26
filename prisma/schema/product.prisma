@@ -7,43 +7,51 @@
 // =====================================================================
 
 model Product {
-  id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug             String                    @db.VarChar(160)
-  name             String                    @db.VarChar(200)
-  shopId           String                    @map("shop_id") @db.Uuid                     // PLAN-0014 bước 5: gian hàng sở hữu sản phẩm
-  categoryId       String                    @map("category_id") @db.Uuid
-  categorySlug     String                    @map("category_slug") @db.VarChar(120)
-  gender           String                    @default("unisex") @db.VarChar(10)
-  shortDescription String?                   @map("short_description") @db.VarChar(500)
+  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug             String                   @db.VarChar(160)
+  name             String                   @db.VarChar(200)
+  shopId           String                   @map("shop_id") @db.Uuid // PLAN-0014 bước 5: gian hàng sở hữu sản phẩm
+  categoryId       String                   @map("category_id") @db.Uuid
+  categorySlug     String                   @map("category_slug") @db.VarChar(120)
+  gender           String                   @default("unisex") @db.VarChar(10)
+  shortDescription String?                  @map("short_description") @db.VarChar(500)
   description      String?
-  material         String?                   @db.VarChar(200)
-  /* Hướng dẫn bảo quản — mảng chuỗi. */
-  care             Json                      @default("[]")
-  /* Giá bán chung (biến thể có thể ghi đè), giá gốc (gạch) khi giảm. */
-  basePrice        Decimal                   @map("base_price") @db.Decimal(14, 0)
-  listPrice        Decimal?                  @map("list_price") @db.Decimal(14, 0)
-  status           String                    @default("draft") @db.VarChar(20)
-  isNew            Boolean                   @default(false) @map("is_new")
-  isFeatured       Boolean                   @default(false) @map("is_featured")
-  tags             Json                      @default("[]")
-  /* Thống kê — review/order cập nhật qua gateway; đọc list không JOIN. */
-  soldCount        Int                       @default(0) @map("sold_count")
-  reviewCount      Int                       @default(0) @map("review_count")
-  avgRating        Decimal                   @default(0) @map("avg_rating") @db.Decimal(3, 2)
-  viewCount        Int                       @default(0) @map("view_count")
-  publishedAt      DateTime?                 @map("published_at") @db.Timestamptz
-  searchVector     Unsupported("tsvector")?  @map("search_vector")
-  version          Int                       @default(0)
-  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz
-  createdBy        String?                   @map("created_by") @db.Uuid
-  updatedAt        DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  updatedBy        String?                   @map("updated_by") @db.Uuid
-  isDeleted        Boolean                   @default(false) @map("is_deleted")
+  material         String?                  @db.VarChar(200)
+  /**
+   * Hướng dẫn bảo quản — mảng chuỗi.
+   */
+  care             Json                     @default("[]")
+  /**
+   * Giá bán chung (biến thể có thể ghi đè), giá gốc (gạch) khi giảm.
+   */
+  basePrice        Decimal                  @map("base_price") @db.Decimal(14, 0)
+  listPrice        Decimal?                 @map("list_price") @db.Decimal(14, 0)
+  status           String                   @default("draft") @db.VarChar(20)
+  isNew            Boolean                  @default(false) @map("is_new")
+  isFeatured       Boolean                  @default(false) @map("is_featured")
+  tags             Json                     @default("[]")
+  /**
+   * Thống kê — review/order cập nhật qua gateway; đọc list không JOIN.
+   */
+  soldCount        Int                      @default(0) @map("sold_count")
+  reviewCount      Int                      @default(0) @map("review_count")
+  avgRating        Decimal                  @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  viewCount        Int                      @default(0) @map("view_count")
+  publishedAt      DateTime?                @map("published_at") @db.Timestamptz
+  searchVector     Unsupported("tsvector")? @map("search_vector")
+  version          Int                      @default(0)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  createdBy        String?                  @map("created_by") @db.Uuid
+  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy        String?                  @map("updated_by") @db.Uuid
+  isDeleted        Boolean                  @default(false) @map("is_deleted")
 
   variants        ProductVariant[]
   images          ProductImage[]
-  /* PLAN-0016 — thuộc tính cấp sản phẩm cho ngành hàng MỚI (category.attributeMode="dynamic"); rỗng với
-     sản phẩm thời trang (attributeMode="legacy_fashion" vẫn dùng gender/material/care như cũ). */
+  /**
+   * PLAN-0016 — thuộc tính cấp sản phẩm cho ngành hàng MỚI (category.attributeMode="dynamic"); rỗng với
+   * sản phẩm thời trang (attributeMode="legacy_fashion" vẫn dùng gender/material/care như cũ).
+   */
   attributeValues ProductAttributeValue[]
 
   @@index([shopId])
@@ -58,16 +66,20 @@ model Product {
 model ProductVariant {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId String   @map("product_id") @db.Uuid
-  shopId    String   @map("shop_id") @db.Uuid                     // PLAN-0014 bước 5: SKU unique theo shop (index partial — xem cuối model)
+  shopId    String   @map("shop_id") @db.Uuid // PLAN-0014 bước 5: SKU unique theo shop (index partial — xem cuối model)
   sku       String   @db.VarChar(64)
-  /* PLAN-0016: NULL cho sản phẩm ngành hàng MỚI (category.attributeMode="dynamic") — dùng `options` (dưới)
-     thay thế. Sản phẩm thời trang (attributeMode="legacy_fashion") giữ NGUYÊN bắt buộc như trước, không đổi
-     hành vi/dữ liệu hiện có. */
+  /**
+   * PLAN-0016: NULL cho sản phẩm ngành hàng MỚI (category.attributeMode="dynamic") — dùng `options` (dưới)
+   * thay thế. Sản phẩm thời trang (attributeMode="legacy_fashion") giữ NGUYÊN bắt buộc như trước, không đổi
+   * hành vi/dữ liệu hiện có.
+   */
   colorCode String?  @map("color_code") @db.VarChar(40)
   colorName String?  @map("color_name") @db.VarChar(120)
   colorHex  String?  @map("color_hex") @db.VarChar(9)
   sizeCode  String?  @map("size_code") @db.VarChar(40)
-  /* NULL = dùng base_price của sản phẩm. */
+  /**
+   * NULL = dùng base_price của sản phẩm.
+   */
   price     Decimal? @db.Decimal(14, 0)
   stock     Int      @default(0)
   reserved  Int      @default(0)
@@ -80,29 +92,37 @@ model ProductVariant {
   isDeleted Boolean  @default(false) @map("is_deleted")
 
   product Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
-  /* PLAN-0016 — trục biến thể cho ngành hàng MỚI, tối đa 2 dòng/variant (validate ở service), thay thế
-     colorCode/sizeCode ở trên. Rỗng với sản phẩm thời trang. */
+  /**
+   * PLAN-0016 — trục biến thể cho ngành hàng MỚI, tối đa 2 dòng/variant (validate ở service), thay thế
+   * colorCode/sizeCode ở trên. Rỗng với sản phẩm thời trang.
+   */
   options ProductVariantOption[]
 
   @@unique([productId, colorCode, sizeCode])
-  /* SKU unique THEO GIAN HÀNG, CHỈ biến thể còn sống: index partial `uq_product_variants_shop_sku_active`
-     (shop_id, sku) WHERE is_deleted = false trong migration 20261003140000 — Prisma không biểu diễn được index partial nên
-     KHÔNG khai @@unique([shopId, sku]) ở đây (khai sẽ tính cả bản xoá mềm và làm migrate diff lệch). Service kiểm trước. */
+  /**
+   * SKU unique THEO GIAN HÀNG, CHỈ biến thể còn sống: index partial `uq_product_variants_shop_sku_active`
+   * (shop_id, sku) WHERE is_deleted = false trong migration 20261003140000 — Prisma không biểu diễn được index partial nên
+   * KHÔNG khai @@unique([shopId, sku]) ở đây (khai sẽ tính cả bản xoá mềm và làm migrate diff lệch). Service kiểm trước.
+   */
   @@index([sku])
   @@index([shopId])
   @@map("product_variants")
   @@schema("product")
 }
 
-/* PLAN-0016 — thuộc tính KHÔNG tạo biến thể, gắn cấp sản phẩm (vd "Xuất xứ: Việt Nam", "Bảo hành: 12 tháng").
-   Chỉ dùng cho category.attributeMode="dynamic". attributeId/attributeValueId trỏ sang schema catalog
-   (DynamicAttribute/DynamicAttributeValue) — KHÔNG @relation xuyên schema, chỉ lưu id theo đúng quy ước. */
+/**
+ * PLAN-0016 — thuộc tính KHÔNG tạo biến thể, gắn cấp sản phẩm (vd "Xuất xứ: Việt Nam", "Bảo hành: 12 tháng").
+ * Chỉ dùng cho category.attributeMode="dynamic". attributeId/attributeValueId trỏ sang schema catalog
+ * (DynamicAttribute/DynamicAttributeValue) — KHÔNG @relation xuyên schema, chỉ lưu id theo đúng quy ước.
+ */
 model ProductAttributeValue {
   id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId        String  @map("product_id") @db.Uuid
   attributeId      String  @map("attribute_id") @db.Uuid
   attributeValueId String? @map("attribute_value_id") @db.Uuid
-  /* Nhập tay khi DynamicAttribute.inputType = text | number (không chọn từ AttributeValue có sẵn). */
+  /**
+   * Nhập tay khi DynamicAttribute.inputType = text | number (không chọn từ AttributeValue có sẵn).
+   */
   customValue      String? @map("custom_value") @db.VarChar(255)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -112,15 +132,19 @@ model ProductAttributeValue {
   @@schema("product")
 }
 
-/* PLAN-0016 — MỘT trục biến thể của MỘT variant (vd {attribute: "Dung lượng", value: "128GB"}). Tối đa 2
-   dòng/variant (validate ở service — khớp quyết định "tối đa 2 trục"). Thay thế colorCode/sizeCode cho
-   category.attributeMode="dynamic". */
+/**
+ * PLAN-0016 — MỘT trục biến thể của MỘT variant (vd {attribute: "Dung lượng", value: "128GB"}). Tối đa 2
+ * dòng/variant (validate ở service — khớp quyết định "tối đa 2 trục"). Thay thế colorCode/sizeCode cho
+ * category.attributeMode="dynamic".
+ */
 model ProductVariantOption {
   id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   variantId        String @map("variant_id") @db.Uuid
   attributeId      String @map("attribute_id") @db.Uuid
   attributeValueId String @map("attribute_value_id") @db.Uuid
-  /* Snapshot tên hiển thị LÚC TẠO (vd "128GB") — đổi tên value gốc sau này không làm sai lệch đơn cũ. */
+  /**
+   * Snapshot tên hiển thị LÚC TẠO (vd "128GB") — đổi tên value gốc sau này không làm sai lệch đơn cũ.
+   */
   displayValue     String @map("display_value") @db.VarChar(100)
 
   variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
@@ -135,7 +159,9 @@ model ProductImage {
   productId String   @map("product_id") @db.Uuid
   url       String   @db.VarChar(500)
   publicId  String?  @map("public_id") @db.VarChar(255)
-  /* Ảnh thuộc màu nào (null = ảnh chung); FE nhảy tới ảnh đúng màu đang chọn. */
+  /**
+   * Ảnh thuộc màu nào (null = ảnh chung); FE nhảy tới ảnh đúng màu đang chọn.
+   */
   colorCode String?  @map("color_code") @db.VarChar(40)
   alt       String?  @db.VarChar(200)
   sortOrder Int      @default(0) @map("sort_order")
@@ -150,7 +176,9 @@ model ProductImage {
   @@schema("product")
 }
 
-/* Phiếu nhập kho — ghi (draft) rồi duyệt (posted) mới cộng tồn; duyệt có Idempotency-Key. */
+/**
+ * Phiếu nhập kho — ghi (draft) rồi duyệt (posted) mới cộng tồn; duyệt có Idempotency-Key.
+ */
 model StockReceipt {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code         String    @unique @db.VarChar(30)
@@ -158,8 +186,10 @@ model StockReceipt {
   note         String?   @db.VarChar(500)
   status       String    @default("draft") @db.VarChar(20)
   totalCost    Decimal   @default(0) @map("total_cost") @db.Decimal(14, 0)
-  /* PLAN-0017 — phiếu của gian hàng nào (vendor tự nhập kho). NULL = phiếu của sàn/FITLY Official (nhân viên sàn lập).
-     Mọi dòng của phiếu shop phải là biến thể có shopId trùng — service kiểm lúc ghi. */
+  /**
+   * PLAN-0017 — phiếu của gian hàng nào (vendor tự nhập kho). NULL = phiếu của sàn/FITLY Official (nhân viên sàn lập).
+   * Mọi dòng của phiếu shop phải là biến thể có shopId trùng — service kiểm lúc ghi.
+   */
   shopId       String?   @map("shop_id") @db.Uuid
   postedAt     DateTime? @map("posted_at") @db.Timestamptz
   postedBy     String?   @map("posted_by") @db.Uuid
@@ -193,7 +223,9 @@ model StockReceiptItem {
   @@schema("product")
 }
 
-/* Sổ kho append-only: mọi biến động tồn (nhập, điều chỉnh, giữ/nhả cho đơn, bán, trả) — truy vết được. */
+/**
+ * Sổ kho append-only: mọi biến động tồn (nhập, điều chỉnh, giữ/nhả cho đơn, bán, trả) — truy vết được.
+ */
 model StockMovement {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId   String   @map("product_id") @db.Uuid

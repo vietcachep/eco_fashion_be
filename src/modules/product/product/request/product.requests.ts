@@ -30,6 +30,7 @@ export class ProductListQuery {
 
 export class AdminProductListQuery extends ProductListQuery {
   @ApiPropertyOptional({ enum: Object.values(PRODUCT_STATUS) }) @IsOptional() @IsIn(Object.values(PRODUCT_STATUS)) status?: string;
+  @ApiPropertyOptional({ description: 'Chỉ hàng của gian hàng này (sàn duyệt theo từng shop)' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }
 
 export class ProductIdsQuery {

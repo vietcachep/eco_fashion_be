@@ -17,7 +17,7 @@ import { ShopProductImageService } from '../service/shop-product-image.service';
  * Multipart field yêu cầu class-validator nếu không ValidationPipe(whitelist) lọc mất.
  */
 class UploadImageBody {
-  @IsOptional() @Matches(/^[a-z0-9-]+$/) @MaxLength(40) colorCode?: string;
+  @IsOptional() @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/i) @MaxLength(40) colorCode?: string;
   @IsOptional() @IsString() @MaxLength(200) alt?: string;
   @IsOptional() @IsString() isPrimary?: string;
 }

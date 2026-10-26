@@ -14,12 +14,16 @@ model Category {
   parentId      String?  @map("parent_id") @db.Uuid
   sortOrder     Int      @default(0) @map("sort_order")
   isActive      Boolean  @default(true) @map("is_active")
-  /* PLAN-0016 — "legacy_fashion": category thời trang hiện có, sản phẩm dùng gender/material/care +
-     ProductVariant.colorCode/sizeCode NHƯ CŨ, không đổi gì. "dynamic": category MỚI, sản phẩm dùng
-     DynamicAttribute/CategoryAttribute + ProductAttributeValue/ProductVariantOption. CHỈ category LÁ
-     (không con) được gán sản phẩm — mode đọc từ chính category lá đó, KHÔNG kế thừa từ cha. */
+  /**
+   * PLAN-0016 — "legacy_fashion": category thời trang hiện có, sản phẩm dùng gender/material/care +
+   * ProductVariant.colorCode/sizeCode NHƯ CŨ, không đổi gì. "dynamic": category MỚI, sản phẩm dùng
+   * DynamicAttribute/CategoryAttribute + ProductAttributeValue/ProductVariantOption. CHỈ category LÁ
+   * (không con) được gán sản phẩm — mode đọc từ chính category lá đó, KHÔNG kế thừa từ cha.
+   */
   attributeMode String   @default("dynamic") @map("attribute_mode") @db.VarChar(20)
-  /* Đếm sản phẩm đang bán — product cập nhật qua gateway khi đăng/ẩn (tránh COUNT mỗi lần hiện menu). */
+  /**
+   * Đếm sản phẩm đang bán — product cập nhật qua gateway khi đăng/ẩn (tránh COUNT mỗi lần hiện menu).
+   */
   productCount  Int      @default(0) @map("product_count")
   version       Int      @default(0)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -38,7 +42,9 @@ model Category {
   @@schema("catalog")
 }
 
-/* Bộ sưu tập = bộ lọc có sẵn (theo FE: bấm vào ra danh sách với query category/gender/tag). */
+/**
+ * Bộ sưu tập = bộ lọc có sẵn (theo FE: bấm vào ra danh sách với query category/gender/tag).
+ */
 model Collection {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug              String   @db.VarChar(120)
@@ -63,7 +69,9 @@ model Collection {
   @@schema("catalog")
 }
 
-/* Thuộc tính dùng cho biến thể/bộ lọc: color (có hex), size (nhóm áo/quần), material. */
+/**
+ * Thuộc tính dùng cho biến thể/bộ lọc: color (có hex), size (nhóm áo/quần), material.
+ */
 model Attribute {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code         String   @unique @db.VarChar(40)
@@ -89,7 +97,9 @@ model AttributeValue {
   attributeId String   @map("attribute_id") @db.Uuid
   code        String   @db.VarChar(40)
   name        String   @db.VarChar(120)
-  /* Màu: mã hex để FE vẽ chấm màu. Size: nhóm (ao | quan). */
+  /**
+   * Màu: mã hex để FE vẽ chấm màu. Size: nhóm (ao | quan).
+   */
   hex         String?  @db.VarChar(9)
   groupCode   String?  @map("group_code") @db.VarChar(20)
   sortOrder   Int      @default(0) @map("sort_order")
@@ -108,14 +118,18 @@ model AttributeValue {
   @@schema("catalog")
 }
 
-/* PLAN-0016 — thuộc tính động cho ngành hàng NGOÀI thời trang (điện tử, gia dụng...). KHÁC hẳn
-   Attribute/AttributeValue ở trên (bị khoá cứng 3 mã color/size/material cho thời trang, model đó GIỮ
-   NGUYÊN, không đụng). Không giới hạn mã, tạo được attribute mới qua API. */
+/**
+ * PLAN-0016 — thuộc tính động cho ngành hàng NGOÀI thời trang (điện tử, gia dụng...). KHÁC hẳn
+ * Attribute/AttributeValue ở trên (bị khoá cứng 3 mã color/size/material cho thời trang, model đó GIỮ
+ * NGUYÊN, không đụng). Không giới hạn mã, tạo được attribute mới qua API.
+ */
 model DynamicAttribute {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code      String   @unique @db.VarChar(60)
   name      String   @db.VarChar(100)
-  /* select: chọn từ DynamicAttributeValue có sẵn | text/number: nhập tay (ProductAttributeValue.customValue). */
+  /**
+   * select: chọn từ DynamicAttributeValue có sẵn | text/number: nhập tay (ProductAttributeValue.customValue).
+   */
   inputType String   @default("select") @map("input_type") @db.VarChar(20)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -131,7 +145,9 @@ model DynamicAttributeValue {
   id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   attributeId String @map("attribute_id") @db.Uuid
   value       String @db.VarChar(100)
-  /* vd {"hex":"#ff0000"} khi attribute là màu — tự do theo inputType, không ép schema cứng. */
+  /**
+   * vd {"hex":"#ff0000"} khi attribute là màu — tự do theo inputType, không ép schema cứng.
+   */
   extra       Json?
   sortOrder   Int    @default(0) @map("sort_order")
 
@@ -142,8 +158,10 @@ model DynamicAttributeValue {
   @@schema("catalog")
 }
 
-/* Mẫu thuộc tính theo ngành hàng (category lá) — category nào cần thuộc tính nào, bắt buộc hay không, có
-   dùng làm trục biến thể hay không. TỐI ĐA 2 dòng isVariantAxis=true / category (validate ở service). */
+/**
+ * Mẫu thuộc tính theo ngành hàng (category lá) — category nào cần thuộc tính nào, bắt buộc hay không, có
+ * dùng làm trục biến thể hay không. TỐI ĐA 2 dòng isVariantAxis=true / category (validate ở service).
+ */
 model CategoryAttribute {
   id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   categoryId    String  @map("category_id") @db.Uuid

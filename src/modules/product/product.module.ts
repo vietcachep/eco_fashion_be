@@ -7,7 +7,6 @@ import { ProductAuditLogService } from './audit/product-audit-log.service';
 import { CatalogUsageProviderImpl } from './gateway/catalog-usage.provider';
 import { InventoryGatewayImpl } from './gateway/inventory.gateway.impl';
 import { ProductStatsGatewayImpl } from './gateway/product-stats.gateway.impl';
-import { AdminProductImageController } from './image/controller/admin-product-image.controller';
 import { ProductImageService } from './image/service/product-image.service';
 import { AdminInventoryController } from './inventory/controller/admin-inventory.controller';
 import { ShopInventoryController } from './inventory/controller/shop-inventory.controller';
@@ -33,7 +32,7 @@ import { ShopStorefrontService } from './storefront/service/shop-storefront.serv
  */
 @Module({
   imports: [CatalogModule, ShopModule],
-  controllers: [ProductController, ShopStorefrontController, AdminProductController, ShopProductController, AdminProductImageController, ShopProductImageController, AdminInventoryController, ShopInventoryController],
+  controllers: [ProductController, ShopStorefrontController, AdminProductController, ShopProductController, ShopProductImageController, AdminInventoryController, ShopInventoryController],
   providers: [
     ProductRepository,
     InventoryRepository,

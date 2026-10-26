@@ -108,8 +108,8 @@ export class ProductService {
 
   // ---------------------------------------------------------------- /admin/products (nhân viên sàn)
 
-  async listAdmin(p: { page: number; size: number; q?: string; category?: string; gender?: string; status?: string; sort?: string }): Promise<PageResponse<ProductCardResponse & { status: string }>> {
-    const { items, total } = await this.repo.list({ publicOnly: false, q: p.q, categorySlug: p.category, gender: p.gender, status: p.status, sort: p.sort as ProductSort | undefined }, (p.page - 1) * p.size, p.size);
+  async listAdmin(p: { page: number; size: number; q?: string; category?: string; gender?: string; status?: string; shopId?: string; sort?: string }): Promise<PageResponse<ProductCardResponse & { status: string }>> {
+    const { items, total } = await this.repo.list({ publicOnly: false, shopId: p.shopId, q: p.q, categorySlug: p.category, gender: p.gender, status: p.status, sort: p.sort as ProductSort | undefined }, (p.page - 1) * p.size, p.size);
     // Quản trị cần biết sản phẩm thuộc gian hàng nào — resolve MỘT lần cho cả trang.
     const briefs = await this.shops.findManyBrief(items.map((r) => r.shopId));
     return PageResponse.of(

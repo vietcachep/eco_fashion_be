@@ -34,7 +34,7 @@ type StockRowSource = Parameters<typeof InventoryService.toStockRow>[0];
  *  - Gateway cho order: reserve (giữ) / release (nhả) / commit (bán: trừ stock lẫn reserved) / restock (trả hàng).
  * Thiếu hàng → InsufficientStockError (danh sách thiếu); gateway giữ nguyên lỗi này cho reserve (placeOrder bắt để trả
  * ORDER_OUT_OF_STOCK 409) và đổi thành BusinessException 409 PRODUCT_INSUFFICIENT_STOCK cho commit/release/restock.
- * Sau commit: xoá cache chi tiết sản phẩm; tồn ≤ ngưỡng → outbox STOCK_LOW (thông báo nhân viên kho).
+ * Sau commit: xoá cache chi tiết sản phẩm; tồn ≤ ngưỡng → outbox STOCK_LOW (thông báo chủ shop).
  *
  * Biến thể bị tắt / xoá mềm SAU khi đơn đã giữ hàng: chỉ `reserve` (đơn mới) đòi biến thể còn bán. release / restock / commit
  * thao tác trên đơn đã tồn tại nên vẫn khoá được biến thể không-active và đã xoá mềm — nếu không, đơn mở không xác nhận/huỷ
@@ -271,7 +271,7 @@ export class InventoryService {
   /* Sau khi đổi tồn: xoá cache chi tiết các sản phẩm liên quan (slug) + outbox STOCK_LOW cho biến thể chạm ngưỡng. */
   private async afterStockChange(productIds: string[], after: Array<{ id: string; sku: string; productId: string; stock: number; reserved: number; isActive?: boolean; isDeleted?: boolean }>, tx: Tx): Promise<void> {
     for (const v of after) {
-      // Biến thể đã tắt/xoá mềm (chỉ gặp khi trừ kho cho đơn cũ) không còn bán → không báo "sắp hết hàng" cho nhân viên kho.
+      // Biến thể đã tắt/xoá mềm (chỉ gặp khi trừ kho cho đơn cũ) không còn bán → không báo "sắp hết hàng" cho chủ shop.
       if (v.isActive !== false && !v.isDeleted && v.stock - v.reserved <= LOW_STOCK_THRESHOLD) {
         await this.outbox.publish(tx, { eventType: PRODUCT_EVENT.STOCK_LOW, aggregateType: 'product_variant', aggregateId: v.id, payload: { variantId: v.id, sku: v.sku, productId: v.productId, available: v.stock - v.reserved } });
       }

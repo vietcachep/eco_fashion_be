@@ -1,13 +1,12 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
-import type { AuthenticatedActor } from '@common/security/authenticated-actor';
-import { CurrentActor, RequirePermission } from '@common/security/decorators';
+import { RequirePermission } from '@common/security/decorators';
 import { StockMovementResponse, StockReceiptResponse, StockRowResponse } from '../dto/inventory.responses';
-import { AdjustStockRequest, CreateReceiptRequest, ReceiptListQuery, StockListQuery } from '../request/inventory.requests';
+import { ReceiptListQuery, StockListQuery } from '../request/inventory.requests';
 import { InventoryService } from '../service/inventory.service';
 
-/* /admin/inventory — bảng tồn, sổ kho, phiếu nhập (lập → duyệt có Idempotency-Key), điều chỉnh kiểm kê. */
+/* /admin/inventory — SÀN chỉ XEM bảng tồn, sổ kho, phiếu nhập; nhập kho / điều chỉnh là việc của chủ shop (/shop/inventory) — PLAN-0021. */
 @ApiTags('admin-inventory')
 @ApiBearerAuth()
 @Controller('admin/inventory')
@@ -42,32 +41,5 @@ export class AdminInventoryController {
   @ApiOkResponse({ type: StockReceiptResponse })
   async receipt(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<StockReceiptResponse>> {
     return ApiResponse.ok(await this.inventory.getReceipt(id));
-  }
-
-  @Post('receipts')
-  @RequirePermission('product.inventory.receive')
-  @ApiOperation({ summary: 'Lập phiếu nhập (nháp, chưa cộng tồn)' })
-  @ApiOkResponse({ type: StockReceiptResponse })
-  async createReceipt(@CurrentActor() actor: AuthenticatedActor, @Body() body: CreateReceiptRequest): Promise<ApiResponse<StockReceiptResponse>> {
-    return ApiResponse.ok(await this.inventory.createReceipt(actor, body), 'Đã lập phiếu nhập');
-  }
-
-  @Post('receipts/:id/post')
-  @HttpCode(HttpStatus.OK)
-  @RequirePermission('product.inventory.receive')
-  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Gửi lại cùng key → không cộng tồn 2 lần' })
-  @ApiOperation({ summary: 'Duyệt phiếu → cộng tồn kho + ghi sổ' })
-  @ApiOkResponse({ type: StockReceiptResponse })
-  async postReceipt(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Headers('idempotency-key') key?: string): Promise<ApiResponse<StockReceiptResponse>> {
-    return ApiResponse.ok(await this.inventory.postReceipt(actor, id, key ?? null), 'Đã duyệt phiếu nhập');
-  }
-
-  @Post('adjust')
-  @HttpCode(HttpStatus.OK)
-  @RequirePermission('product.inventory.adjust')
-  @ApiOperation({ summary: 'Điều chỉnh tồn (kiểm kê / hư hỏng) — có lý do, ghi sổ' })
-  @ApiOkResponse({ type: StockRowResponse })
-  async adjust(@CurrentActor() actor: AuthenticatedActor, @Body() body: AdjustStockRequest): Promise<ApiResponse<StockRowResponse>> {
-    return ApiResponse.ok(await this.inventory.adjust(actor, body), 'Đã điều chỉnh tồn kho');
   }
 }
