@@ -1,0 +1,84 @@
+name: CI
+
+# Cổng chất lượng của backend: giống `npm run verify` ở máy dev + kiểm migration trên DB TRỐNG (đúng cách một môi trường mới sẽ dựng).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Push mới huỷ lượt chạy cũ của cùng nhánh/PR — không tốn phút runner cho commit đã bị thay thế.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: lint · ranh giới module · build · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall chạy `prisma generate` (không cần DB) nên client Prisma có sẵn trước lint/build.
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # dependency-cruiser: chặn import chéo module ngoài queryapi/gateway/enums/security và vòng phụ thuộc.
+      - name: Ranh giới module
+        run: npm run check:boundaries
+
+      - name: Build
+        run: npm run build
+
+      # Test đơn vị dùng mock/DB giả — không cần Postgres/Redis (xem test/jest.setup.ts).
+      - name: Test
+        run: npm test
+
+  migrations:
+    name: migration trên DB trống · không lệch schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        # pgvector: schema `ai` dùng cột vector (cùng image với docker-compose.yml).
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecofashion
+          POSTGRES_PASSWORD: ecofashion
+          POSTGRES_DB: ecofashion
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ecofashion -d ecofashion"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EF_DATABASE_URL: postgresql://ecofashion:ecofashion@localhost:5432/ecofashion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `migrate deploy` áp toàn bộ migration lên DB trống rồi `migrate diff --exit-code` đòi KHÔNG còn khác biệt với prisma/schema
+      # (bắt trường hợp sửa schema mà quên tạo migration, hoặc migration viết tay lệch schema).
+      - name: Migration + kiểm lệch schema
+        run: npm run migration:check
+
+      - name: Kiểm dữ liệu seed (thuần dữ liệu, không cần DB)
+        run: npm run seed:validate
