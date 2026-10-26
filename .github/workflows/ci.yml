@@ -22,9 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24 (khớp máy dev): NestJS 12 là gói ESM; Jest chỉ `require()` được gói ESM từ Node 24.9 (trên Node 22 hầu hết bộ test báo
+      # "Must use import to load ES Module"). Image production vẫn chạy Node 22 (`node dist/...` tự require được ESM) — chỉ phần test cần 24.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       # postinstall chạy `prisma generate` (không cần DB) nên client Prisma có sẵn trước lint/build.
@@ -70,7 +72,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
