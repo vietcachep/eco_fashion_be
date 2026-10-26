@@ -62,7 +62,7 @@ export class SystemPublicController {
 
   @Public() @RateLimit({ name: 'contact', limit: 5, windowSeconds: 3600, by: 'ip' }) @Post('contact') @ApiOperation({ summary: 'Gửi liên hệ (FE /contact)' })
   async contact(@Body() body: ContactRequest): Promise<ApiResponse<{ id: string }>> {
-    return ApiResponse.ok(await this.content.submitContact({ name: body.name.trim(), email: body.email, phone: body.phone ?? null, message: body.message.trim() }), 'Đã nhận liên hệ, chúng tôi sẽ phản hồi sớm');
+    return ApiResponse.ok(await this.content.submitContact({ name: body.name.trim(), email: body.email, phone: body.phone ?? null, message: body.message.trim(), shopId: body.shopId, shopSlug: body.shopSlug, orderCode: body.orderCode, productName: body.productName }), 'Đã nhận liên hệ, chúng tôi sẽ phản hồi sớm');
   }
 }
 
@@ -154,12 +154,12 @@ export class AdminSystemController {
     return ApiResponse.ok({ sent: await this.notifications.broadcast(actor, { userIds: body.userIds, title: body.title, content: body.content ?? null, link: body.link ?? null }) }, 'Đã gửi thông báo');
   }
 
-  @Get('contacts') @RequirePermission('system.notification.send')
+  @Get('contacts') @RequirePermission('system.contact.read')
   async contacts(@Query() q: ContactListQuery): Promise<ApiResponse<PageResponse<ContactResponse>>> {
-    return ApiResponse.ok(await this.content.listContacts(q.page, q.size, q.status));
+    return ApiResponse.ok(await this.content.listContacts(q.page, q.size, { status: q.status, scope: q.scope, shopId: q.shopId }));
   }
 
-  @Post('contacts/:id/reply') @HttpCode(HttpStatus.OK) @RequirePermission('system.notification.send')
+  @Post('contacts/:id/reply') @HttpCode(HttpStatus.OK) @RequirePermission('system.contact.reply')
   async replyContact(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Body() body: ReplyContactRequest): Promise<ApiResponse<ContactResponse>> {
     return ApiResponse.ok(await this.content.replyContact(actor, id, body.reply.trim()), 'Đã gửi phản hồi');
   }

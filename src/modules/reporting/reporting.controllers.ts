@@ -61,7 +61,7 @@ export class AdminReportingController {
     return ApiResponse.ok(await this.reports.inventorySummary());
   }
 
-  @Post('recompute') @HttpCode(HttpStatus.OK) @RequirePermission('reporting.revenue.read') @ApiOperation({ summary: 'Tính lại daily_sales cho khoảng ngày (tối đa 400 ngày)' })
+  @Post('recompute') @HttpCode(HttpStatus.OK) @RequirePermission('system.setting.update') @ApiOperation({ summary: 'Tính lại daily_sales cho khoảng ngày (tối đa 400 ngày)' })
   async recompute(@Body() body: RecomputeRequest): Promise<ApiResponse<{ days: number }>> {
     return ApiResponse.ok({ days: await this.reports.recomputeRange(body.from, body.to) }, 'Đã tính lại số liệu');
   }

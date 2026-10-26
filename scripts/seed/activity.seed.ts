@@ -1127,9 +1127,9 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   const promos = await loadPromos(prisma);
   const usedByPromo = new Map(promos.map((p) => [p.id, p.usedCount]));
   const usedByUser = new Map<string, number>();
-  const staffUsers = await prisma.user.findMany({ where: { email: { in: ['sales@ecofashion.vn', 'warehouse@ecofashion.vn', 'accountant@ecofashion.vn'] }, isDeleted: false }, select: { id: true, email: true } });
+  const staffUsers = await prisma.user.findMany({ where: { email: { in: ['sales@ecofashion.vn', 'accountant@ecofashion.vn'] }, isDeleted: false }, select: { id: true, email: true } });
   const staffId = (email: string): string | null => staffUsers.find((s) => s.email === email)?.id ?? null;
-  const staff = { sales: staffId('sales@ecofashion.vn'), warehouse: staffId('warehouse@ecofashion.vn'), accountant: staffId('accountant@ecofashion.vn') };
+  const staff = { sales: staffId('sales@ecofashion.vn'), warehouse: staffId('sales@ecofashion.vn'), accountant: staffId('accountant@ecofashion.vn') };
 
   const customers = await loadCustomers(prisma, provinces);
   if (customers.length === 0) throw new Error('Không có khách nào để đặt đơn — chạy identity.seed trước');

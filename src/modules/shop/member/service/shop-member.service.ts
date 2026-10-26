@@ -8,7 +8,8 @@ import { IdentityApplicationApi } from '@modules/identity/applicationapi/identit
 import { IdentityQueryApi } from '@modules/identity/queryapi/identity.queryapi';
 import { USER_STATUS } from '@modules/identity/user/enums/user-status';
 import { ShopAuditLogService } from '../../audit/shop-audit-log.service';
-import { SHOP_AUDIT, SHOP_ERR, SHOP_EVENT, SHOP_MEMBER_ELIGIBLE_PLATFORM_ROLE, SHOP_MEMBER_MAX_ACTIVE, SHOP_MEMBER_STATUS, SHOP_OWNER_ROLE_CODE } from '../../foundation/shop.constants';
+import { Prisma } from '@common/prisma/types';
+import { SHOP_ASSIGNABLE_PERMISSIONS, SHOP_AUDIT, SHOP_ERR, SHOP_EVENT, SHOP_MEMBER_ELIGIBLE_PLATFORM_ROLE, SHOP_MEMBER_MAX_ACTIVE, SHOP_MEMBER_STATUS, SHOP_OWNER_ROLE_CODE } from '../../foundation/shop.constants';
 import { ShopOutboxService } from '../../outbox/shop-outbox.service';
 import { AddShopMemberResponse, ShopMemberResponse } from '../dto/shop-member.responses';
 import { toShopMemberResponse } from '../mapper/shop-member.mapper';
@@ -47,9 +48,11 @@ export class ShopMemberService {
 
   async list(actor: AuthenticatedActor, shopId: string, page: number, size: number): Promise<PageResponse<ShopMemberResponse>> {
     const { items, total } = await this.repo.listOfShop(shopId, (page - 1) * size, size);
-    const [users, roles] = await Promise.all([this.identity.findUserBriefs(items.map((i) => i.userId)), this.identity.findRoleBriefs(items.map((i) => i.roleId))]);
+    const roleIds = [...new Set(items.map((i) => i.roleId))];
+    const [users, roles, roleCtx] = await Promise.all([this.identity.findUserBriefs(items.map((i) => i.userId)), this.identity.findRoleBriefs(roleIds), Promise.all(roleIds.map(async (id) => [id, (await this.identity.shopRoleContext(id))?.permissionCodes ?? []] as const))]);
+    const presets = new Map(roleCtx);
     return PageResponse.of(
-      items.map((i) => toShopMemberResponse(i, users.get(i.userId), roles.get(i.roleId), actor.userId)),
+      items.map((i) => toShopMemberResponse(i, users.get(i.userId), roles.get(i.roleId), actor.userId, presets.get(i.roleId))),
       page,
       size,
       total,
@@ -114,12 +117,33 @@ export class ShopMemberService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const member = await this.lockOwnersThenLoad(shopId, memberId, ownerRoleId, tx);
       await this.assertNotLastOwner(shopId, member, ownerRoleId, newRole.id, 'Gian hàng phải luôn có ít nhất một chủ đang hoạt động', tx);
-      const m = await this.repo.update(member.id, { roleId: newRole.id, updatedBy: actor.userId }, tx);
+      const m = await this.repo.update(member.id, { roleId: newRole.id, customPermissions: Prisma.DbNull, updatedBy: actor.userId }, tx); // đổi vai ⇒ bỏ quyền riêng cũ
       await this.audit.write(tx, actor, { action: SHOP_AUDIT.MEMBER_UPDATED, entityType: 'shop_member', entityId: m.id, before: { roleId: member.roleId }, after: { roleId: newRole.id, roleCode: newRole.code } });
       return m;
     });
     const user = await this.identity.findUserBrief(updated.userId);
-    return toShopMemberResponse(updated, user ?? undefined, { code: newRole.code, name: newRole.name }, actor.userId);
+    return toShopMemberResponse(updated, user ?? undefined, { code: newRole.code, name: newRole.name }, actor.userId, (await this.identity.shopRoleContext(newRole.id))?.permissionCodes);
+  }
+
+  /*
+   * Chủ shop tự đặt quyền cho một nhân viên CỦA CHÍNH shop mình (PUT /shop/members/:id/permissions). `permissionCodes` null = quay về preset của vai.
+   * Chỉ mã trong SHOP_ASSIGNABLE_PERMISSIONS; không đặt được cho chủ (chủ luôn đủ quyền chủ). Sàn không có đường nào sửa việc này.
+   */
+  async updatePermissions(actor: AuthenticatedActor, shopId: string, memberId: string, codes: string[] | null): Promise<ShopMemberResponse> {
+    const unique = codes ? [...new Set(codes)] : null;
+    const bad = unique?.filter((c) => !SHOP_ASSIGNABLE_PERMISSIONS.includes(c));
+    if (bad && bad.length > 0) throw new BusinessException(SHOP_ERR.FORBIDDEN, `Không giao được các quyền: ${bad.join(', ')}`);
+    const ownerRoleId = await this.ownerRoleId();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const member = await this.repo.findByIdInShop(memberId, shopId, tx);
+      if (!member || member.status !== SHOP_MEMBER_STATUS.ACTIVE) throw new NotFoundException(SHOP_ERR.MEMBER_NOT_FOUND, 'Không tìm thấy nhân viên trong gian hàng');
+      if (member.roleId === ownerRoleId) throw new BusinessException(SHOP_ERR.FORBIDDEN, 'Chủ gian hàng luôn có đủ quyền chủ — không đặt quyền riêng được');
+      const m = await this.repo.update(member.id, { customPermissions: unique ?? Prisma.DbNull, updatedBy: actor.userId }, tx);
+      await this.audit.write(tx, actor, { action: SHOP_AUDIT.MEMBER_UPDATED, entityType: 'shop_member', entityId: m.id, before: { customPermissions: member.customPermissions }, after: { customPermissions: unique } });
+      return m;
+    });
+    const [user, roles, ctx] = await Promise.all([this.identity.findUserBrief(updated.userId), this.identity.findRoleBriefs([updated.roleId]), this.identity.shopRoleContext(updated.roleId)]);
+    return toShopMemberResponse(updated, user ?? undefined, roles.get(updated.roleId), actor.userId, ctx?.permissionCodes);
   }
 
   async remove(actor: AuthenticatedActor, shopId: string, memberId: string): Promise<void> {

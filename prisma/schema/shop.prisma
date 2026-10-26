@@ -10,43 +10,43 @@
 /// Gian hàng. status/commissionRate do sàn quản (AdminShopController); profile do chính vendor
 /// sửa (ShopController, quyền shop.profile.update, shopId luôn suy từ ShopMember — không nhận qua param).
 model Shop {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code           String   @unique @db.VarChar(20)
-  slug           String   @unique @db.VarChar(160)
-  name           String   @db.VarChar(200)
-  logoUrl        String?  @map("logo_url") @db.VarChar(500)
-  bannerUrl      String?  @map("banner_url") @db.VarChar(500)
-  description    String?  @db.VarChar(2000)
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String   @unique @db.VarChar(20)
+  slug              String   @unique @db.VarChar(160)
+  name              String   @db.VarChar(200)
+  logoUrl           String?  @map("logo_url") @db.VarChar(500)
+  bannerUrl         String?  @map("banner_url") @db.VarChar(500)
+  description       String?  @db.VarChar(2000)
   /**
    * pending | approved | suspended | rejected — SHOP_STATUS (foundation/shop.constants.ts), lưới chuyển ở SHOP_TRANSITIONS.
    */
-  status         String   @default("pending") @db.VarChar(20)
+  status            String   @default("pending") @db.VarChar(20)
   /**
    * % hoa hồng sàn thu — đóng băng vào Order.commissionRateSnapshot lúc đặt hàng (PLAN-0014 bước 7, chưa làm ở đây).
    */
-  commissionRate Decimal  @default(10.00) @map("commission_rate") @db.Decimal(5, 2)
+  commissionRate    Decimal  @default(10.00) @map("commission_rate") @db.Decimal(5, 2)
   /**
    * PLAN-0017 — tài khoản ngân hàng nhận tiền đối soát (payout). Vendor tự khai ở hồ sơ shop; sàn xác minh ngoài hệ thống.
    * bankCode = BIN ngân hàng chuẩn Napas/PayOS (6 số) — dùng làm `toBin` khi chi tiền.
    */
-  bankCode          String? @map("bank_code") @db.VarChar(20)
-  bankAccountNumber String? @map("bank_account_number") @db.VarChar(30)
-  bankAccountName   String? @map("bank_account_name") @db.VarChar(120)
-  ratingAvg      Decimal? @map("rating_avg") @db.Decimal(3, 2)
+  bankCode          String?  @map("bank_code") @db.VarChar(20)
+  bankAccountNumber String?  @map("bank_account_number") @db.VarChar(30)
+  bankAccountName   String?  @map("bank_account_name") @db.VarChar(120)
+  ratingAvg         Decimal? @map("rating_avg") @db.Decimal(3, 2)
   /**
    * Denormalized — cập nhật qua outbox listener từ product khi module product làm xong (bước 5), chưa dùng ở đây.
    */
-  totalProducts  Int      @default(0) @map("total_products")
+  totalProducts     Int      @default(0) @map("total_products")
   /**
    * id User (identity schema) đứng tên đăng ký gian hàng — không FK xuyên schema.
    */
-  ownerUserId    String   @map("owner_user_id") @db.Uuid
-  version        Int      @default(0)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
-  createdBy      String?  @map("created_by") @db.Uuid
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  updatedBy      String?  @map("updated_by") @db.Uuid
-  isDeleted      Boolean  @default(false) @map("is_deleted")
+  ownerUserId       String   @map("owner_user_id") @db.Uuid
+  version           Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy         String?  @map("created_by") @db.Uuid
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy         String?  @map("updated_by") @db.Uuid
+  isDeleted         Boolean  @default(false) @map("is_deleted")
 
   members ShopMember[]
 
@@ -61,18 +61,22 @@ model Shop {
 /// Miễn cột base đầy đủ (giống role_permissions — AGENTS.md Base Columns Rule): "gỡ" nhân viên đặt status=removed
 /// để giữ lịch sử ai từng thuộc gian hàng, không xoá cứng; không cần version (không có sửa nhiều trường tranh chấp).
 model ShopMember {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shopId    String   @map("shop_id") @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  roleId    String   @map("role_id") @db.Uuid
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId            String   @map("shop_id") @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  roleId            String   @map("role_id") @db.Uuid
+  /**
+   * Quyền riêng do CHỦ SHOP đặt cho nhân viên (mảng mã shop.*); null = dùng preset của vai. Chỉ áp cho vai shop_staff — chủ luôn đủ quyền chủ.
+   */
+  customPermissions Json?    @map("custom_permissions")
   /**
    * active | removed
    */
-  status    String   @default("active") @db.VarChar(20)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  createdBy String?  @map("created_by") @db.Uuid
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  updatedBy String?  @map("updated_by") @db.Uuid
+  status            String   @default("active") @db.VarChar(20)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy         String?  @map("created_by") @db.Uuid
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy         String?  @map("updated_by") @db.Uuid
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 

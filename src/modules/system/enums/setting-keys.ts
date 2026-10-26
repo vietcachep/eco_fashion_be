@@ -14,4 +14,7 @@ export const SETTING_KEY = {
   CART_MAX_QTY_PER_LINE: 'cart.max_qty_per_line',
   /* PLAN-0018: bật/tắt cron chi trả tự động hằng ngày (02:00 Asia/Ho_Chi_Minh). */
   PAYOUT_AUTO_ENABLED: 'payout.auto_enabled',
+  /* PLAN-0020: ví đặt cọc COD — số tiền nộp tối thiểu mỗi lần và hướng dẫn chuyển khoản cho shop. */
+  WALLET_MIN_DEPOSIT: 'wallet.min_deposit',
+  WALLET_DEPOSIT_INSTRUCTIONS: 'wallet.deposit_instructions',
 } as const;

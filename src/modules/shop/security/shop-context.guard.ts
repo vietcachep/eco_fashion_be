@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/commo
 import { Reflector } from '@nestjs/core';
 import { ForbiddenException, UnauthorizedException } from '@common/exception/business.exception';
 import { IdentityQueryApi } from '@modules/identity/queryapi/identity.queryapi';
-import { SHOP_ERR, SHOP_STATUS } from '../foundation/shop.constants';
+import { effectiveShopPermissions, SHOP_ERR, SHOP_STATUS } from '../foundation/shop.constants';
 import { ShopMemberRepository } from '../member/repository/shop-member.repository';
 import { ShopRepository } from '../shop/repository/shop.repository';
 import { RequestWithShop, SHOP_ANY_STATUS_KEY, SHOP_PERMISSIONS_KEY } from './shop-permission.decorator';
@@ -52,9 +52,10 @@ export class ShopContextGuard implements CanActivate {
       throw new ForbiddenException(SHOP_ERR.ROLE_INVALID, 'Vai của bạn trong gian hàng không hợp lệ');
     }
 
+    const permissionCodes = effectiveShopPermissions(role.code, role.permissionCodes, member.customPermissions);
     const required = this.reflector.getAllAndOverride<string[]>(SHOP_PERMISSIONS_KEY, [ctx.getHandler(), ctx.getClass()]);
     if (required && required.length > 0) {
-      const owned = new Set(role.permissionCodes);
+      const owned = new Set(permissionCodes);
       const missing = required.filter((c) => !owned.has(c));
       if (missing.length > 0) {
         this.logger.warn({ userId: actor.userId, shopId: shop.id, missing }, 'Thiếu quyền shop');
@@ -62,7 +63,7 @@ export class ShopContextGuard implements CanActivate {
       }
     }
 
-    req.shop = { shopId: shop.id, shopCode: shop.code, shopName: shop.name, shopStatus: shop.status, memberId: member.id, roleId: member.roleId, roleCode: role.code, roleName: role.name, permissionCodes: [...role.permissionCodes] };
+    req.shop = { shopId: shop.id, shopCode: shop.code, shopName: shop.name, shopStatus: shop.status, memberId: member.id, roleId: member.roleId, roleCode: role.code, roleName: role.name, permissionCodes };
     return true;
   }
 }

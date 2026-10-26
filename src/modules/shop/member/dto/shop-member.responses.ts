@@ -12,6 +12,8 @@ export class ShopMemberResponse {
   @ApiProperty() roleId: string;
   @ApiProperty({ example: 'shop_owner' }) roleCode: string;
   @ApiProperty({ example: 'Chủ gian hàng' }) roleName: string;
+  @ApiProperty({ type: [String], description: 'Quyền hiệu lực của thành viên (chủ = đủ quyền chủ; nhân viên = quyền chủ shop đã đặt hoặc preset vai)' }) permissionCodes: string[];
+  @ApiProperty({ description: 'true = chủ shop đã tự đặt quyền riêng cho nhân viên này (không theo preset vai)' }) customPermissions: boolean;
   @ApiProperty({ example: 'active' }) status: string;
   @ApiProperty({ description: 'true nếu dòng này chính là người đang gọi API (để hiện "Bạn"/nút rời gian hàng)' }) isSelf: boolean;
   @ApiProperty() createdAt: string;

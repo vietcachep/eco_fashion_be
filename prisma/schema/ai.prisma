@@ -5,27 +5,33 @@
 // =====================================================================
 
 model ProductEmbedding {
-  productId  String                    @id @map("product_id") @db.Uuid
-  productSlug String                   @map("product_slug") @db.VarChar(160)
-  /* text-embedding-3-small: 1536 chiều. Prisma chưa hỗ trợ index HNSW → quét tuần tự (đủ cho vài trăm sản phẩm); lớn hơn thì tạo index ngoài Prisma (docs/03). */
-  embedding  Unsupported("vector(1536)")?
-  sourceHash String                    @map("source_hash") @db.VarChar(64)
-  model      String                    @db.VarChar(60)
-  status     String                    @default("pending") @db.VarChar(20)
-  error      String?                   @db.VarChar(500)
-  updatedAt  DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  productId   String                       @id @map("product_id") @db.Uuid
+  productSlug String                       @map("product_slug") @db.VarChar(160)
+  /**
+   * text-embedding-3-small: 1536 chiều. Prisma chưa hỗ trợ index HNSW → quét tuần tự (đủ cho vài trăm sản phẩm); lớn hơn thì tạo index ngoài Prisma (docs/03).
+   */
+  embedding   Unsupported("vector(1536)")?
+  sourceHash  String                       @map("source_hash") @db.VarChar(64)
+  model       String                       @db.VarChar(60)
+  status      String                       @default("pending") @db.VarChar(20)
+  error       String?                      @db.VarChar(500)
+  updatedAt   DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([status])
   @@map("product_embeddings")
   @@schema("ai")
 }
 
-/* Kho tri thức admin nhập (chính sách, FAQ, hướng dẫn size…) — cắt đoạn + nhúng nền → ngữ cảnh RAG cho chatbot. */
+/**
+ * Kho tri thức admin nhập (chính sách, FAQ, hướng dẫn size…) — cắt đoạn + nhúng nền → ngữ cảnh RAG cho chatbot.
+ */
 model AiDocument {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title     String   @db.VarChar(200)
   content   String
-  /* policy | faq | guide | product */
+  /**
+   * policy | faq | guide | product
+   */
   kind      String   @default("policy") @db.VarChar(20)
   status    String   @default("pending") @db.VarChar(20)
   error     String?  @db.VarChar(500)
@@ -44,12 +50,12 @@ model AiDocument {
 }
 
 model AiDocumentChunk {
-  id         String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  documentId String                    @map("document_id") @db.Uuid
-  chunkIndex Int                       @map("chunk_index")
+  id         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId String                       @map("document_id") @db.Uuid
+  chunkIndex Int                          @map("chunk_index")
   content    String
   embedding  Unsupported("vector(1536)")?
-  createdAt  DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  createdAt  DateTime                     @default(now()) @map("created_at") @db.Timestamptz
 
   document AiDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -58,7 +64,9 @@ model AiDocumentChunk {
   @@schema("ai")
 }
 
-/* Phiên chat — khách đăng nhập (user_id) hoặc khách vãng lai (guest_key cookie). Dọn sau EF_CHAT_SESSION_RETENTION_DAYS. */
+/**
+ * Phiên chat — khách đăng nhập (user_id) hoặc khách vãng lai (guest_key cookie). Dọn sau EF_CHAT_SESSION_RETENTION_DAYS.
+ */
 model ChatSession {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String?   @map("user_id") @db.Uuid
@@ -77,20 +85,28 @@ model ChatSession {
 }
 
 model ChatMessage {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionId String   @map("session_id") @db.Uuid
-  /* user | assistant | tool */
-  role      String   @db.VarChar(20)
-  content   String
-  /* id sản phẩm gợi ý kèm câu trả lời */
-  productIds Json    @default("[]") @map("product_ids")
-  /* Nguồn trả lời: llm | rule (đường lùi) */
-  source    String   @default("rule") @db.VarChar(10)
-  tokensIn  Int      @default(0) @map("tokens_in")
-  tokensOut Int      @default(0) @map("tokens_out")
-  /* {tools[], misses[], suggestions[], actions[], supportRequestId, guard, contextProductSlug, actionResult} */
-  meta      Json?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String   @map("session_id") @db.Uuid
+  /**
+   * user | assistant | tool
+   */
+  role       String   @db.VarChar(20)
+  content    String
+  /**
+   * id sản phẩm gợi ý kèm câu trả lời
+   */
+  productIds Json     @default("[]") @map("product_ids")
+  /**
+   * Nguồn trả lời: llm | rule (đường lùi)
+   */
+  source     String   @default("rule") @db.VarChar(10)
+  tokensIn   Int      @default(0) @map("tokens_in")
+  tokensOut  Int      @default(0) @map("tokens_out")
+  /**
+   * {tools[], misses[], suggestions[], actions[], supportRequestId, guard, contextProductSlug, actionResult}
+   */
+  meta       Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -99,7 +115,9 @@ model ChatMessage {
   @@schema("ai")
 }
 
-/* Chatbot không trả lời được / khách muốn gặp người → nhân viên (ai.support.read) xử lý. */
+/**
+ * Chatbot không trả lời được / khách muốn gặp người → nhân viên (ai.support.read) xử lý.
+ */
 model SupportRequest {
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   sessionId  String?   @map("session_id") @db.Uuid
@@ -118,7 +136,9 @@ model SupportRequest {
   @@schema("ai")
 }
 
-/* Cổng chi phí: mọi lần gọi AI ghi một dòng; EF_AI_DAILY_TOKEN_BUDGET chặn khi vượt. */
+/**
+ * Cổng chi phí: mọi lần gọi AI ghi một dòng; EF_AI_DAILY_TOKEN_BUDGET chặn khi vượt.
+ */
 model AiUsageLog {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   feature      String   @db.VarChar(40)
@@ -138,7 +158,9 @@ model AiUsageLog {
   @@schema("ai")
 }
 
-/* Thử đồ 2D: ảnh người (Cloudinary) + ảnh sản phẩm → Replicate IDM-VTON → ảnh kết quả. Job nền, FE poll. */
+/**
+ * Thử đồ 2D: ảnh người (Cloudinary) + ảnh sản phẩm → Replicate IDM-VTON → ảnh kết quả. Job nền, FE poll.
+ */
 model TryOnJob {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId          String?   @map("user_id") @db.Uuid
@@ -148,9 +170,13 @@ model TryOnJob {
   garmentImageUrl String    @map("garment_image_url") @db.VarChar(500)
   personImageUrl  String    @map("person_image_url") @db.VarChar(500)
   personPublicId  String?   @map("person_public_id") @db.VarChar(255)
-  /* top | bottom | dress — IDM-VTON category */
+  /**
+   * top | bottom | dress — IDM-VTON category
+   */
   category        String    @default("upper_body") @db.VarChar(20)
-  /* queued | processing | done | failed */
+  /**
+   * queued | processing | done | failed
+   */
   status          String    @default("queued") @db.VarChar(20)
   providerJobId   String?   @map("provider_job_id") @db.VarChar(120)
   resultUrl       String?   @map("result_url") @db.VarChar(500)
@@ -167,14 +193,18 @@ model TryOnJob {
   @@schema("ai")
 }
 
-/* Phân tích ảnh người → dáng, màu hợp, phong cách, sản phẩm gợi ý (OpenAI vision; lùi = rule theo giới/ngành). */
+/**
+ * Phân tích ảnh người → dáng, màu hợp, phong cách, sản phẩm gợi ý (OpenAI vision; lùi = rule theo giới/ngành).
+ */
 model StyleAnalysis {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String?  @map("user_id") @db.Uuid
   guestKey      String?  @map("guest_key") @db.VarChar(64)
   imageUrl      String   @map("image_url") @db.VarChar(500)
   imagePublicId String?  @map("image_public_id") @db.VarChar(255)
-  /* {dangNguoi, mauPhuHop[], phongCach, tuVan, gender, categories[]} */
+  /**
+   * {dangNguoi, mauPhuHop[], phongCach, tuVan, gender, categories[]}
+   */
   result        Json
   productIds    Json     @default("[]") @map("product_ids")
   source        String   @default("rule") @db.VarChar(10)
@@ -198,7 +228,9 @@ model ReviewSummary {
   @@schema("ai")
 }
 
-/* Nhãn kiểm duyệt AI cho đánh giá — chỉ ĐỀ XUẤT, nhân viên quyết (review.review.moderate). */
+/**
+ * Nhãn kiểm duyệt AI cho đánh giá — chỉ ĐỀ XUẤT, nhân viên quyết (review.review.moderate).
+ */
 model ModerationFlag {
   reviewId  String   @id @map("review_id") @db.Uuid
   label     String   @db.VarChar(20)
@@ -212,19 +244,21 @@ model ModerationFlag {
   @@schema("ai")
 }
 
-/*
+/**
  * Tín hiệu hành vi (khách xem/thêm giỏ) cho gợi ý + đo hiệu quả dải gợi ý (impression/click kèm `source`)
  * — dọn sau EF_VIEW_EVENT_RETENTION_DAYS. `event_type` CHECK view|add_to_cart|click|impression (migration).
  */
 model ProductViewEvent {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String?  @map("user_id") @db.Uuid
-  guestKey   String?  @map("guest_key") @db.VarChar(64)
-  productId  String   @map("product_id") @db.Uuid
-  eventType  String   @default("view") @map("event_type") @db.VarChar(15)
-  /* Nguồn dải gợi ý: for_you | similar | bought_together | cart | chat | collection | search | compare */
-  source     String?  @db.VarChar(30)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  guestKey  String?  @map("guest_key") @db.VarChar(64)
+  productId String   @map("product_id") @db.Uuid
+  eventType String   @default("view") @map("event_type") @db.VarChar(15)
+  /**
+   * Nguồn dải gợi ý: for_you | similar | bought_together | cart | chat | collection | search | compare
+   */
+  source    String?  @db.VarChar(30)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([productId, createdAt(sort: Desc)])
@@ -233,13 +267,19 @@ model ProductViewEvent {
   @@schema("ai")
 }
 
-/* FAQ tự sinh cho sản phẩm (LLM viết 3–6 hỏi-đáp từ mô tả + đánh giá) — đọc lười: thiếu/lệch hash → job nền, trả bản cũ. */
+/**
+ * FAQ tự sinh cho sản phẩm (LLM viết 3–6 hỏi-đáp từ mô tả + đánh giá) — đọc lười: thiếu/lệch hash → job nền, trả bản cũ.
+ */
 model ProductFaq {
   productId  String   @id @map("product_id") @db.Uuid
-  /* [{question, answer}] */
+  /**
+   * [{question, answer}]
+   */
   items      Json     @default("[]")
   sourceHash String   @map("source_hash") @db.VarChar(64)
-  /* ready | pending | failed | none */
+  /**
+   * ready | pending | failed | none
+   */
   status     String   @default("pending") @db.VarChar(20)
   model      String?  @db.VarChar(80)
   error      String?  @db.VarChar(500)

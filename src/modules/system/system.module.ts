@@ -11,13 +11,16 @@ import { SystemQueryApi } from './queryapi/system.queryapi';
 import { SettingService } from './setting/service/setting.service';
 import { AdminSystemController, NotificationController, SystemPublicController } from './system.controllers';
 import { UploadController } from './upload/upload.controller';
+import { ShopModule } from '../shop/shop.module';
+import { ShopContactsController } from './content/controller/shop-contacts.controller';
 
 /*
  * Module system (PLAN-0010): health, tham số vận hành, tỉnh/thành + phí ship, banner, thông báo trong-app (cài
  * NotificationGateway), liên hệ, FAQ, trang chính sách, upload ảnh dùng chung (/uploads/media). Export: SystemQueryApi + NOTIFICATION_GATEWAY.
  */
 @Module({
-  controllers: [HealthController, SystemPublicController, NotificationController, AdminSystemController, UploadController],
+  imports: [ShopModule],
+  controllers: [HealthController, SystemPublicController, NotificationController, AdminSystemController, UploadController, ShopContactsController],
   providers: [
     HealthService,
     SystemAuditLogService,

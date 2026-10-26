@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor, Public, RequirePermission } from '@common/security/decorators';
@@ -30,13 +30,11 @@ class ReviewListQuery extends PageQuery {
 class AdminReviewListQuery extends ReviewListQuery {
   @ApiPropertyOptional({ enum: ['pending', 'approved', 'hidden'] }) @IsOptional() @IsIn(['pending', 'approved', 'hidden']) status?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100) q?: string;
+  @ApiPropertyOptional({ description: 'Chỉ đánh giá về sản phẩm của gian hàng này' }) @IsOptional() @IsUUID('loose') shopId?: string;
 }
 class ModerateRequest {
   @ApiProperty({ enum: ['approved', 'hidden'] }) @IsIn(['approved', 'hidden']) status: 'approved' | 'hidden';
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(500) note?: string;
-}
-class ReplyRequest {
-  @ApiProperty() @IsString() @Length(2, 2000) content: string;
 }
 
 /* Công khai: đánh giá của sản phẩm; đăng nhập: điều kiện, viết, đánh giá của tôi (docs/06 mục review). */
@@ -85,16 +83,11 @@ export class AdminReviewController {
 
   @Get() @RequirePermission('review.review.read')
   async list(@Query() q: AdminReviewListQuery): Promise<ApiResponse<PageResponse<ReviewAdminResponse>>> {
-    return ApiResponse.ok(await this.reviews.listAdmin(q.page, q.size, { status: q.status, rating: q.rating, q: q.q }));
+    return ApiResponse.ok(await this.reviews.listAdmin(q.page, q.size, { status: q.status, rating: q.rating, q: q.q, shopId: q.shopId }));
   }
 
   @Put(':id/moderate') @RequirePermission('review.review.moderate') @ApiOperation({ summary: 'Ẩn / hiện đánh giá (ghi lý do)' })
   async moderate(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Body() body: ModerateRequest): Promise<ApiResponse<ReviewAdminResponse>> {
     return ApiResponse.ok(await this.reviews.moderate(actor, id, body.status, body.note), body.status === 'hidden' ? 'Đã ẩn đánh giá' : 'Đã hiện đánh giá');
-  }
-
-  @Post(':id/reply') @HttpCode(HttpStatus.OK) @RequirePermission('review.review.reply') @ApiOperation({ summary: 'Nhân viên sàn trả lời thay cửa hàng (một trả lời / đánh giá, gọi lại = sửa); hiện công khai dưới tên "Sàn FITLY", không lộ họ tên nhân viên' })
-  async reply(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Body() body: ReplyRequest): Promise<ApiResponse<ReviewAdminResponse>> {
-    return ApiResponse.ok(await this.reviews.reply(actor, id, body.content), 'Đã trả lời');
   }
 }

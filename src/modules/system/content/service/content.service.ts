@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { CacheService } from '@common/cache/cache.service';
-import { NotFoundException } from '@common/exception/business.exception';
+import { BusinessException, ForbiddenException, NotFoundException } from '@common/exception/business.exception';
 import { MailService } from '@common/mail/mail.service';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { RequestTraceContext } from '@common/request/request-trace.context';
 import { PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
+import { ShopQueryApi } from '../../../shop/queryapi/shop.queryapi';
 import { SystemAuditLogService } from '../../audit/system-audit-log.service';
-import { SETTING_KEY, SYSTEM_AUDIT, SYSTEM_CACHE, SYSTEM_ERR } from '../../foundation/system.constants';
+import { CONTACT_SHOP_OVERDUE_HOURS, SETTING_KEY, SYSTEM_AUDIT, SYSTEM_CACHE, SYSTEM_ERR } from '../../foundation/system.constants';
 import { SettingService } from '../../setting/service/setting.service';
 
 export interface FaqResponse {
@@ -32,10 +33,17 @@ export interface ContactResponse {
   email: string;
   phone: string | null;
   message: string;
+  /** Gửi cho gian hàng nào (null = gửi sàn) */
+  shopId: string | null;
+  shopName: string | null;
+  orderCode: string | null;
+  productName: string | null;
   status: string;
   reply: string | null;
   handledAt: string | null;
   createdAt: string;
+  /** Phía sàn: có được trả lời không (tin gửi sàn, hoặc tin shop quá hạn chưa xử lý) */
+  platformCanReply: boolean;
 }
 
 /* Nội dung tĩnh (FAQ, trang chính sách — cache 10') + hộp thư liên hệ (khách gửi công khai, nhân viên trả lời qua email). */
@@ -47,6 +55,7 @@ export class ContentService {
     private readonly audit: SystemAuditLogService,
     private readonly mail: MailService,
     private readonly settings: SettingService,
+    private readonly shops: ShopQueryApi,
   ) {}
 
   // ------------------------------------------------------------ FAQ
@@ -112,36 +121,62 @@ export class ContentService {
 
   // ------------------------------------------------------------ contact
 
-  async submitContact(input: { name: string; email: string; phone: string | null; message: string }): Promise<{ id: string }> {
+  async submitContact(input: { name: string; email: string; phone: string | null; message: string; shopId?: string | null; shopSlug?: string | null; orderCode?: string | null; productName?: string | null }): Promise<{ id: string }> {
+    if (input.shopSlug && !input.shopId) {
+      input.shopId = (await this.shops.findPublicBySlug(input.shopSlug))?.id ?? null;
+      if (!input.shopId) throw new BusinessException(SYSTEM_ERR.CONTACT_SHOP_INVALID, 'Gian hàng không tồn tại hoặc hiện không nhận liên hệ');
+    }
+    // Gửi cho shop: shop phải đang bán (đã duyệt) — không nhận tin cho shop không tồn tại / bị khoá.
+    if (input.shopId && !(await this.shops.existsApproved(input.shopId))) throw new BusinessException(SYSTEM_ERR.CONTACT_SHOP_INVALID, 'Gian hàng không tồn tại hoặc hiện không nhận liên hệ');
     const trace = RequestTraceContext.current();
-    const c = await this.prisma.contactMessage.create({ data: { ...input, ipAddress: trace?.ip || null }, select: { id: true } });
+    const c = await this.prisma.contactMessage.create({
+      data: { name: input.name, email: input.email, phone: input.phone, message: input.message, shopId: input.shopId ?? null, orderCode: input.orderCode?.trim() || null, productName: input.productName?.trim() || null, ipAddress: trace?.ip || null },
+      select: { id: true },
+    });
     return c;
   }
 
-  async listContacts(page: number, size: number, status?: string): Promise<PageResponse<ContactResponse>> {
-    const where = status ? { status } : {};
+  /*
+   * SÀN: mặc định chỉ tin gửi SÀN; scope=shops = tin gửi các gian hàng (giám sát, không trả lời thay — trừ tin shop để quá CONTACT_SHOP_OVERDUE_HOURS giờ chưa xử lý).
+   * VENDOR: truyền `shopId` của ngữ cảnh ⇒ chỉ tin của CHÍNH shop mình.
+   */
+  async listContacts(page: number, size: number, f: { status?: string; scope?: string; shopId?: string } = {}, vendorShopId?: string): Promise<PageResponse<ContactResponse>> {
+    const shopFilter = vendorShopId ? { shopId: vendorShopId } : f.shopId ? { shopId: f.shopId } : f.scope === 'shops' ? { shopId: { not: null } } : { shopId: null };
+    const where = { ...(f.status ? { status: f.status } : {}), ...shopFilter };
     const [items, total] = await Promise.all([
       this.prisma.contactMessage.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }),
       this.prisma.contactMessage.count({ where }),
     ]);
-    return PageResponse.of(items.map((c) => ContentService.toContact(c)), page, size, total);
+    const names = await this.shops.findManyBrief(items.flatMap((c) => (c.shopId ? [c.shopId] : [])));
+    return PageResponse.of(items.map((c) => ContentService.toContact(c, c.shopId ? names.get(c.shopId)?.name : undefined)), page, size, total);
   }
 
-  /* Trả lời: gửi email cho khách (hàng đợi), đánh dấu handled + audit. */
-  async replyContact(actor: AuthenticatedActor, id: string, reply: string): Promise<ContactResponse> {
+  /*
+   * Trả lời: gửi email cho khách (hàng đợi), đánh dấu handled + audit.
+   * `vendorShopId` có giá trị = shop trả lời tin của CHÍNH mình (tin shop khác / tin gửi sàn → 404, không lộ sự tồn tại).
+   * Không có = SÀN: chỉ trả lời tin gửi sàn, hoặc tin gửi shop mà shop để quá hạn chưa xử lý; còn lại 403 SYSTEM_CONTACT_SHOP_OWNED.
+   */
+  async replyContact(actor: AuthenticatedActor, id: string, reply: string, vendorShopId?: string): Promise<ContactResponse> {
     const c = await this.prisma.contactMessage.findUnique({ where: { id } });
-    if (!c) throw new NotFoundException(SYSTEM_ERR.CONTACT_NOT_FOUND, 'Không tìm thấy liên hệ');
-    const shopName = await this.settings.get<string>(SETTING_KEY.SHOP_NAME);
+    if (!c || (vendorShopId && c.shopId !== vendorShopId)) throw new NotFoundException(SYSTEM_ERR.CONTACT_NOT_FOUND, 'Không tìm thấy liên hệ');
+    if (!vendorShopId && !ContentService.platformMayReply(c)) throw new ForbiddenException(SYSTEM_ERR.CONTACT_SHOP_OWNED, 'Tin này gửi cho gian hàng — gian hàng tự trả lời (sàn chỉ vào cuộc khi shop để quá 48 giờ)');
+    const brand = c.shopId ? ((await this.shops.findBrief(c.shopId))?.name ?? 'Gian hàng') : await this.settings.get<string>(SETTING_KEY.SHOP_NAME);
     const after = await this.prisma.$transaction(async (tx) => {
       const r = await tx.contactMessage.update({ where: { id }, data: { status: 'handled', reply, handledBy: actor.userId, handledAt: new Date() } });
-      await this.audit.write(tx, actor, { action: SYSTEM_AUDIT.CONTACT_HANDLED, entityType: 'contact_message', entityId: id, entityCode: c.email, after: { replyLength: reply.length } });
+      await this.audit.write(tx, actor, { action: SYSTEM_AUDIT.CONTACT_HANDLED, entityType: 'contact_message', entityId: id, entityCode: c.email, after: { replyLength: reply.length, shopId: c.shopId } });
       return r;
     });
-    await this.mail.enqueue({ to: c.email, subject: `${shopName} — Phản hồi liên hệ của bạn`, html: `<p>Xin chào ${c.name},</p><p>${reply.replace(/\n/g, '<br>')}</p><p>— ${shopName}</p>` });
-    return ContentService.toContact(after);
+    await this.mail.enqueue({ to: c.email, subject: `${brand} — Phản hồi liên hệ của bạn`, html: `<p>Xin chào ${c.name},</p><p>${reply.replace(/\n/g, '<br>')}</p><p>— ${brand}</p>` });
+    return ContentService.toContact(after, c.shopId ? brand : undefined);
   }
 
-  private static toContact(c: { id: string; name: string; email: string; phone: string | null; message: string; status: string; reply: string | null; handledAt: Date | null; createdAt: Date }): ContactResponse {
-    return { id: c.id, name: c.name, email: c.email, phone: c.phone, message: c.message, status: c.status, reply: c.reply, handledAt: c.handledAt?.toISOString() ?? null, createdAt: c.createdAt.toISOString() };
+  /* Sàn được trả lời: tin gửi sàn, hoặc tin gửi shop chưa xử lý quá hạn. */
+  private static platformMayReply(c: { shopId: string | null; status: string; createdAt: Date }): boolean {
+    if (!c.shopId) return true;
+    return c.status === 'new' && Date.now() - c.createdAt.getTime() > CONTACT_SHOP_OVERDUE_HOURS * 3_600_000;
+  }
+
+  private static toContact(c: { id: string; name: string; email: string; phone: string | null; message: string; shopId: string | null; orderCode: string | null; productName: string | null; status: string; reply: string | null; handledAt: Date | null; createdAt: Date }, shopName?: string): ContactResponse {
+    return { id: c.id, name: c.name, email: c.email, phone: c.phone, message: c.message, shopId: c.shopId, shopName: shopName ?? null, orderCode: c.orderCode, productName: c.productName, status: c.status, reply: c.reply, handledAt: c.handledAt?.toISOString() ?? null, createdAt: c.createdAt.toISOString(), platformCanReply: ContentService.platformMayReply(c) };
   }
 }

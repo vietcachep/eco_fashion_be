@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { NormalizeEmail } from '@common/utils/transform';
 import { PageQuery } from '@common/utils/pagination';
-import { IsEmail, IsIn, IsString, Length } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsOptional, IsString, Length } from 'class-validator';
 import { SHOP_MEMBER_ROLE_CODES } from '../../foundation/shop.constants';
 
 export class ShopMemberListQuery extends PageQuery {}
@@ -28,4 +28,13 @@ export class AddShopMemberRequest {
 
 export class UpdateShopMemberRequest {
   @ApiProperty({ enum: SHOP_MEMBER_ROLE_CODES }) @IsIn(SHOP_MEMBER_ROLE_CODES as readonly string[]) roleCode: string;
+}
+
+export class UpdateShopMemberPermissionsRequest {
+  @ApiProperty({ type: [String], nullable: true, description: 'Mã quyền shop.* chủ shop giao cho nhân viên (chỉ các mã được phép giao); null = theo preset của vai' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  permissionCodes: string[] | null;
 }

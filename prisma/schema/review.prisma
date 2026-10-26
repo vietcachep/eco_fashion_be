@@ -8,19 +8,25 @@ model Review {
   productId      String    @map("product_id") @db.Uuid
   productSlug    String    @map("product_slug") @db.VarChar(160)
   productName    String    @map("product_name") @db.VarChar(200)
-  shopId         String    @map("shop_id") @db.Uuid                      // PLAN-0014 bước 9: snapshot shopId cho review.reply của vendor
+  shopId         String    @map("shop_id") @db.Uuid // PLAN-0014 bước 9: snapshot shopId cho review.reply của vendor
   userId         String    @map("user_id") @db.Uuid
   authorName     String    @map("author_name") @db.VarChar(120)
   avatarUrl      String?   @map("avatar_url") @db.VarChar(500)
-  /* Đánh giá từ đơn: biết màu/size; từ trang sản phẩm (đã mua trước đó): null */
+  /**
+   * Đánh giá từ đơn: biết màu/size; từ trang sản phẩm (đã mua trước đó): null
+   */
   orderCode      String?   @map("order_code") @db.VarChar(30)
   orderItemId    String?   @map("order_item_id") @db.Uuid
   variantLabel   String?   @map("variant_label") @db.VarChar(160)
   rating         Int
   content        String    @db.VarChar(2000)
-  /* MediaItem[] {type,url,name} */
+  /**
+   * MediaItem[] {type,url,name}
+   */
   media          Json      @default("[]")
-  /* pending | approved | hidden — kiểm duyệt; mặc định approved, AI/nhân viên có thể ẩn */
+  /**
+   * pending | approved | hidden — kiểm duyệt; mặc định approved, AI/nhân viên có thể ẩn
+   */
   status         String    @default("approved") @db.VarChar(20)
   moderationNote String?   @map("moderation_note") @db.VarChar(500)
   moderatedBy    String?   @map("moderated_by") @db.Uuid
@@ -36,7 +42,7 @@ model Review {
   @@unique([userId, orderItemId])
   @@index([productId, status, createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
-  @@index([shopId])                                                      // PLAN-0014: lọc review theo shop
+  @@index([shopId]) // PLAN-0014: lọc review theo shop
   @@map("reviews")
   @@schema("review")
 }

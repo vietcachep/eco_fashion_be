@@ -30,7 +30,7 @@ function actorOf(userId: string): AuthenticatedActor {
 }
 
 function memberRow(overrides: Partial<ShopMemberRow> = {}): ShopMemberRow {
-  return { id: 'm-1', shopId: SHOP, userId: 'USER-ID-BI-MAT', roleId: STAFF_ROLE.id, status: 'active', createdAt: NOW, updatedAt: NOW, ...overrides };
+  return { id: 'm-1', shopId: SHOP, userId: 'USER-ID-BI-MAT', roleId: STAFF_ROLE.id, status: 'active', customPermissions: null, createdAt: NOW, updatedAt: NOW, ...overrides };
 }
 
 function userBrief(overrides: Partial<UserBrief> = {}): UserBrief {
@@ -80,6 +80,7 @@ function build() {
     findUserBriefByEmail: jest.fn<Promise<UserBrief | null>, [string]>(),
     findUserBriefs: jest.fn<Promise<Map<string, UserBrief>>, [string[]]>(),
     findRoleBriefs: jest.fn<Promise<Map<string, { code: string; name: string }>>, [string[]]>(),
+    shopRoleContext: jest.fn<Promise<{ code: string; name: string; permissionCodes: string[] } | null>, [string]>(() => Promise.resolve({ code: 'shop_staff', name: 'Nhân viên', permissionCodes: ['shop.product.read'] })),
   };
   const auditWrite = jest.fn<Promise<void>, Parameters<ShopAuditLogService['write']>>();
   const publish = jest.fn<Promise<void>, Parameters<ShopOutboxService['publish']>>();
@@ -115,7 +116,7 @@ describe('response không lộ userId (M-3b)', () => {
     expect(JSON.stringify(other)).not.toContain('USER-ID-BI-MAT');
     expect(other.isSelf).toBe(false);
     expect(self.isSelf).toBe(true);
-    expect(Object.keys(other).sort()).toEqual(['createdAt', 'email', 'fullName', 'id', 'isSelf', 'roleCode', 'roleId', 'roleName', 'status', 'updatedAt']);
+    expect(Object.keys(other).sort()).toEqual(['createdAt', 'customPermissions', 'email', 'fullName', 'id', 'isSelf', 'permissionCodes', 'roleCode', 'roleId', 'roleName', 'status', 'updatedAt']);
   });
 
   it('list: không dòng nào có userId; chỉ dòng của chính người gọi có isSelf=true', async () => {
@@ -253,6 +254,7 @@ describe('chủ cuối cùng — khoá FOR UPDATE rồi mới đếm (M-3d)', ()
       const identity = {
         findShopRoleByCode: (code: string) => Promise.resolve(code === 'shop_owner' ? OWNER_ROLE : STAFF_ROLE),
         findUserBrief: () => Promise.resolve(userBrief()),
+        shopRoleContext: () => Promise.resolve({ code: 'shop_staff', name: 'Nhân viên', permissionCodes: [] as string[] }),
       };
       const prisma = {
         $transaction: async (fn: (t: FakeTx) => Promise<unknown>) => {

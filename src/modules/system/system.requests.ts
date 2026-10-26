@@ -42,10 +42,16 @@ export class ContactRequest {
   @ApiProperty({ example: 'an@gmail.com' }) @NormalizeEmail() @IsEmail({}, { message: 'Email không hợp lệ' }) email: string;
   @ApiPropertyOptional({ example: '0901234567' }) @IsOptional() @Matches(/^(0|\+84)(\d{9,10})$/, { message: 'Số điện thoại Việt Nam không hợp lệ' }) phone?: string;
   @ApiProperty() @IsString() @Length(10, 2000) message: string;
+  @ApiPropertyOptional({ description: 'Gửi cho GIAN HÀNG này (hỏi về sản phẩm / đơn của shop); bỏ trống = gửi SÀN' }) @IsOptional() @IsUUID() shopId?: string;
+  @ApiPropertyOptional({ example: 'fitly-official', description: 'Thay cho shopId khi web chỉ biết slug gian hàng (trang sản phẩm / trang shop)' }) @IsOptional() @IsString() @MaxLength(160) shopSlug?: string;
+  @ApiPropertyOptional({ example: 'DH2610040013', description: 'Mã đơn đang hỏi (ngữ cảnh cho người trả lời)' }) @IsOptional() @IsString() @MaxLength(30) orderCode?: string;
+  @ApiPropertyOptional({ description: 'Tên sản phẩm đang hỏi (ngữ cảnh cho người trả lời)' }) @IsOptional() @IsString() @MaxLength(200) productName?: string;
 }
 
 export class ContactListQuery extends PageQuery {
   @ApiPropertyOptional({ enum: ['new', 'handled'] }) @IsOptional() @IsIn(['new', 'handled']) status?: string;
+  @ApiPropertyOptional({ enum: ['platform', 'shops'], description: 'platform = tin gửi sàn (mặc định) · shops = tin gửi các gian hàng (sàn chỉ giám sát)' }) @IsOptional() @IsIn(['platform', 'shops']) scope?: string;
+  @ApiPropertyOptional({ description: 'Chỉ tin gửi gian hàng này' }) @IsOptional() @IsUUID() shopId?: string;
 }
 
 export class ReplyContactRequest {

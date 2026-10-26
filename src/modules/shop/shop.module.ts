@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ShopAuditLogService } from './audit/shop-audit-log.service';
 import { ShopOutboxService } from './outbox/shop-outbox.service';
 import { AdminShopController } from './shop/controller/admin-shop.controller';
+import { ShopDirectoryController } from './shop/controller/shop-directory.controller';
 import { ShopController } from './shop/controller/shop.controller';
 import { ShopRepository } from './shop/repository/shop.repository';
 import { ShopService } from './shop/service/shop.service';
@@ -37,7 +38,7 @@ import { ShopContextGuard } from './security/shop-context.guard';
  * (CatalogModule đã import ShopModule — import ngược là vòng).
  */
 @Module({
-  controllers: [AdminShopController, AdminShopRegistrationController, ShopController, ShopMemberController, ShopRegistrationController],
+  controllers: [AdminShopController, ShopDirectoryController, AdminShopRegistrationController, ShopController, ShopMemberController, ShopRegistrationController],
   providers: [
     ShopRepository,
     ShopMemberRepository,

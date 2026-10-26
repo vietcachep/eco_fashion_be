@@ -43,3 +43,13 @@ export class ShopSessionResponse {
   @ApiProperty({ example: 'Chủ gian hàng' }) roleName: string;
   @ApiProperty({ type: [String], example: ['shop.product.read', 'shop.order.read'] }) permissions: string[];
 }
+
+/* Danh bạ gian hàng gọn cho các màn giám sát của sàn (chọn shop để xem đơn / sản phẩm / thanh toán…) — KHÔNG có chủ shop, ngân hàng, hoa hồng. */
+export class ShopDirectoryItemResponse {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: 'SHOP-000123' }) code: string;
+  @ApiProperty() name: string;
+  @ApiPropertyOptional({ nullable: true }) logoUrl: string | null;
+  @ApiProperty({ example: 'approved' }) status: string;
+  @ApiProperty() totalProducts: number;
+}

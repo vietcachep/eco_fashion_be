@@ -9,6 +9,7 @@ export const SHOP_MEMBER_SELECT = {
   shopId: true,
   userId: true,
   roleId: true,
+  customPermissions: true,
   status: true,
   createdAt: true,
   updatedAt: true,

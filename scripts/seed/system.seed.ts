@@ -51,13 +51,13 @@ export const PAGES: Array<{ slug: string; title: string; content: string }> = [
   { slug: 'terms', title: 'Điều khoản sử dụng', content: '# Điều khoản sử dụng\n\nKhi đặt hàng, bạn xác nhận thông tin giao hàng là chính xác. Giá và khuyến mãi áp dụng tại thời điểm đặt. Đơn chưa thanh toán online sau 30 phút sẽ tự huỷ.\n\nMọi tranh chấp được giải quyết trên tinh thần thiện chí; liên hệ hotline để được hỗ trợ.' },
 ];
 
-/* Tin nhắn liên hệ từ form storefront — 2 đã được nhân viên bán hàng trả lời, 4 còn mới. */
-const CONTACTS: Array<{ name: string; email: string; phone?: string; message: string; daysAgo: number; reply?: string }> = [
-  { name: 'Nguyễn Văn An', email: 'khach1@ecofashion.vn', phone: '0912000001', message: 'Shop có size XXL cho áo thun cotton nam basic không ạ? Mình muốn đặt 3 cái cho nhóm.', daysAgo: 6, reply: 'Chào anh An, hiện áo thun cotton nam basic có tới size XL. Size XXL dự kiến về trong tuần sau, shop sẽ nhắn anh ngay khi có hàng ạ.' },
+/* Tin nhắn liên hệ từ form storefront — 2 đã được nhân viên CSKH trả lời, 4 còn mới. `product` = tin hỏi về sản phẩm ⇒ gửi đúng GIAN HÀNG bán sản phẩm đó (PLAN-0021); còn lại gửi sàn. */
+const CONTACTS: Array<{ name: string; email: string; phone?: string; message: string; daysAgo: number; reply?: string; product?: string }> = [
+  { name: 'Nguyễn Văn An', email: 'khach1@ecofashion.vn', phone: '0912000001', message: 'Shop có size XXL cho áo thun cotton nam basic không ạ? Mình muốn đặt 3 cái cho nhóm.', daysAgo: 6, product: 'Áo thun cotton nam basic', reply: 'Chào anh An, hiện áo thun cotton nam basic có tới size XL. Size XXL dự kiến về trong tuần sau, shop sẽ nhắn anh ngay khi có hàng ạ.' },
   { name: 'Trần Thị Bình', email: 'khach2@ecofashion.vn', phone: '0912000002', message: 'Đơn DHDEMO0004 mình dùng mã FREESHIP nhưng vẫn thấy dòng phí vận chuyển, nhờ shop kiểm tra giúp.', daysAgo: 5, reply: 'Chào chị Bình, shop đã kiểm tra: đơn DHDEMO0004 phí vận chuyển đã được giảm về 0 ₫ (dòng "Giảm giá" trong hoá đơn). Chị yên tâm nhé!' },
   { name: 'Lê Văn Cường', email: 'khach3@ecofashion.vn', phone: '0912000003', message: 'Mình gửi yêu cầu trả áo khoác dù (đơn DHDEMO0009) 2 ngày rồi, bao giờ được duyệt vậy?', daysAgo: 1 },
-  { name: 'Phạm Thị Dung', email: 'khach4@ecofashion.vn', message: 'Đầm dự tiệc body có màu đỏ đô không shop? Trên web chỉ thấy đen với be.', daysAgo: 1 },
-  { name: 'Hồ Minh Khoa', email: 'khoa.hm@gmail.com', phone: '0988123456', message: 'Bên mình là công ty muốn đặt 40 áo polo in logo làm đồng phục, shop có nhận đơn số lượng lớn và báo giá riêng không?', daysAgo: 0 },
+  { name: 'Phạm Thị Dung', email: 'khach4@ecofashion.vn', message: 'Đầm dự tiệc body có màu đỏ đô không shop? Trên web chỉ thấy đen với be.', daysAgo: 1, product: 'Đầm dự tiệc body' },
+  { name: 'Hồ Minh Khoa', email: 'khoa.hm@gmail.com', phone: '0988123456', message: 'Bên mình là công ty muốn đặt 40 áo polo in logo làm đồng phục, shop có nhận đơn số lượng lớn và báo giá riêng không?', daysAgo: 0, product: 'Áo polo' },
   { name: 'Đặng Thu Hà', email: 'thuha.dang@outlook.com', message: 'Chương trình đổi trả 7 ngày có áp dụng cho hàng giảm giá không ạ?', daysAgo: 0 },
 ];
 
@@ -108,8 +108,10 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     const exists = await prisma.contactMessage.findFirst({ where: { email: c.email, message: c.message }, select: { id: true } });
     if (exists) continue;
     const createdAt = new Date(Date.now() - c.daysAgo * 86_400_000 - 3 * 3_600_000);
+    const prod = c.product ? await prisma.product.findFirst({ where: { name: { startsWith: c.product }, isDeleted: false }, orderBy: { soldCount: 'desc' }, select: { shopId: true, name: true } }) : null;
     await prisma.contactMessage.create({
       data: {
+        shopId: prod?.shopId ?? null, productName: prod?.name ?? null,
         name: c.name, email: c.email, phone: c.phone ?? null, message: c.message, createdAt,
         status: c.reply ? 'handled' : 'new', reply: c.reply ?? null,
         handledBy: c.reply ? (sales?.id ?? null) : null, handledAt: c.reply ? new Date(createdAt.getTime() + 5 * 3_600_000) : null,

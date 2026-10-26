@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
@@ -7,7 +7,7 @@ import { RateLimit } from '@common/security/rate-limit.guard';
 import { AllowAnyShopStatus, CurrentShop, RequireShopPermission, ShopContext } from '../../security/shop-permission.decorator';
 import { ShopContextGuard } from '../../security/shop-context.guard';
 import { AddShopMemberResponse, ShopMemberResponse } from '../dto/shop-member.responses';
-import { AddShopMemberRequest, ShopMemberListQuery, UpdateShopMemberRequest } from '../request/shop-member.requests';
+import { AddShopMemberRequest, ShopMemberListQuery, UpdateShopMemberPermissionsRequest, UpdateShopMemberRequest } from '../request/shop-member.requests';
 import { ShopMemberService } from '../service/shop-member.service';
 
 /*
@@ -62,6 +62,15 @@ export class ShopMemberController {
   @ApiOkResponse({ type: ShopMemberResponse })
   async update(@CurrentActor() actor: AuthenticatedActor, @CurrentShop() shop: ShopContext, @Param('id', ParseUUIDPipe) id: string, @Body() body: UpdateShopMemberRequest): Promise<ApiResponse<ShopMemberResponse>> {
     return ApiResponse.ok(await this.members.updateRole(actor, shop.shopId, id, body.roleCode), 'Đã đổi vai nhân viên');
+  }
+
+  @Put(':id/permissions')
+  @RateLimit({ name: 'shop-member-permissions', limit: 60, windowSeconds: 3600, by: 'user' })
+  @RequireShopPermission('shop.staff.update')
+  @ApiOperation({ summary: 'Chủ shop tự đặt quyền cho một nhân viên (permissionCodes null = theo preset của vai); không đặt được cho chủ; sàn không can thiệp' })
+  @ApiOkResponse({ type: ShopMemberResponse })
+  async setPermissions(@CurrentActor() actor: AuthenticatedActor, @CurrentShop() shop: ShopContext, @Param('id', ParseUUIDPipe) id: string, @Body() body: UpdateShopMemberPermissionsRequest): Promise<ApiResponse<ShopMemberResponse>> {
+    return ApiResponse.ok(await this.members.updatePermissions(actor, shop.shopId, id, body.permissionCodes ?? null), 'Đã cập nhật quyền nhân viên');
   }
 
   @Delete(':id')

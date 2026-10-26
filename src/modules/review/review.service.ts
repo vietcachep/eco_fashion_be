@@ -209,8 +209,8 @@ export class ReviewService {
 
   // ------------------------------------------------------------ nhân viên
 
-  async listAdmin(page: number, size: number, f: { status?: string; rating?: number; q?: string }): Promise<PageResponse<ReviewAdminResponse>> {
-    const where: Prisma.ReviewWhereInput = { isDeleted: false, ...(f.status ? { status: f.status } : {}), ...(f.rating ? { rating: f.rating } : {}), ...(f.q ? { OR: [{ productName: { contains: f.q, mode: 'insensitive' } }, { content: { contains: f.q, mode: 'insensitive' } }, { authorName: { contains: f.q, mode: 'insensitive' } }] } : {}) };
+  async listAdmin(page: number, size: number, f: { status?: string; rating?: number; q?: string; shopId?: string }): Promise<PageResponse<ReviewAdminResponse>> {
+    const where: Prisma.ReviewWhereInput = { isDeleted: false, ...(f.shopId ? { shopId: f.shopId } : {}), ...(f.status ? { status: f.status } : {}), ...(f.rating ? { rating: f.rating } : {}), ...(f.q ? { OR: [{ productName: { contains: f.q, mode: 'insensitive' } }, { content: { contains: f.q, mode: 'insensitive' } }, { authorName: { contains: f.q, mode: 'insensitive' } }] } : {}) };
     const [items, total] = await Promise.all([this.prisma.review.findMany({ where, include: { replies: true }, orderBy: { createdAt: 'desc' }, skip: (page - 1) * size, take: size }), this.prisma.review.count({ where })]);
     const shopNames = await this.shopNamesForReplies(items);
     return PageResponse.of(items.map((r) => ReviewService.toAdmin(r, shopNames.get(r.shopId))), page, size, total);

@@ -132,7 +132,7 @@ export class ReportingService {
           (SELECT count(*) FROM "order"."orders" WHERE is_deleted = false AND status = 'shipping') AS shipping,
           (SELECT count(*) FROM "order"."return_requests" WHERE status = 'requested') AS returns_requested,
           (SELECT count(*) FROM "payment"."refunds" WHERE status = 'requested') AS refunds_requested,
-          (SELECT count(*) FROM "system"."contact_messages" WHERE status = 'new') AS contacts_new,
+          (SELECT count(*) FROM "system"."contact_messages" WHERE status = 'new' AND shop_id IS NULL) AS contacts_new,
           (SELECT count(*) FROM "ai"."support_requests" WHERE status = 'open') AS support_open,
           (SELECT count(*) FROM "product"."product_variants" v JOIN "product"."products" p ON p.id = v.product_id
              WHERE v.is_deleted = false AND v.is_active = true AND p.is_deleted = false AND p.status = 'active' AND (v.stock - v.reserved) <= 5) AS low_stock`,

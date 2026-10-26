@@ -88,6 +88,36 @@ export const SHOP_MEMBER_ROLE_CODES = ['shop_owner', 'shop_staff'] as const;
 /* Vai shop có quyền chủ — dùng chặn "gỡ/hạ/rời" người chủ cuối cùng (khớp identity ROLE_CODES.SHOP_OWNER; khai lặp vì không import catalog). */
 export const SHOP_OWNER_ROLE_CODE = 'shop_owner';
 
+/* Quyền giữ riêng cho chủ shop (không giao được): nhân sự, sửa hồ sơ/ngân hàng, đối soát, ví đặt cọc. */
+export const SHOP_OWNER_ONLY_PERMISSIONS: readonly string[] = ['shop.staff.read', 'shop.staff.invite', 'shop.staff.update', 'shop.staff.remove', 'shop.profile.update', 'shop.payout.read', 'shop.wallet.read', 'shop.wallet.deposit_request'];
+
+/*
+ * Quyền CHỦ SHOP có thể giao cho nhân viên — chủ shop tự chọn cho từng người (PUT /shop/members/:id/permissions); SÀN không can thiệp phân quyền trong shop.
+ * Quyền giữ riêng cho chủ (không có trong danh sách): nhân sự (shop.staff.*), sửa hồ sơ/ngân hàng, đối soát, ví đặt cọc.
+ */
+export const SHOP_ASSIGNABLE_PERMISSIONS: readonly string[] = [
+  'shop.profile.read',
+  'shop.product.read',
+  'shop.product.manage',
+  'shop.order.read',
+  'shop.order.update',
+  'shop.inventory.read',
+  'shop.inventory.manage',
+  'shop.promotion.read',
+  'shop.promotion.manage',
+  'shop.report.read',
+  'shop.review.read',
+  'shop.review.reply',
+  'shop.contact.read',
+  'shop.contact.reply',
+];
+
+/* Quyền hiệu lực của một thành viên: chủ = đủ quyền của vai; nhân viên = quyền riêng chủ đã đặt (lọc trong phạm vi được giao), chưa đặt thì preset của vai. */
+export function effectiveShopPermissions(roleCode: string, rolePermissions: readonly string[], custom: unknown): string[] {
+  if (roleCode === SHOP_OWNER_ROLE_CODE || !Array.isArray(custom)) return [...rolePermissions];
+  return (custom as unknown[]).filter((c): c is string => typeof c === 'string' && SHOP_ASSIGNABLE_PERMISSIONS.includes(c));
+}
+
 /*
  * Vai NỀN TẢNG duy nhất của tài khoản được phép thêm làm nhân viên gian hàng: khách thường ('customer', khớp identity
  * ROLE_CODES.CUSTOMER — khai lặp vì không import catalog). Tài khoản mang vai nhân viên sàn (admin/manager/…) bị từ chối.

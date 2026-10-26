@@ -8,7 +8,9 @@ model Setting {
   value       Json
   groupCode   String   @default("general") @map("group_code") @db.VarChar(40)
   description String?  @db.VarChar(255)
-  /* Cho web bán hàng đọc (tên shop, hotline, freeship…) — không được để bí mật vào setting public. */
+  /**
+   * Cho web bán hàng đọc (tên shop, hotline, freeship…) — không được để bí mật vào setting public.
+   */
   isPublic    Boolean  @default(false) @map("is_public")
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   updatedBy   String?  @map("updated_by") @db.Uuid
@@ -18,11 +20,15 @@ model Setting {
   @@schema("system")
 }
 
-/* 63 tỉnh/thành — phí ship theo vùng; địa chỉ khách chụp mã + tên. */
+/**
+ * 63 tỉnh/thành — phí ship theo vùng; địa chỉ khách chụp mã + tên.
+ */
 model Province {
   code        String   @id @db.VarChar(10)
   name        String   @db.VarChar(100)
-  /* Vùng để tính phí: hcm | mien-nam | mien-trung | mien-bac */
+  /**
+   * Vùng để tính phí: hcm | mien-nam | mien-trung | mien-bac
+   */
   region      String   @db.VarChar(20)
   shippingFee Decimal  @map("shipping_fee") @db.Decimal(14, 0)
   sortOrder   Int      @default(0) @map("sort_order")
@@ -40,7 +46,9 @@ model Banner {
   imageUrl      String    @map("image_url") @db.VarChar(500)
   imagePublicId String?   @map("image_public_id") @db.VarChar(255)
   linkUrl       String?   @map("link_url") @db.VarChar(500)
-  /* hero (slider đầu trang) | promo (băng rôn giữa trang) */
+  /**
+   * hero (slider đầu trang) | promo (băng rôn giữa trang)
+   */
   position      String    @default("hero") @db.VarChar(20)
   sortOrder     Int       @default(0) @map("sort_order")
   isActive      Boolean   @default(true) @map("is_active")
@@ -58,7 +66,9 @@ model Banner {
   @@schema("system")
 }
 
-/* Thông báo trong-app cho user (khách lẫn nhân viên) — NotificationGateway ghi trong tx của module nghiệp vụ. */
+/**
+ * Thông báo trong-app cho user (khách lẫn nhân viên) — NotificationGateway ghi trong tx của module nghiệp vụ.
+ */
 model Notification {
   id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String    @map("user_id") @db.Uuid
@@ -76,19 +86,25 @@ model Notification {
 }
 
 model ContactMessage {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name      String    @db.VarChar(120)
-  email     String    @db.VarChar(255)
-  phone     String?   @db.VarChar(20)
-  message   String    @db.VarChar(2000)
-  status    String    @default("new") @db.VarChar(20)
-  reply     String?   @db.VarChar(2000)
-  handledBy String?   @map("handled_by") @db.Uuid
-  handledAt DateTime? @map("handled_at") @db.Timestamptz
-  ipAddress String?   @map("ip_address") @db.VarChar(45)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String    @db.VarChar(120)
+  email       String    @db.VarChar(255)
+  phone       String?   @db.VarChar(20)
+  message     String    @db.VarChar(2000)
+  /// Gửi cho gian hàng nào (null = gửi SÀN). Shop trả lời tin của shop mình; sàn chỉ trả lời tin gửi sàn hoặc tin shop để quá hạn.
+  shopId      String?   @map("shop_id") @db.Uuid
+  /// Ngữ cảnh khách hỏi: mã đơn / tên sản phẩm (hiển thị cho người trả lời)
+  orderCode   String?   @map("order_code") @db.VarChar(30)
+  productName String?   @map("product_name") @db.VarChar(200)
+  status      String    @default("new") @db.VarChar(20)
+  reply       String?   @db.VarChar(2000)
+  handledBy   String?   @map("handled_by") @db.Uuid
+  handledAt   DateTime? @map("handled_at") @db.Timestamptz
+  ipAddress   String?   @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([status, createdAt(sort: Desc)])
+  @@index([shopId, status, createdAt(sort: Desc)])
   @@map("contact_messages")
   @@schema("system")
 }
@@ -111,7 +127,9 @@ model Faq {
   @@schema("system")
 }
 
-/* Trang tĩnh: about · shipping · returns-policy · privacy · terms (markdown). */
+/**
+ * Trang tĩnh: about · shipping · returns-policy · privacy · terms (markdown).
+ */
 model Page {
   slug      String   @id @db.VarChar(60)
   title     String   @db.VarChar(200)

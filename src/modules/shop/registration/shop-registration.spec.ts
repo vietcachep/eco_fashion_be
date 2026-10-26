@@ -83,7 +83,7 @@ function regRow(overrides: Partial<ShopRegistrationRow> = {}): ShopRegistrationR
 }
 
 function memberRow(overrides: Partial<ShopMemberRow> = {}): ShopMemberRow {
-  return { id: 'm-new', shopId: 'shop-new', userId: applicant.userId, roleId: OWNER_ROLE.id, status: 'active', createdAt: NOW, updatedAt: NOW, ...overrides };
+  return { id: 'm-new', shopId: 'shop-new', userId: applicant.userId, roleId: OWNER_ROLE.id, status: 'active', customPermissions: null, createdAt: NOW, updatedAt: NOW, ...overrides };
 }
 
 function userBrief(overrides: Partial<UserBrief> = {}): UserBrief {
