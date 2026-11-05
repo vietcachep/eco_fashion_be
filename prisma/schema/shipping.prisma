@@ -1,0 +1,122 @@
+// PLAN-0043 — Données vận chuyển, chỉ schema shipping sở hữu.
+model ShippingQuote {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  userId String @map("user_id") @db.Uuid
+  shopId String @map("shop_id") @db.Uuid
+  provider String @db.VarChar(20)
+  environment String @db.VarChar(30)
+  fingerprint String @db.VarChar(64)
+  snapshot Json
+  shippingFee Decimal @map("shipping_fee") @db.Decimal(14,0)
+  feeSource String @map("fee_source") @db.VarChar(20)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  @@index([userId, expiresAt])
+  @@map("shipping_quotes")
+  @@schema("shipping")
+}
+
+model Shipment {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  orderId String @map("order_id") @db.Uuid
+  orderCode String @map("order_code") @db.VarChar(30)
+  shopId String @map("shop_id") @db.Uuid
+  attemptNo Int @map("attempt_no")
+  provider String @db.VarChar(20)
+  environment String @db.VarChar(30)
+  accountScope String @map("account_scope") @db.VarChar(50)
+  clientOrderCode String @map("client_order_code") @db.VarChar(50)
+  carrierOrderCode String? @map("carrier_order_code") @db.VarChar(60)
+  active Boolean @default(true)
+  createStatus String @default("creating") @map("create_status") @db.VarChar(20)
+  cancelStatus String @default("none") @map("cancel_status") @db.VarChar(20)
+  status String? @db.VarChar(30)
+  rawStatus String? @map("raw_status") @db.VarChar(50)
+  snapshot Json
+  quotedFee Decimal @map("quoted_fee") @db.Decimal(14,0)
+  actualFee Decimal? @map("actual_fee") @db.Decimal(14,0)
+  codAmount Decimal @map("cod_amount") @db.Decimal(14,0)
+  expectedDeliveryAt DateTime? @map("expected_delivery_at") @db.Timestamptz
+  pickedUpAt DateTime? @map("picked_up_at") @db.Timestamptz
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz
+  lastEventAt DateTime? @map("last_event_at") @db.Timestamptz
+  deliveryAttempts Int @default(0) @map("delivery_attempts")
+  trackingUrl String? @map("tracking_url") @db.VarChar(500)
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz
+  retryAt DateTime? @map("retry_at") @db.Timestamptz
+  lastError String? @map("last_error") @db.VarChar(1000)
+  events ShipmentEvent[]
+  @@unique([orderId,attemptNo])
+  @@unique([provider,environment,accountScope,clientOrderCode])
+  @@unique([provider,environment,accountScope,carrierOrderCode])
+  @@index([active,retryAt])
+  @@index([shopId,createdAt])
+  @@index([orderCode])
+  @@map("shipments")
+  @@schema("shipping")
+}
+
+model ShipmentEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  dedupKey String @unique @map("dedup_key") @db.VarChar(64)
+  shipmentId String? @map("shipment_id") @db.Uuid
+  provider String @db.VarChar(20)
+  environment String @db.VarChar(30)
+  carrierOrderCode String? @map("carrier_order_code") @db.VarChar(60)
+  clientOrderCode String? @map("client_order_code") @db.VarChar(50)
+  rawStatus String @map("raw_status") @db.VarChar(50)
+  eventTime DateTime @map("event_time") @db.Timestamptz
+  payload Json
+  source String @db.VarChar(20)
+  status String @default("pending") @db.VarChar(20)
+  retryAt DateTime? @map("retry_at") @db.Timestamptz
+  retryCount Int @default(0) @map("retry_count")
+  lastError String? @map("last_error") @db.VarChar(1000)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz
+  shipment Shipment? @relation(fields:[shipmentId],references:[id])
+  @@index([status,retryAt])
+  @@map("shipment_events")
+  @@schema("shipping")
+}
+
+model FakeCarrierState {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  clientOrderCode String @unique @map("client_order_code") @db.VarChar(50)
+  carrierOrderCode String @unique @map("carrier_order_code") @db.VarChar(60)
+  rawStatus String @default("ready_to_pick") @map("raw_status") @db.VarChar(50)
+  revision Int @default(0)
+  deliveryAttempts Int @default(0) @map("delivery_attempts")
+  fee Decimal @db.Decimal(14,0)
+  codAmount Decimal @map("cod_amount") @db.Decimal(14,0)
+  eventTime DateTime @default(now()) @map("event_time") @db.Timestamptz
+  snapshot Json
+  @@map("fake_carrier_states")
+  @@schema("shipping")
+}
+
