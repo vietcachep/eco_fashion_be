@@ -61,6 +61,8 @@ export class AutoPayoutJob {
     try {
       const r = await this.payouts.reconcileProcessing();
       if (r.paid + r.failed > 0) this.logger.log(r, 'Đối chiếu lệnh chi PayOS');
+      const released = await this.payouts.releaseHeld();
+      if (released > 0) this.logger.log({ released }, 'Mở giữ kỳ chi trả');
     } catch (err) {
       this.logger.error({ err }, 'Đối chiếu lệnh chi PayOS lỗi');
     }

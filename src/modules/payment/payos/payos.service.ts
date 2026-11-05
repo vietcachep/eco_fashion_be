@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { ENV } from '@config/config.module';
 import type { Env } from '@config/env';
+import { TOPUP_PAYOS_CODE_BASE } from '../foundation/payment.constants';
+import { isLoopbackFinanceEndpoint } from '../foundation/disbursement-safety';
 
 /*
  * Cổng PayOS (api-merchant.payos.vn — thanh toán QR/chuyển khoản tự động): tạo payment link, xác minh webhook,
@@ -15,6 +17,7 @@ export class PayosService {
   private readonly logger = new Logger(PayosService.name);
 
   constructor(@Inject(ENV) private readonly env: Env) {}
+  get isMockEndpoint(): boolean { return isLoopbackFinanceEndpoint(this.env.EF_PAYOS_API_URL, this.env.NODE_ENV); }
 
   /* Payment link creation (thu tiền): kiểm cấu hình CLIENT_ID + API_KEY + CHECKSUM_KEY. */
   get isConfigured(): boolean {
@@ -30,9 +33,19 @@ export class PayosService {
    * Sinh orderCode cho PayOS: số nguyên dương ≤ Number.MAX_SAFE_INTEGER (9007199254740991).
    * = Date.now() (mili-giây, 13 chữ số) × 1000 + 3 ký số ngẫu nhiên ⇒ ~1.8e15, trùng chỉ khi cùng mili-giây VÀ cùng 3 số.
    * (Cách cũ yymmdd + 6 số ngẫu nhiên có xác suất trùng ~50% khi chỉ 1.000 đơn/ngày — tính theo nghịch lý sinh nhật.)
+   * luôn < 5e15 đến năm 2127 — dải ≥ 5e15 dành riêng cho nạp cọc (PLAN-0041).
    */
   static generateOrderCode(): number {
     return Date.now() * 1000 + randomInt(1000);
+  }
+
+  /*
+   * Sinh orderCode cho NẠP CỌC (PLAN-0041 D4): dải RIÊNG 5e15 ≤ mã < 6e15 — không giao với mã đơn hàng (≈ 1,8e15), nên webhook
+   * phân biệt "đơn hàng" và "nạp cọc" được ngay bằng dải số; DB còn CHECK `^[5-8][0-9]{15}$` chặn mã lệch dải.
+   * Mili-giây mod 1e12 (~31 năm) × 1000 + 3 số ngẫu nhiên. Trùng giữa hai khoản nạp bị UNIQUE ở DB chặn — caller thử sinh lại có giới hạn.
+   */
+  static generateTopupOrderCode(): number {
+    return TOPUP_PAYOS_CODE_BASE + (Date.now() % 1_000_000_000_000) * 1000 + randomInt(1000);
   }
 
   /*
@@ -184,9 +197,9 @@ export class PayosService {
     toAccountNumber: string;
     description: string;
     idempotencyKey: string;
-  }): Promise<{ ok: boolean; code: string; message: string; transactionId?: string; raw: unknown }> {
+  }): Promise<{ ok: boolean; code: string; message: string; transactionId?: string; raw: unknown; /* true = PayOS TỪ CHỐI chắc chắn (chưa chuyển tiền) — an toàn để gửi lại bằng khoá mới; false (khi !ok) = KHÔNG RÕ (timeout/5xx/mất kết nối) — tuyệt đối không chi lại */ definite?: boolean }> {
     if (!this.isPayoutConfigured) {
-      return { ok: false, code: 'NOT_CONFIGURED', message: 'PayOS payout chưa được cấu hình', raw: null };
+      return { ok: false, code: 'NOT_CONFIGURED', message: 'PayOS payout chưa được cấu hình', raw: null, definite: true };
     }
 
     const body = {
@@ -220,10 +233,12 @@ export class PayosService {
       }
       const code = json.code ?? String(res.status);
       const ok = res.ok && code === '00';
-      return { ok, code, message: json.desc ?? json.message ?? (ok ? 'success' : `HTTP ${res.status}`), transactionId: json.data?.id, raw: json };
+      // Từ chối CHẮC CHẮN: PayOS trả 4xx (xác thực / hạn mức / dữ liệu sai) hoặc mã nghiệp vụ lỗi trong phản hồi hợp lệ < 500. 5xx / không đọc được ⇒ không rõ.
+      const definite = !ok && res.status < 500 && (res.status >= 400 || json.code !== undefined);
+      return { ok, code, message: json.desc ?? json.message ?? (ok ? 'success' : `HTTP ${res.status}`), transactionId: json.data?.id, raw: json, definite };
     } catch (err) {
       this.logger.warn({ err: err instanceof Error ? err.message : err, referenceId: input.referenceId }, 'Gọi API payout PayOS lỗi');
-      return { ok: false, code: '99', message: 'Không gọi được cổng PayOS', raw: null };
+      return { ok: false, code: '99', message: 'Không gọi được cổng PayOS', raw: null, definite: false };
     }
   }
 
@@ -244,6 +259,29 @@ export class PayosService {
       return PayosService.payoutState(json.data.approvalState, (json.data.transactions ?? []).map((t) => t.state ?? ''));
     } catch (err) {
       this.logger.warn({ err: err instanceof Error ? err.message : err, payoutId }, 'Tra cứu lệnh chi PayOS lỗi');
+      return { state: 'unknown', detail: 'Không gọi được cổng PayOS' };
+    }
+  }
+
+  /*
+   * Tìm lệnh chi theo `referenceId` của HỆ THỐNG: GET /v1/payouts?referenceId=… — dùng khi gửi lệnh bị timeout nên KHÔNG có mã lệnh PayOS (kỳ `unknown`).
+   * found=false (PayOS trả danh sách rỗng) nghĩa là PayOS CHƯA nhận lệnh ⇒ an toàn để gửi lại (cùng khoá — idempotent); lỗi tra cứu ⇒ unknown (không kết luận gì).
+   */
+  async findPayoutByReference(referenceId: string): Promise<{ state: 'found' | 'not_found' | 'unknown'; id?: string; result?: { state: 'succeeded' | 'failed' | 'processing'; detail: string }; detail?: string }> {
+    if (!this.isPayoutConfigured) return { state: 'unknown', detail: 'PayOS payout chưa được cấu hình' };
+    try {
+      const res = await fetch(`${this.env.EF_PAYOS_API_URL}/v1/payouts?referenceId=${encodeURIComponent(referenceId)}&limit=5`, {
+        method: 'GET',
+        headers: { 'x-client-id': this.env.EF_PAYOS_PAYOUT_CLIENT_ID, 'x-api-key': this.env.EF_PAYOS_PAYOUT_API_KEY },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const json = (await res.json()) as { code?: string; desc?: string; data?: { payouts?: Array<{ id?: string; referenceId?: string; approvalState?: string; transactions?: Array<{ state?: string }> }> } };
+      if (!res.ok || json.code !== '00') return { state: 'unknown', detail: json.desc ?? `HTTP ${res.status}` };
+      const hit = (json.data?.payouts ?? []).find((p) => p.referenceId === referenceId);
+      if (!hit) return { state: 'not_found' };
+      return { state: 'found', id: hit.id, result: PayosService.payoutState(hit.approvalState, (hit.transactions ?? []).map((t) => t.state ?? '')) };
+    } catch (err) {
+      this.logger.warn({ err: err instanceof Error ? err.message : err, referenceId }, 'Tìm lệnh chi PayOS theo referenceId lỗi');
       return { state: 'unknown', detail: 'Không gọi được cổng PayOS' };
     }
   }

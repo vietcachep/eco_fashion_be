@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ToBoolean } from '@common/utils/transform';
 import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, Length, Matches, MaxLength } from 'class-validator';
 import { PageQuery } from '@common/utils/pagination';
+import { PayosTopupInfoResponse } from './shop-wallet-topup.dto';
 
 /* Số tiền VND dạng chuỗi số nguyên dương (không dấu phẩy) — nhận chuỗi để không mất chính xác. */
 const VND = /^[1-9]\d{0,13}$/;
@@ -53,7 +54,10 @@ export class WalletResponse {
   @ApiProperty({ description: 'Gian hàng chính chủ của sàn — miễn đặt cọc' }) exempt!: boolean;
   @ApiProperty({ nullable: true, type: () => WalletDepositResponse }) pendingDeposit!: WalletDepositResponse | null;
   @ApiProperty({ example: 500000, description: 'Số tiền nộp tối thiểu mỗi lần' }) minDeposit!: number;
+  @ApiProperty({ example: 200000, description: 'Số dư ví tối thiểu để nhận COD (PLAN-0030) — về dưới mức này COD tự đóng' }) minBalanceForCod!: number;
   @ApiProperty({ description: 'Hướng dẫn chuyển khoản cho shop' }) instructions!: string;
+  /* PLAN-0041: CHỈ route vendor trả trường này (GET /admin/shops/:id/wallet không có) — cờ nạp qua PayOS + khoản đang mở của shop. */
+  @ApiPropertyOptional({ type: () => PayosTopupInfoResponse, description: 'Nạp cọc qua PayOS: cờ bật, mức tối thiểu/tối đa, khoản đang mở (nếu có)' }) payosTopup?: PayosTopupInfoResponse;
 }
 
 export class WalletSummaryResponse {
@@ -66,7 +70,7 @@ export class WalletSummaryResponse {
 
 export class WalletTransactionResponse {
   @ApiProperty() id!: string;
-  @ApiProperty({ enum: ['deposit', 'cod_commission', 'cod_refund', 'adjust'] }) type!: string;
+  @ApiProperty({ enum: ['deposit', 'cod_commission', 'cod_refund', 'adjust', 'cod_reversal', 'topup_payos'], description: 'cod_reversal = đảo ghi thu đơn COD khi khách báo chưa nhận hàng (ngược dấu cod_commission của cùng đơn); topup_payos = nạp cọc qua PayOS, luôn dương' }) type!: string;
   @ApiProperty({ example: '-50000', description: 'Có dấu: + cộng ví, − trừ ví' }) amount!: string;
   @ApiProperty({ example: '1450000' }) balanceAfter!: string;
   @ApiProperty({ nullable: true, type: String, description: 'Mã đơn COD (cod_refund: mã dòng hoàn RF-…)' }) orderCode!: string | null;

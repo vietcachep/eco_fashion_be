@@ -6,7 +6,7 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor, RequirePermission } from '@common/security/decorators';
 import { ShopContextGuard } from '@modules/shop/security/shop-context.guard';
 import { CurrentShop, RequireShopPermission, type ShopContext } from '@modules/shop/security/shop-permission.decorator';
-import { MarkPaidRequest, PayosBalanceResponse, PayoutListQuery, RunPayoutRequest, ShopPayoutDetailResponse, ShopPayoutResponse } from '../dto/shop-payout.dto';
+import { CreatePayoutHoldRequest, MarkPaidRequest, PayosBalanceResponse, PayoutHoldResponse, PayoutListQuery, ReleasePayoutHoldResponse, RunPayoutRequest, ShopPayoutDetailResponse, ShopPayoutResponse } from '../dto/shop-payout.dto';
 import { ShopPayoutService } from '../shop-payout.service';
 
 type PayoutRow = Prisma.ShopPayoutGetPayload<object>;
@@ -19,12 +19,13 @@ function maskedAccount(snapshot: unknown): string | null {
 }
 
 /* `vendor`: thông điệp lỗi của cổng chi (có thể lộ tình trạng quỹ chi của sàn) được thay bằng lời nhắn chung. */
-function toPayout(p: PayoutRow, vendor = false, shopName?: string): ShopPayoutResponse {
+function toPayout(p: PayoutRow, vendor = false, label?: string | { name: string; code: string }): ShopPayoutResponse {
   return {
     id: p.id,
     code: p.code,
     shopId: p.shopId,
-    shopName,
+    shopName: typeof label === 'string' ? label : label?.name,
+    shopCode: typeof label === 'string' ? undefined : label?.code,
     periodStart: p.periodStart.toISOString(),
     periodEnd: p.periodEnd.toISOString(),
     grossRevenue: p.grossRevenue.toFixed(0),
@@ -33,8 +34,10 @@ function toPayout(p: PayoutRow, vendor = false, shopName?: string): ShopPayoutRe
     carriedDebt: p.carriedDebt.toFixed(0),
     netPayout: p.netPayout.toFixed(0),
     status: p.status,
+    gatewayStatus: p.gatewayStatus,
+    holdReason: p.holdReason,
     providerRef: p.providerRef,
-    failReason: vendor && p.status === 'failed' && p.failReason ? 'Chi trả chưa thành công — sàn đang xử lý lại, liên hệ hỗ trợ nếu quá 2 ngày làm việc' : p.failReason,
+    failReason: vendor && (p.status === 'failed' || p.status === 'unknown') && p.failReason ? 'Chi trả chưa thành công — sàn đang xử lý lại, liên hệ hỗ trợ nếu quá 2 ngày làm việc' : p.failReason,
     paidAt: p.paidAt?.toISOString() ?? null,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -42,7 +45,12 @@ function toPayout(p: PayoutRow, vendor = false, shopName?: string): ShopPayoutRe
   };
 }
 
-const toLine = (l: LineRow) => ({ id: l.id, orderCode: l.orderCode, kind: l.kind, gross: l.gross.toFixed(0), commission: l.commission.toFixed(0) });
+function toHold(h: { id: string; shopId: string; reason: string; createdAt: Date; releasedAt: Date | null }, label?: { name: string; code: string }): PayoutHoldResponse {
+  return { id: h.id, shopId: h.shopId, shopName: label?.name, shopCode: label?.code, reason: h.reason, createdAt: h.createdAt.toISOString(), releasedAt: h.releasedAt?.toISOString() ?? null };
+}
+
+/* `orderCode` luôn là mã ĐƠN (dòng refund: đơn bị hoàn — cột source_order_code; dòng cũ không backfill được thì lùi về khoá RF-…); `lineKey` = khoá kỹ thuật duy nhất của dòng. */
+const toLine = (l: LineRow) => ({ id: l.id, orderCode: l.sourceOrderCode ?? l.orderCode, lineKey: l.orderCode, kind: l.kind, gross: l.gross.toFixed(0), commission: l.commission.toFixed(0) });
 
 /*
  * Đối soát chi trả shop: sàn (`supplier.payout.*`) chạy kỳ / chạy lại / đánh dấu đã trả; vendor (`shop.payout.read`) chỉ xem kỳ của shop mình.
@@ -70,9 +78,44 @@ export class ShopPayoutController {
   @ApiOperation({ summary: 'Chạy kỳ đối soát toàn sàn (idempotent — chạy lại cùng kỳ không tạo trùng)' })
   @ApiOkResponse({ type: [ShopPayoutResponse] })
   async run(@Body() req: RunPayoutRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse[]>> {
-    const created = await this.service.run({ periodStart: new Date(req.periodStart), periodEnd: new Date(req.periodEnd) }, actor);
-    const names = await this.service.shopNames(created.map((p) => p.shopId));
+    const created = await this.service.run({ periodStart: new Date(req.periodStart), periodEnd: new Date(req.periodEnd), shopId: req.shopId }, actor);
+    const names = await this.service.shopLabels(created.map((p) => p.shopId));
     return ApiResponse.ok(created.map((p) => toPayout(p, false, names.get(p.shopId))), `Đã tạo ${created.length} kỳ đối soát`);
+  }
+
+  // ---------- Giữ tay tiền chi trả (PLAN-0026 §2.4) — route tĩnh khai báo TRƯỚC :id ----------
+
+  @Post('admin/payouts/holds')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.process')
+  @ApiOperation({ summary: 'Giữ tay tiền chi trả của một shop (có lý do): kỳ mới của shop vào held, kỳ pending/awaiting_approval chuyển held ngay. Mỗi shop tối đa một lệnh giữ (trùng ⇒ 409 PAYOUT_HOLD_EXISTS).' })
+  @ApiOkResponse({ type: PayoutHoldResponse })
+  async createHold(@Body() req: CreatePayoutHoldRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<PayoutHoldResponse>> {
+    const hold = await this.service.createHold(req.shopId, req.reason, actor);
+    const labels = await this.service.shopLabels([hold.shopId]);
+    return ApiResponse.ok(toHold(hold, labels.get(hold.shopId)), 'Đã giữ tiền chi trả của gian hàng');
+  }
+
+  @Get('admin/payouts/holds')
+  @RequirePermission('supplier.payout.read')
+  @ApiOperation({ summary: 'Danh sách lệnh giữ: có shopId = lịch sử của shop đó; bỏ trống = các lệnh ĐANG hiệu lực' })
+  @ApiOkResponse({ type: [PayoutHoldResponse] })
+  async listHolds(@Query('shopId') shopId?: string): Promise<ApiResponse<PayoutHoldResponse[]>> {
+    const holds = await this.service.listHolds(shopId);
+    const labels = await this.service.shopLabels(holds.map((h) => h.shopId));
+    return ApiResponse.ok(holds.map((h) => toHold(h, labels.get(h.shopId))));
+  }
+
+  @Post('admin/payouts/holds/:id/release')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.process')
+  @ApiOperation({ summary: 'Mở lệnh giữ tay: các kỳ held của shop không còn lý do giữ nào khác về pending / đi tiếp' })
+  @ApiOkResponse({ type: ReleasePayoutHoldResponse })
+  async releaseHold(@Param('id', ParseUUIDPipe) id: string, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ReleasePayoutHoldResponse>> {
+    const r = await this.service.releaseHold(id, actor);
+    const hold = (await this.service.listHolds(r.hold.shopId)).find((h) => h.id === id);
+    const labels = await this.service.shopLabels([r.hold.shopId]);
+    return ApiResponse.ok({ hold: toHold(hold ?? { id, shopId: r.hold.shopId, reason: '', createdAt: new Date(), releasedAt: new Date() }, labels.get(r.hold.shopId)), releasedPayouts: r.released }, r.released > 0 ? `Đã mở giữ ${r.released} kỳ` : 'Đã mở lệnh giữ');
   }
 
   @Get('admin/payouts')
@@ -80,7 +123,7 @@ export class ShopPayoutController {
   @ApiOperation({ summary: 'Danh sách kỳ đối soát (lọc status/shop)' })
   async list(@Query() q: PayoutListQuery): Promise<ApiResponse<PageResponse<ShopPayoutResponse>>> {
     const r = await this.service.list({ status: q.status, shopId: q.shopId }, q.skip, q.size);
-    const names = await this.service.shopNames(r.items.map((p) => p.shopId));
+    const names = await this.service.shopLabels(r.items.map((p) => p.shopId));
     return ApiResponse.ok(PageResponse.of(r.items.map((p) => toPayout(p, false, names.get(p.shopId))), q.page, q.size, r.total));
   }
 
@@ -90,7 +133,7 @@ export class ShopPayoutController {
   @ApiOkResponse({ type: ShopPayoutDetailResponse })
   async detail(@Param('id', ParseUUIDPipe) id: string): Promise<ApiResponse<ShopPayoutDetailResponse>> {
     const { payout, lines } = await this.service.getDetail(id);
-    const names = await this.service.shopNames([payout.shopId]);
+    const names = await this.service.shopLabels([payout.shopId]);
     return ApiResponse.ok({ payout: toPayout(payout, false, names.get(payout.shopId)), lines: lines.map(toLine) });
   }
 
@@ -101,7 +144,39 @@ export class ShopPayoutController {
   @ApiOkResponse({ type: ShopPayoutResponse })
   async retry(@Param('id', ParseUUIDPipe) id: string, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse>> {
     const p = await this.service.retry(id, actor);
-    return ApiResponse.ok(toPayout(p, false, (await this.service.shopNames([p.shopId])).get(p.shopId)), 'Đã gửi lại lệnh chi');
+    return ApiResponse.ok(toPayout(p, false, (await this.service.shopLabels([p.shopId])).get(p.shopId)), 'Đã gửi lại lệnh chi');
+  }
+
+  @Post('admin/payouts/:id/approve')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.approve')
+  @ApiOperation({ summary: 'Duyệt kỳ chi trả vượt hạn mức tự chi (awaiting_approval) ⇒ gửi PayOS' })
+  @ApiOkResponse({ type: ShopPayoutResponse })
+  async approve(@Param('id', ParseUUIDPipe) id: string, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse>> {
+    const p = await this.service.approve(id, actor);
+    return ApiResponse.ok(toPayout(p, false, (await this.service.shopLabels([p.shopId])).get(p.shopId)), 'Đã duyệt và gửi lệnh chi');
+  }
+
+  @Post('admin/payouts/:id/reconcile')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.process')
+  @ApiOperation({ summary: 'Kiểm tra với PayOS kết quả lệnh chi của kỳ processing/unknown (cập nhật paid / failed / giữ nguyên)' })
+  @ApiOkResponse({ type: ShopPayoutResponse })
+  async reconcile(@Param('id', ParseUUIDPipe) id: string, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse>> {
+    const r = await this.service.reconcileOne(id, actor);
+    const { payout } = await this.service.getDetail(id);
+    return ApiResponse.ok(toPayout(payout, false, (await this.service.shopLabels([payout.shopId])).get(payout.shopId)), `Kết quả đối chiếu: ${r.outcome} (${r.detail})`);
+  }
+
+  @Post('admin/payouts/:id/release')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.process')
+  @ApiOperation({ summary: 'Mở giữ kỳ held khi lý do giữ đã hết (shop mở khoá / hết thời gian giữ đổi TK)' })
+  @ApiOkResponse({ type: ShopPayoutResponse })
+  async release(@Param('id', ParseUUIDPipe) id: string, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse>> {
+    await this.service.releaseOne(id, actor); // còn lý do giữ ⇒ 409 PAYOUT_STILL_HELD kèm lý do
+    const { payout } = await this.service.getDetail(id);
+    return ApiResponse.ok(toPayout(payout, false, (await this.service.shopLabels([payout.shopId])).get(payout.shopId)), 'Đã mở giữ');
   }
 
   @Post('admin/payouts/:id/mark-paid')
@@ -111,7 +186,7 @@ export class ShopPayoutController {
   @ApiOkResponse({ type: ShopPayoutResponse })
   async markPaid(@Param('id', ParseUUIDPipe) id: string, @Body() req: MarkPaidRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse>> {
     const p = await this.service.markPaid(id, req, actor);
-    return ApiResponse.ok(toPayout(p, false, (await this.service.shopNames([p.shopId])).get(p.shopId)), 'Đã đánh dấu đã chi');
+    return ApiResponse.ok(toPayout(p, false, (await this.service.shopLabels([p.shopId])).get(p.shopId)), 'Đã đánh dấu đã chi');
   }
 
   // ---------- Vendor (shopId CHỈ lấy từ ngữ cảnh) ----------

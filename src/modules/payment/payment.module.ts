@@ -9,7 +9,10 @@ import { PayosService } from './payos/payos.service';
 import { PaymentAuditLogService } from './audit/payment-audit-log.service';
 import { PaymentOutboxService } from './outbox/payment-outbox.service';
 import { ShopWalletController } from './shop-wallet/controller/shop-wallet.controller';
+import { ShopWalletTopupController } from './shop-wallet/controller/shop-wallet-topup.controller';
 import { ShopWalletService } from './shop-wallet/shop-wallet.service';
+import { ShopWalletTopupService } from './shop-wallet/shop-wallet-topup.service';
+import { ShopWalletTopupSettleService } from './shop-wallet/shop-wallet-topup-settle.service';
 
 /*
  * Module payment (PLAN-0007/0015/0017/0018/0020): COD + PayOS. PayOS: tiền về sàn rồi đối soát chi trả shop. COD (PLAN-0020): shop cầm tiền mặt, chỉ bán được khi đã đặt cọc
@@ -21,16 +24,18 @@ import { ShopWalletService } from './shop-wallet/shop-wallet.service';
  */
 @Module({
   imports: [ShopModule, SystemModule],
-  controllers: [PaymentPublicController, PaymentController, AdminPaymentController, ShopWalletController],
+  controllers: [PaymentPublicController, PaymentController, AdminPaymentController, ShopWalletController, ShopWalletTopupController],
   providers: [
     PayosService,
     PaymentService,
     ShopWalletService,
+    ShopWalletTopupService,
+    ShopWalletTopupSettleService,
     PaymentQueryApi,
     PaymentAuditLogService,
     PaymentOutboxService,
     { provide: PAYMENT_GATEWAY, useExisting: PaymentService },
   ],
-  exports: [PAYMENT_GATEWAY, PaymentQueryApi, PaymentService, ShopWalletService, PayosService, PaymentAuditLogService, PaymentOutboxService],
+  exports: [PAYMENT_GATEWAY, PaymentQueryApi, PaymentService, ShopWalletService, ShopWalletTopupSettleService, PayosService, PaymentAuditLogService, PaymentOutboxService],
 })
 export class PaymentModule {}

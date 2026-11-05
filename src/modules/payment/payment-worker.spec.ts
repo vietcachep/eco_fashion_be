@@ -66,3 +66,68 @@ describe('PaymentJobs.recoverStuckRefunds — job phục hồi refund treo', () 
     expect(Reflect.getMetadata('SCHEDULE_INTERVAL_OPTIONS', fn)).toEqual({ timeout: 5 * 60_000 });
   });
 });
+
+describe('PaymentJobs.reconcileGatewayRefunds — job đối soát lệnh hoàn tiền PayOS (PLAN-0022)', () => {
+  let logSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+  beforeEach(() => {
+    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  type Reconciled = { checked: number; finalized: number; failed: number; pending: number };
+  const empty: Reconciled = { checked: 0, finalized: 0, failed: 0, pending: 0 };
+  const build = () => {
+    const payments = {
+      recoverStuckRefunds: jest.fn((): Promise<{ finalized: number; released: number; flagged: number }> => Promise.resolve({ finalized: 0, released: 0, flagged: 0 })),
+      reconcileGatewayRefunds: jest.fn((): Promise<Reconciled> => Promise.resolve(empty)),
+    };
+    const jobs = new PaymentJobs(payments as unknown as PaymentService);
+    return { payments, jobs };
+  };
+
+  it('gọi PaymentService.reconcileGatewayRefunds; không có gì chốt ⇒ im lặng', async () => {
+    const { payments, jobs } = build();
+    await jobs.reconcileGatewayRefunds();
+    expect(payments.reconcileGatewayRefunds).toHaveBeenCalledTimes(1);
+    expect(payments.recoverStuckRefunds).not.toHaveBeenCalled(); // hai job độc lập
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('có refund được chốt (done / failed) ⇒ ghi log kèm số liệu', async () => {
+    const { payments, jobs } = build();
+    payments.reconcileGatewayRefunds.mockResolvedValue({ checked: 3, finalized: 2, failed: 1, pending: 0 });
+    await jobs.reconcileGatewayRefunds();
+    expect(logSpy).toHaveBeenCalledWith({ checked: 3, finalized: 2, failed: 1, pending: 0 }, 'Đã đối soát lệnh hoàn tiền PayOS');
+  });
+
+  it('lỗi bị nuốt + log, cờ chạy được nhả nên lượt sau vẫn chạy; KHÔNG chạy chồng (hai lượt đồng thời chỉ một lượt thật)', async () => {
+    const { payments, jobs } = build();
+    payments.reconcileGatewayRefunds.mockRejectedValueOnce(new Error('db chết'));
+    await expect(jobs.reconcileGatewayRefunds()).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+
+    let release: () => void = () => undefined;
+    payments.reconcileGatewayRefunds.mockImplementationOnce(
+      () =>
+        new Promise<Reconciled>((resolve) => {
+          release = () => resolve(empty);
+        }),
+    );
+    const first = jobs.reconcileGatewayRefunds();
+    await jobs.reconcileGatewayRefunds(); // chồng ⇒ bỏ qua
+    expect(payments.reconcileGatewayRefunds).toHaveBeenCalledTimes(2);
+    release();
+    await first;
+    await jobs.reconcileGatewayRefunds();
+    expect(payments.reconcileGatewayRefunds).toHaveBeenCalledTimes(3);
+  });
+
+  it('chạy mỗi 1 phút (@Interval 60000 ms); job phục hồi refund treo vẫn 5 phút', () => {
+    const proto = PaymentJobs.prototype as unknown as Record<string, object>;
+    expect(Reflect.getMetadata('SCHEDULE_INTERVAL_OPTIONS', proto.reconcileGatewayRefunds)).toEqual({ timeout: 60_000 });
+    expect(Reflect.getMetadata('SCHEDULE_INTERVAL_OPTIONS', proto.recoverStuckRefunds)).toEqual({ timeout: 5 * 60_000 });
+  });
+});

@@ -3,6 +3,8 @@ import { type ExecutionContext, Logger, ValidationPipe } from '@nestjs/common';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { ForbiddenException, NotFoundException } from '@common/exception/business.exception';
+import type { NotificationGateway } from '@common/gateway/notification.gateway';
+import type { UserDirectoryGateway } from '@common/gateway/user-directory.gateway';
 import type { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma } from '@common/prisma/types';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
@@ -125,7 +127,7 @@ function buildSystem() {
     findBrief: jest.fn((id: string) => Promise.resolve({ id })),
     findManyBrief: jest.fn((ids: string[]) => Promise.resolve(new Map(ids.map((id) => [id, { id, name: id === SHOP_A ? 'Shop A' : 'Shop B' }])))),
   };
-  const payoutService = new ShopPayoutService(f.db as unknown as PrismaService, {} as unknown as OrderQueryApi, shops as unknown as ShopQueryApi, {} as unknown as SystemQueryApi, {} as unknown as PayosService, audit as unknown as PaymentAuditLogService, outbox as unknown as PaymentOutboxService);
+  const payoutService = new ShopPayoutService(f.db as unknown as PrismaService, {} as unknown as OrderQueryApi, shops as unknown as ShopQueryApi, {} as unknown as SystemQueryApi, {} as unknown as PayosService, audit as unknown as PaymentAuditLogService, outbox as unknown as PaymentOutboxService, { notifyMany: jest.fn() } as unknown as NotificationGateway, { staffUserIdsWithPermission: jest.fn(() => Promise.resolve([])) } as unknown as UserDirectoryGateway);
   const payoutController = new ShopPayoutController(payoutService);
   return { ...f, payoutService, payoutController, shops, audit, outbox };
 }

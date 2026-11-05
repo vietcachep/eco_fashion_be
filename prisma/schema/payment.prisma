@@ -26,6 +26,12 @@ model PaymentMethod {
 }
 
 model Payment {
+  collectionMode String? @map("collection_mode") @db.VarChar(30)
+  codCollectedAt DateTime? @map("cod_collected_at") @db.Timestamptz
+  codRemittedAt DateTime? @map("cod_remitted_at") @db.Timestamptz
+  codRemittedBy String? @map("cod_remitted_by") @db.Uuid
+  codRemittanceRef String? @unique @map("cod_remittance_ref") @db.VarChar(100)
+  codRemittedAmount Decimal? @map("cod_remitted_amount") @db.Decimal(14,0)
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId         String    @map("order_id") @db.Uuid
   orderCode       String    @map("order_code") @db.VarChar(30)
@@ -52,6 +58,25 @@ model Payment {
    */
   transferContent String?   @map("transfer_content") @db.VarChar(60)
   refundedAmount  Decimal   @default(0) @map("refunded_amount") @db.Decimal(14, 0)
+  /**
+   * Tiền khách THỰC TRẢ (cộng dồn các giao dịch PayOS đã nhận) — có thể lệch `amount` (thiếu/thừa/trùng). Backfill = amount cho payment đã thu
+   */
+  receivedAmount  Decimal   @default(0) @map("received_amount") @db.Decimal(14, 0)
+  /**
+   * Số lần tạo link PayOS + lỗi lần gần nhất (link được tạo SAU commit đặt hàng; lỗi ⇒ payment vẫn pending, khách thử lại)
+   */
+  linkAttempts    Int       @default(0) @map("link_attempts")
+  lastLinkError   String?   @map("last_link_error") @db.VarChar(255)
+  /**
+   * Lần hỏi PayOS gần nhất + trạng thái PayOS trả về (job payos-reconcile-pending)
+   */
+  lastCheckedAt     DateTime? @map("last_checked_at") @db.Timestamptz
+  lastGatewayStatus String?   @map("last_gateway_status") @db.VarChar(30)
+  /**
+   * PLAN-0040 Tầng 3.6 (COD-08b) — lúc ĐẢO ghi thu COD: shop đã báo giao (payment `paid`) nhưng khách báo CHƯA NHẬN hàng ⇒ khách chưa từng trả tiền mặt ⇒ payment về `cancelled` kèm mốc này
+   * (không phải hoàn tiền; ví shop được trả lại hoa hồng/phần voucher sàn đã ghi). NULL = chưa từng bị đảo. Chỉ payment COD.
+   */
+  reversedAt        DateTime? @map("reversed_at") @db.Timestamptz
   gatewayResponse Json?     @map("gateway_response")
   paidAt          DateTime? @map("paid_at") @db.Timestamptz
   expiresAt       DateTime? @map("expires_at") @db.Timestamptz
@@ -147,14 +172,57 @@ model Refund {
    * (treo/mất kết nối) ⇒ KHÔNG được tự gọi lại cổng, phải đối chiếu tay. Cổng báo từ chối rõ ràng thì xoá dấu (tiền chưa đi).
    */
   gatewayAttemptedAt DateTime? @map("gateway_attempted_at") @db.Timestamptz
+  /**
+   * PLAN-0022 — tài khoản ngân hàng NHẬN tiền hoàn do KHÁCH khai (bắt buộc với đơn COD; PayOS thì dùng tài khoản đã trả nếu có). Số đầy đủ chỉ dùng khi gọi PayOS payout,
+   * API chỉ trả 4 số cuối. `payee_bin` = BIN 6 số Napas (cùng dạng `toBin` của payout). Dữ liệu cũ = NULL.
+   */
+  payeeBankBin       String?   @map("payee_bank_bin") @db.VarChar(10)
+  payeeAccountNumber String?   @map("payee_account_number") @db.VarChar(34)
+  payeeAccountName   String?   @map("payee_account_name") @db.VarChar(120)
+  /**
+   * Nguồn tài khoản đã/đang dùng để chi: customer (khách khai) | payer (tài khoản đã trả tiền — counterAccount* trong webhook PayOS). Ghi khi tạo yêu cầu (customer) và khi gửi lệnh chi.
+   */
+  payeeSource        String?   @map("payee_source") @db.VarChar(12)
+  /**
+   * PLAN-0022 — trạng thái lệnh chi PayOS: submitted (PayOS đã NHẬN lệnh, chưa chốt) | processing (đã tra, còn đang xử lý) | succeeded | failed (PayOS báo lỗi/huỷ/hoàn).
+   * PayOS trả code "00" chỉ là đã nhận lệnh — refund chỉ `done` khi poll `getPayout` ra succeeded. NULL = chưa gửi lệnh nào / hoàn tay.
+   */
+  gatewayStatus      String?   @map("gateway_status") @db.VarChar(16)
+  /**
+   * Mã lệnh chi PayOS (`data.id` của /v1/payouts) — dùng tra `getPayout`; KHÔNG phải provider_ref (provider_ref chỉ ghi khi PayOS xác nhận đã chuyển).
+   */
+  gatewayPayoutId    String?   @map("gateway_payout_id") @db.VarChar(64)
+  /**
+   * Số lần ĐÃ tạo lệnh chi mới trên PayOS cho refund này (0 = chưa). Lệnh đầu dùng referenceId/idempotency-key = refund.id; chỉ khi lệnh trước bị PayOS báo thất bại hẳn
+   * mới tạo lệnh mới với hậu tố `-<lần>` (không bao giờ gửi lại cùng lệnh khi chưa rõ kết quả).
+   */
+  gatewayAttempt     Int       @default(0) @map("gateway_attempt")
+  /**
+   * Lúc PayOS nhận lệnh chi; NOT NULL khi refund `processing` ⇒ job đối soát `reconcileGatewayRefunds` tra kết quả, KHÔNG nhả/chi lại. Xoá khi chiếm lại để chi lệnh mới.
+   */
+  gatewaySubmittedAt DateTime? @map("gateway_submitted_at") @db.Timestamptz
+  /**
+   * Đã báo kế toán "PayOS treo bất thường" (processing quá REFUND_GATEWAY_STALL_MS chưa chốt, hoặc PayOS nhận lệnh nhưng không trả mã tra cứu) — chỉ báo MỘT lần (compare-and-set).
+   */
+  gatewayAlertedAt   DateTime? @map("gateway_alerted_at") @db.Timestamptz
+  /**
+   * Khoản hoàn cần kế toán xử lý tay: không có đường tự chi (thiếu tài khoản nhận / không qua PayOS) hoặc PayOS treo bất thường. Cột phi chuẩn hoá để lọc danh sách; API còn cộng điều kiện
+   * "chưa cấu hình khoá payout" lúc đọc.
+   */
+  needsManual        Boolean   @default(false) @map("needs_manual")
   version            Int       @default(0)
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
+  // provider_ref (mã giao dịch hoàn tay / `payos-refund:<payoutId>`) DUY NHẤT khi khác NULL — unique index MỘT PHẦN `uq_refunds_provider_ref` viết tay trong migration
+  // 20261026100100_return_roles_payment (Prisma không biểu diễn được). Trùng ⇒ P2002 ⇒ 409 REFUND_PROVIDER_REF_DUPLICATE.
   @@index([status, createdAt(sort: Desc)])
   @@index([shopId])
+  @@index([orderCode])
+  @@index([paymentId])
+  @@index([returnRequestId])
   @@map("refunds")
   @@schema("payment")
 }
@@ -170,31 +238,43 @@ model Refund {
  * Mỗi (shopId, periodStart, periodEnd) một dòng.
  */
 model ShopPayout {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code         String    @unique @db.VarChar(30)
-  shopId       String    @map("shop_id") @db.Uuid
-  periodStart  DateTime  @map("period_start") @db.Timestamptz
-  periodEnd    DateTime  @map("period_end") @db.Timestamptz
-  grossRevenue Decimal   @map("gross_revenue") @db.Decimal(14, 0)
-  commission   Decimal   @db.Decimal(14, 0)
-  refundAmount Decimal   @map("refund_amount") @db.Decimal(14, 0)
-  carriedDebt  Decimal   @default(0) @map("carried_debt") @db.Decimal(14, 0)
-  netPayout    Decimal   @map("net_payout") @db.Decimal(14, 0)
-  status       String    @default("pending") @db.VarChar(20)
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code               String    @unique @db.VarChar(30)
+  shopId             String    @map("shop_id") @db.Uuid
+  periodStart        DateTime  @map("period_start") @db.Timestamptz
+  periodEnd          DateTime  @map("period_end") @db.Timestamptz
+  grossRevenue       Decimal   @map("gross_revenue") @db.Decimal(14, 0)
+  commission         Decimal   @db.Decimal(14, 0)
+  refundAmount       Decimal   @map("refund_amount") @db.Decimal(14, 0)
+  carriedDebt        Decimal   @default(0) @map("carried_debt") @db.Decimal(14, 0)
+  netPayout          Decimal   @map("net_payout") @db.Decimal(14, 0)
+  status             String    @default("pending") @db.VarChar(20)
   /**
    * Mã giao dịch chi PayOS / mã chuyển khoản tay — chống chi trùng + tra soát
    */
-  providerRef  String?   @map("provider_ref") @db.VarChar(120)
-  failReason   String?   @map("fail_reason") @db.VarChar(500)
+  providerRef        String?   @map("provider_ref") @db.VarChar(120)
+  failReason         String?   @map("fail_reason") @db.VarChar(500)
   /**
    * Snapshot tài khoản nhận lúc chạy kỳ (đổi hồ sơ shop sau đó không làm lệch chứng từ)
    */
-  bankSnapshot Json?     @map("bank_snapshot")
-  paidAt       DateTime? @map("paid_at") @db.Timestamptz
-  createdBy    String?   @map("created_by") @db.Uuid
-  version      Int       @default(0)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  bankSnapshot       Json?     @map("bank_snapshot")
+  paidAt             DateTime? @map("paid_at") @db.Timestamptz
+  /**
+   * PLAN-0026: kết quả cổng — failed = PayOS TỪ CHỐI chắc chắn (được gửi lại bằng khoá mới); unknown = timeout/5xx/không rõ (KHÔNG được chi lại, KHÔNG được đánh dấu tay khi chưa tra PayOS)
+   */
+  gatewayStatus      String?   @map("gateway_status") @db.VarChar(16)
+  gatewayAttemptedAt DateTime? @map("gateway_attempted_at") @db.Timestamptz
+  /**
+   * Lần gửi lệnh chi: 1 = khoá `<mã kỳ>`, n>1 = `<mã kỳ>-<n>` (chỉ tăng sau khi PayOS TỪ CHỐI chắc chắn)
+   */
+  gatewayAttempt     Int       @default(1) @map("gateway_attempt")
+  approvedBy         String?   @map("approved_by") @db.Uuid
+  approvedAt         DateTime? @map("approved_at") @db.Timestamptz
+  holdReason         String?   @map("hold_reason") @db.VarChar(255)
+  createdBy          String?   @map("created_by") @db.Uuid
+  version            Int       @default(0)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   lines ShopPayoutLine[]
 
@@ -205,19 +285,45 @@ model ShopPayout {
 }
 
 /**
+ * Lệnh GIỮ TAY tiền chi trả của một shop (kế toán/quản lý, có lý do). Mỗi shop tối đa MỘT lệnh đang hiệu lực (released_at NULL — unique một phần uq_shop_payout_holds_active).
+ * Kỳ tạo cho shop đang bị giữ ⇒ held; mở giữ (released_at) ⇒ kỳ held về pending.
+ */
+model ShopPayoutHold {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId     String    @map("shop_id") @db.Uuid
+  reason     String    @db.VarChar(255)
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  releasedBy String?   @map("released_by") @db.Uuid
+  releasedAt DateTime? @map("released_at") @db.Timestamptz
+
+  @@index([shopId, createdAt(sort: Desc)])
+  @@map("shop_payout_holds")
+  @@schema("payment")
+}
+
+/**
  * Dòng chi tiết của kỳ: mỗi đơn online đã tính (sale) hoặc mỗi hoàn tiền đã trừ (refund). (orderCode, kind) UNIQUE toàn
  * bảng ⇒ một đơn/hoàn tiền không bao giờ bị tính vào hai kỳ.
  */
 model ShopPayoutLine {
-  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  payoutId   String  @map("payout_id") @db.Uuid
-  orderCode  String  @map("order_code") @db.VarChar(30)
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  payoutId        String  @map("payout_id") @db.Uuid
+  /**
+   * Khoá duy nhất của dòng: sale = mã đơn · refund = "RF-" + 26 hex đầu của id hoàn tiền (không phải mã đơn — xem source_order_code)
+   */
+  orderCode       String  @map("order_code") @db.VarChar(30)
   /**
    * sale | refund
    */
-  kind       String  @db.VarChar(10)
-  gross      Decimal @db.Decimal(14, 0)
-  commission Decimal @db.Decimal(14, 0)
+  kind            String  @db.VarChar(10)
+  gross           Decimal @db.Decimal(14, 0)
+  commission      Decimal @db.Decimal(14, 0)
+  /**
+   * PLAN-0022 — mã ĐƠN thật của dòng hoàn tiền (để shop/kế toán biết khoản trừ này thuộc đơn nào). Dòng sale để NULL (order_code đã là mã đơn).
+   * Dòng refund cũ được backfill theo khoá RF-… trong migration 20261026100100_return_roles_payment; không khớp được thì NULL.
+   */
+  sourceOrderCode String? @map("source_order_code") @db.VarChar(30)
 
   payout ShopPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
 
@@ -251,7 +357,9 @@ model ShopCodWallet {
 
 /**
  * Sổ cái ví (chỉ thêm, không sửa): deposit (+) · cod_commission (−hoa hồng đơn COD; âm = cộng lại khi voucher sàn chịu) · cod_refund (hoàn tiền đơn COD)
- * · adjust (sàn chỉnh tay, có lý do). (shopId, type, orderCode) UNIQUE với loại theo đơn ⇒ một đơn không bị trừ hai lần.
+ * · adjust (sàn chỉnh tay, có lý do) · cod_reversal (PLAN-0040 Tầng 3.6: ĐẢO ghi thu cod_commission khi khách báo chưa nhận hàng — dấu ngược với dòng cod_commission của cùng đơn)
+ * · topup_payos (PLAN-0041: nạp cọc qua PayOS, luôn dương, `topup_id`+`ref_key` bắt buộc).
+ * (shopId, type, orderCode) UNIQUE với loại theo đơn ⇒ một đơn không bị trừ / đảo hai lần.
  */
 model ShopCodWalletTransaction {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -265,6 +373,11 @@ model ShopCodWalletTransaction {
   balanceAfter Decimal  @map("balance_after") @db.Decimal(14, 0)
   orderCode    String?  @map("order_code") @db.VarChar(30)
   depositId    String?  @map("deposit_id") @db.Uuid
+  /**
+   * PLAN-0041 — khoản nạp PayOS sinh dòng này (chỉ type = topup_payos) + khoá idempotent `payos-topup:<topupId>:<luỹ kế>`; UNIQUE một phần ở SQL (`uq_shop_cod_wallet_tx_ref_key`)
+   */
+  topupId      String?  @map("topup_id") @db.Uuid
+  refKey       String?  @map("ref_key") @db.VarChar(120)
   note         String?  @db.VarChar(500)
   /**
    * Số liệu tính toán (gross, tỉ lệ hoa hồng…) để hoàn đúng phần hoa hồng khi đơn bị hoàn tiền
@@ -277,6 +390,7 @@ model ShopCodWalletTransaction {
 
   @@unique([shopId, type, orderCode])
   @@index([shopId, createdAt(sort: Desc)])
+  @@index([topupId])
   @@map("shop_cod_wallet_transactions")
   @@schema("payment")
 }
@@ -304,6 +418,59 @@ model ShopCodDeposit {
   @@index([shopId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
   @@map("shop_cod_deposits")
+  @@schema("payment")
+}
+
+/**
+ * PLAN-0041 — khoản NẠP CỌC QUA PAYOS của gian hàng: chủ shop tạo link PayOS; tiền PayOS xác nhận đã nhận được GHI CÓ vào ví đúng số THỰC NHẬN (xem PLAN-0041 §6).
+ * status: creating | pending | partial | paid | expired | cancelled | failed. `received_amount` = tổng đã ghi có cho khoản này = max(Σ biên nhận webhook, polled_amount).
+ * Mỗi shop tối đa MỘT khoản mở (creating|pending|partial) — chỉ mục một phần `uq_shop_cod_topups_active_per_shop` (chỉ ở SQL migration). payos_order_code nằm dải 5e15 (CHECK ở SQL).
+ * Chứng từ tiền, chỉ thêm/đổi trạng thái, không xoá ⇒ miễn cột `is_deleted` (ghi lý do theo Base Columns Rule).
+ */
+model ShopCodTopup {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId            String    @map("shop_id") @db.Uuid
+  amount            Decimal   @db.Decimal(14, 0)
+  payosOrderCode    String    @unique @map("payos_order_code") @db.VarChar(20)
+  paymentLinkId     String?   @map("payment_link_id") @db.VarChar(64)
+  checkoutUrl       String?   @map("checkout_url") @db.VarChar(500)
+  qrCode            String?   @map("qr_code") @db.Text
+  status            String    @default("creating") @db.VarChar(20)
+  receivedAmount    Decimal   @default(0) @map("received_amount") @db.Decimal(14, 0)
+  polledAmount      Decimal   @default(0) @map("polled_amount") @db.Decimal(14, 0)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz
+  paidAt            DateTime? @map("paid_at") @db.Timestamptz
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz
+  lastCheckedAt     DateTime? @map("last_checked_at") @db.Timestamptz
+  lastGatewayStatus String?   @map("last_gateway_status") @db.VarChar(30)
+  linkError         String?   @map("link_error") @db.VarChar(255)
+  requestedBy       String?   @map("requested_by") @db.Uuid
+  cancelledBy       String?   @map("cancelled_by") @db.Uuid
+  version           Int       @default(0)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  receipts ShopCodTopupReceipt[]
+
+  @@index([shopId, createdAt(sort: Desc)])
+  @@index([status, expiresAt])
+  @@map("shop_cod_topups")
+  @@schema("payment")
+}
+
+/// Mỗi khoản tiền PayOS báo về qua webhook cho một khoản nạp (khử trùng theo `reference`); bảng kỹ thuật chỉ thêm ⇒ miễn cột chuẩn (version/updated/is_deleted).
+model ShopCodTopupReceipt {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  topupId   String   @map("topup_id") @db.Uuid
+  reference String   @db.VarChar(120)
+  amount    Decimal  @db.Decimal(14, 0)
+  raw       Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  topup ShopCodTopup @relation(fields: [topupId], references: [id], onDelete: Cascade)
+
+  @@unique([topupId, reference])
+  @@map("shop_cod_topup_receipts")
   @@schema("payment")
 }
 

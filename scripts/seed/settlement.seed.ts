@@ -320,7 +320,7 @@ async function seedPayouts(prisma: PrismaClient, shops: ShopRow[], bankOf: Map<s
     .flatMap((r) => (r.shopId ? [{ id: r.id, orderCode: r.orderCode, amount: D(r.amount), shopId: r.shopId, processedAt: r.processedAt }] : []));
 
   // Đơn đang có yêu cầu đổi trả CHƯA xử lý xong bị giữ lại (escrow) — như settlementOrders.
-  const openReturns = new Set((await prisma.returnRequest.findMany({ where: { orderCode: { startsWith: ORDER_PREFIX }, status: { in: ['requested', 'approved'] } }, select: { orderCode: true } })).map((r) => r.orderCode));
+  const openReturns = new Set((await prisma.returnRequest.findMany({ where: { orderCode: { startsWith: ORDER_PREFIX }, status: { in: ['requested', 'approved', 'escalated', 'received'] } }, select: { orderCode: true } })).map((r) => r.orderCode));
 
   // Dòng đối soát đã có trong DB (kỳ seed lần trước hoặc kỳ chạy tay) — để không tính hai lần.
   const state: PayoutLedgerState = { saleLine: new Map(), refundKeys: new Set() };

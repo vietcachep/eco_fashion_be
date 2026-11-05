@@ -9,6 +9,8 @@ import { ShopContextGuard } from '@modules/shop/security/shop-context.guard';
 import { CurrentShop, RequireShopPermission, type ShopContext } from '@modules/shop/security/shop-permission.decorator';
 import { AdjustWalletRequest, DepositListQuery, DepositRequest, RejectDepositRequest, WalletDepositResponse, WalletListQuery, WalletResponse, WalletSummaryResponse, WalletTransactionResponse } from '../dto/shop-wallet.dto';
 import { ShopWalletService } from '../shop-wallet.service';
+import { ShopWalletTopupService } from '../shop-wallet-topup.service';
+import { toTopupResponse } from './topup.mapper';
 
 type DepositRow = Prisma.ShopCodDepositGetPayload<object>;
 type TxRow = Prisma.ShopCodWalletTransactionGetPayload<object>;
@@ -45,6 +47,7 @@ const toWallet = (w: WalletView, shopName?: string): WalletResponse => ({
   exempt: w.exempt,
   pendingDeposit: w.pendingDeposit ? toDeposit(w.pendingDeposit, shopName) : null,
   minDeposit: w.minDeposit,
+  minBalanceForCod: w.minBalanceForCod,
   instructions: w.instructions,
 });
 
@@ -56,7 +59,10 @@ const toWallet = (w: WalletView, shopName?: string): WalletResponse => ({
 @ApiBearerAuth()
 @Controller()
 export class ShopWalletController {
-  constructor(private readonly service: ShopWalletService) {}
+  constructor(
+    private readonly service: ShopWalletService,
+    private readonly topups: ShopWalletTopupService,
+  ) {}
 
   // ---------- Sàn ----------
 
@@ -140,7 +146,17 @@ export class ShopWalletController {
   @ApiOperation({ summary: 'Ví đặt cọc COD của shop: số dư, COD đang mở/đóng, yêu cầu nộp đang chờ' })
   @ApiOkResponse({ type: WalletResponse })
   async mine(@CurrentShop() shop: ShopContext): Promise<ApiResponse<WalletResponse>> {
-    return ApiResponse.ok(toWallet(await this.service.getWallet(shop.shopId), shop.shopName));
+    const [wallet, topup] = await Promise.all([this.service.getWallet(shop.shopId), this.topups.summaryFor(shop.shopId)]);
+    // PLAN-0041: chỉ route vendor trả payosTopup (cờ + mức tiền + khoản đang mở, có link vì là chính chủ shop).
+    return ApiResponse.ok({
+      ...toWallet(wallet, shop.shopName),
+      payosTopup: {
+        enabled: topup.enabled,
+        minAmount: topup.minAmount,
+        maxAmount: topup.maxAmount,
+        active: topup.active ? toTopupResponse(topup.active, { shopName: shop.shopName, exposeLink: true }) : null,
+      },
+    });
   }
 
   @Get('shop/wallet/transactions')

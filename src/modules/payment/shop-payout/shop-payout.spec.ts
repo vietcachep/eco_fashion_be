@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { BusinessException, NotFoundException } from '@common/exception/business.exception';
+import type { NotificationGateway } from '@common/gateway/notification.gateway';
+import type { UserDirectoryGateway } from '@common/gateway/user-directory.gateway';
 import type { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma } from '@common/prisma/types';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
@@ -16,7 +18,7 @@ import type { PaymentOutboxService } from '../outbox/payment-outbox.service';
 import type { PayosService } from '../payos/payos.service';
 import { ShopPayoutController } from './controller/shop-payout.controller';
 import { MarkPaidRequest, PayoutListQuery, RunPayoutRequest } from './dto/shop-payout.dto';
-import { ShopPayoutService } from './shop-payout.service';
+import { ShopPayoutService, uniquePayoutCode } from './shop-payout.service';
 
 /*
  * Test đối soát chi trả shop. Service chạy THẬT; Prisma được thay bằng DB giả trong bộ nhớ hiểu đúng các `where` mà service dùng
@@ -60,6 +62,12 @@ type PayoutRow = {
   status: string;
   providerRef: string | null;
   failReason: string | null;
+  gatewayStatus: string | null;
+  gatewayAttemptedAt: Date | null;
+  gatewayAttempt: number;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  holdReason: string | null;
   bankSnapshot: unknown;
   paidAt: Date | null;
   createdBy: string | null;
@@ -67,14 +75,15 @@ type PayoutRow = {
   createdAt: Date;
   updatedAt: Date;
 };
-type LineRow = { payoutId: string; orderCode: string; kind: string; gross: Dec; commission: Dec };
+/* `sourceOrderCode` (PLAN-0022): mã đơn thật của dòng hoàn tiền — chỉ dòng refund mới có (dòng sale: order_code đã là mã đơn). */
+type LineRow = { payoutId: string; orderCode: string; kind: string; gross: Dec; commission: Dec; sourceOrderCode?: string | null };
 type RefundRow = { id: string; orderCode: string; amount: Dec; status: string; shopId: string | null; processedAt: Date | null };
-type EligibleOrder = { orderCode: string; shopId: string; total: Dec; platformDiscount: Dec; commissionRateSnapshot: Dec; settleFrom: Date };
+type EligibleOrder = { orderCode: string; shopId: string; total: Dec; platformDiscount: Dec; commissionBase?: Dec; commissionRateSnapshot: Dec; settleFrom: Date };
 type PayoutInput = { referenceId: string; amount: bigint; toBin: string; toAccountNumber: string; description: string; idempotencyKey: string };
-type PayoutResult = { ok: boolean; code: string; message: string; transactionId?: string; raw: unknown };
+type PayoutResult = { ok: boolean; code: string; message: string; transactionId?: string; raw: unknown; definite?: boolean };
 type Where = Record<string, unknown>;
 /* BankAccount của ShopQueryApi: thêm changedAt (lần đổi TK gần nhất) — fixture mặc định không có (= chưa từng đổi). */
-type BankRec = typeof BANK & { changedAt?: Date | null };
+type BankRec = typeof BANK & { changedAt?: Date | null; pendingVerification?: boolean };
 
 const isDec = (v: unknown): v is Dec => Prisma.Decimal.isDecimal(v);
 function cmp(a: unknown, b: unknown): number {
@@ -85,6 +94,8 @@ function cmp(a: unknown, b: unknown): number {
 const same = (a: unknown, b: unknown): boolean => (a == null || b == null ? (a ?? null) === (b ?? null) : cmp(a, b) === 0);
 
 /* Bộ so khớp `where` kiểu Prisma — chỉ phần service dùng; toán tử lạ ⇒ ném lỗi để test không "đúng nhầm". */
+interface HoldRow { id: string; shopId: string; reason: string; createdBy: string | null; createdAt: Date; releasedBy: string | null; releasedAt: Date | null }
+
 function matches(row: Record<string, unknown>, where: Where): boolean {
   return Object.entries(where).every(([key, cond]) => {
     if (key === 'OR') return (cond as Where[]).some((w) => matches(row, w));
@@ -141,9 +152,12 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
     return compound ? { shopId: compound.shopId, periodStart: compound.periodStart, periodEnd: compound.periodEnd } : where;
   };
 
+  const holds: HoldRow[] = [];
+  const copyAny = <T extends object>(r: T | undefined): T | null => (r ? { ...r } : null);
   const db = {
     shopPayout: {
       findFirst: jest.fn((args: { where?: Where; orderBy?: unknown }) => Promise.resolve(copy(sortRows(state.payouts.filter((r) => matches(r, args.where ?? {})), args.orderBy)[0]))),
+      findMany: jest.fn((args: { where?: Where; orderBy?: unknown; take?: number }) => Promise.resolve(sortRows(state.payouts.filter((r) => matches(r, args.where ?? {})), args.orderBy).slice(0, args.take ?? 1e9).map((r) => ({ ...r })))),
       findUnique: jest.fn((args: { where: Where }) => Promise.resolve(copy(state.payouts.find((r) => matches(r, resolveWhere(args.where)))))),
       findUniqueOrThrow: jest.fn((args: { where: Where }) => {
         const r = state.payouts.find((x) => matches(x, resolveWhere(args.where)));
@@ -151,7 +165,7 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
       }),
       create: jest.fn(({ data }: { data: Omit<Partial<PayoutRow>, 'bankSnapshot'> & { bankSnapshot?: unknown; code: string; shopId: string; periodStart: Date; periodEnd: Date } }) => {
         if (state.payouts.some((r) => r.code === data.code || (r.shopId === data.shopId && same(r.periodStart, data.periodStart) && same(r.periodEnd, data.periodEnd)))) return Promise.reject(p2002());
-        const row = { providerRef: null, failReason: null, paidAt: null, createdBy: null, version: 0, ...data, bankSnapshot: data.bankSnapshot ?? null, id: `payout-${++seq}`, createdAt: nextCreatedAt(), updatedAt: new Date() } as PayoutRow;
+        const row = { providerRef: null, failReason: null, gatewayStatus: null, gatewayAttemptedAt: null, gatewayAttempt: 1, approvedBy: null, approvedAt: null, holdReason: null, paidAt: null, createdBy: null, version: 0, ...data, bankSnapshot: data.bankSnapshot ?? null, id: `payout-${++seq}`, createdAt: nextCreatedAt(), updatedAt: new Date() } as PayoutRow;
         state.payouts.push(row);
         return Promise.resolve({ ...row });
       }),
@@ -178,6 +192,25 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
         return Promise.resolve({ count: data.length });
       }),
     },
+    /* tx.$queryRaw`SELECT id … WHERE shop_id = ${shopId} ORDER BY period_end DESC … FOR UPDATE` — khoá dòng kỳ gần nhất của shop (DB giả: chỉ trả id). */
+    $queryRaw: jest.fn((_strings: TemplateStringsArray, shopId: string) => Promise.resolve(sortRows(state.payouts.filter((r) => r.shopId === shopId), [{ periodEnd: 'desc' }, { createdAt: 'desc' }]).slice(0, 1).map((r) => ({ id: r.id })))),
+    /* Lệnh giữ tay (PLAN-0026 §2.4): unique một phần theo shop khi released_at NULL — như index uq_shop_payout_holds_active. */
+    shopPayoutHold: {
+      findFirst: jest.fn((args: { where: Where }) => Promise.resolve(copyAny(holds.find((h) => matches(h as unknown as Record<string, unknown>, args.where))))),
+      findUnique: jest.fn((args: { where: { id: string } }) => Promise.resolve(copyAny(holds.find((h) => h.id === args.where.id)))),
+      findMany: jest.fn((args: { where: Where }) => Promise.resolve(holds.filter((h) => matches(h as unknown as Record<string, unknown>, args.where)).map((h) => ({ ...h })))),
+      create: jest.fn(({ data }: { data: { shopId: string; reason: string; createdBy?: string | null } }) => {
+        if (holds.some((h) => h.shopId === data.shopId && h.releasedAt === null)) return Promise.reject(p2002());
+        const row: HoldRow = { id: `hold-${holds.length + 1}`, shopId: data.shopId, reason: data.reason, createdBy: data.createdBy ?? null, createdAt: new Date(), releasedBy: null, releasedAt: null };
+        holds.push(row);
+        return Promise.resolve({ ...row });
+      }),
+      updateMany: jest.fn(({ where, data }: { where: Where; data: Partial<HoldRow> }) => {
+        const rows = holds.filter((h) => matches(h as unknown as Record<string, unknown>, where));
+        for (const h of rows) Object.assign(h, data);
+        return Promise.resolve({ count: rows.length });
+      }),
+    },
     refund: { findMany: jest.fn((args: { where: Where; orderBy?: unknown }) => Promise.resolve(sortRows(state.refunds.filter((r) => matches(r, args.where)), args.orderBy))) },
     $transaction: undefined as unknown as jest.Mock,
   };
@@ -198,19 +231,30 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
   });
 
   const orders = {
+    simulatedOrderCodes: jest.fn(() => Promise.resolve(new Set<string>())),
     settlementOrders: jest.fn((_days: number, _end: Date) => Promise.resolve([...eligible])),
     orderTotalsOf: jest.fn((codes: string[]) => Promise.resolve(new Map(codes.flatMap((c) => (knownOrders.has(c) ? [[c, knownOrders.get(c)] as const] : []))))),
   };
-  const shops = { bankAccountOf: jest.fn((shopId: string) => Promise.resolve(banks.get(shopId) ?? null)) };
-  const system = { settingNumber: jest.fn((_key: string) => Promise.resolve(7)) };
+  const suspended = new Set<string>();
+  const shops = {
+    bankAccountOf: jest.fn((shopId: string) => Promise.resolve(banks.get(shopId) ?? null)),
+    findBrief: jest.fn((shopId: string) => Promise.resolve({ id: shopId, name: `Shop ${shopId.slice(0, 4)}`, status: suspended.has(shopId) ? 'suspended' : 'approved' })),
+  };
+  /* Mặc định: hạn đổi trả 7 ngày; KHÔNG có mức chi tối thiểu (0) + hạn mức tự chi rất lớn + giữ đổi TK 24h — để các test công thức nhỏ không dính luật PLAN-0026. */
+  const settings: Record<string, number> = { [SETTING_KEY.RETURN_WINDOW_DAYS]: 7, [SETTING_KEY.PAYOUT_MIN_AMOUNT]: 0, [SETTING_KEY.PAYOUT_AUTO_MAX_AMOUNT]: 1e12, [SETTING_KEY.PAYOUT_BANK_CHANGE_HOLD_HOURS]: 24 };
+  const system = { settingNumber: jest.fn((key: string) => Promise.resolve(settings[key] ?? 7)), settingBool: jest.fn((_key: string) => Promise.resolve(false)) };
   const payos = {
     isPayoutConfigured: opts.payoutConfigured ?? false,
     payout: jest.fn((_input: PayoutInput): Promise<PayoutResult> => Promise.resolve({ ok: true, code: '00', message: 'ok', transactionId: 'TX-1', raw: null })),
-    payoutBalance: jest.fn(),
+    payoutBalance: jest.fn((): Promise<{ balance: bigint | null; code: string; message: string }> => Promise.resolve({ balance: null, code: '00', message: 'ok' })),
   };
   const audit = { write: jest.fn((_tx: unknown, _actor: unknown, _entry: Record<string, unknown>): Promise<void> => Promise.resolve()) };
   const outbox = { publish: jest.fn((_tx: unknown, _input: Record<string, unknown>): Promise<void> => Promise.resolve()) };
 
+  /* Thông báo kế toán: staffUserIdsWithPermission('supplier.payout.process') → ['acc-1']; gửi qua NotificationGateway giả. */
+  const notices: Array<{ userId: string; title: string; content: string }> = [];
+  const notifier = { notifyMany: jest.fn((cmds: Array<{ userId: string; title: string; content: string }>) => { notices.push(...cmds); return Promise.resolve(); }) };
+  const users = { staffUserIdsWithPermission: jest.fn((_code: string): Promise<string[]> => Promise.resolve(['acc-1'])) };
   const service = new ShopPayoutService(
     db as unknown as PrismaService,
     orders as unknown as OrderQueryApi,
@@ -219,6 +263,8 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
     payos as unknown as PayosService,
     audit as unknown as PaymentAuditLogService,
     outbox as unknown as PaymentOutboxService,
+    notifier as unknown as NotificationGateway,
+    users as unknown as UserDirectoryGateway,
   );
 
   const f = {
@@ -232,12 +278,17 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
     outbox,
     service,
     banks,
+    suspended,
+    settings,
+    holds,
+    notices,
+    notifier,
     setEligible(list: EligibleOrder[]) {
       eligible = list;
       for (const o of list) knownOrders.set(o.orderCode, { total: o.total, platformDiscount: o.platformDiscount });
     },
     /* Kỳ đã chạy từ trước (net có thể âm). Ngày dạng 'YYYY-MM-DD'; updatedAt mặc định = bây giờ (processing mới, chưa treo). */
-    seedPayout(o: { shopId: string; start: string; end: string; net: number; status: string; id?: string; createdAt?: string; updatedAt?: Date; bankSnapshot?: typeof BANK | null; failReason?: string | null }): PayoutRow {
+    seedPayout(o: { shopId: string; start: string; end: string; net: number; status: string; id?: string; createdAt?: string; updatedAt?: Date; bankSnapshot?: typeof BANK | null; failReason?: string | null; providerRef?: string | null; gatewayStatus?: string | null; gatewayAttemptedAt?: Date | null; gatewayAttempt?: number }): PayoutRow {
       const id = o.id ?? `seed-${++seq}`;
       const row: PayoutRow = {
         id,
@@ -251,8 +302,14 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
         carriedDebt: D(0),
         netPayout: D(o.net),
         status: o.status,
-        providerRef: null,
+        providerRef: o.providerRef ?? null,
         failReason: o.failReason ?? null,
+        gatewayStatus: o.gatewayStatus ?? null,
+        gatewayAttemptedAt: o.gatewayAttemptedAt ?? null,
+        gatewayAttempt: o.gatewayAttempt ?? 1,
+        approvedBy: null,
+        approvedAt: null,
+        holdReason: null,
         bankSnapshot: o.bankSnapshot === undefined ? null : o.bankSnapshot,
         paidAt: null,
         createdBy: null,
@@ -331,6 +388,18 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
 
   /* ============================================================ */
   describe('run — công thức tiền', () => {
+    it('[STL-01] hoa hồng tính trên TIỀN HÀNG (commissionBase), KHÔNG trên phí ship; doanh thu shop vẫn gồm tiền khách trả + voucher sàn', async () => {
+      // Hàng 1.000.000, ship 30.000 (khách trả), voucher sàn 100.000 trên hàng: khách trả 930.000; gross = 930.000 + 100.000 = 1.030.000; gốc hoa hồng = 1.000.000 ⇒ 100.000 (không phải 103.000).
+      const f = buildFixture({ payoutConfigured: false });
+      f.setEligible([{ ...order('DH-1', SHOP_A, 930_000, '10.00', 100_000), commissionBase: D(1_000_000) }]);
+      await f.run();
+      expectNoSwallowedError();
+      const p = f.payoutOf(SHOP_A);
+      expect(p.grossRevenue.toString()).toBe('1030000');
+      expect(p.commission.toString()).toBe('100000');
+      expect(p.netPayout.toString()).toBe('930000');
+    });
+
     it.each([
       ['105 × 10.00% = 10.5 ⇒ làm tròn LÊN 11', 105, '10.00', '11'],
       ['15 × 10.00% = 1.5 ⇒ 2', 15, '10.00', '2'],
@@ -489,6 +558,54 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(f.state.payouts).toHaveLength(0);
     });
 
+    describe('AUD-02 — kỳ thứ hai của cùng shop trong CÙNG MỘT NGÀY', () => {
+      const MORNING = { periodStart: new Date('2025-04-10T00:00:00.000Z'), periodEnd: new Date('2025-04-10T08:00:00.000Z') };
+      const AFTERNOON = { periodStart: MORNING.periodEnd, periodEnd: new Date('2025-04-10T16:00:00.000Z') };
+      const EVENING = { periodStart: AFTERNOON.periodEnd, periodEnd: new Date('2025-04-10T22:00:00.000Z') };
+
+      it('mã gốc PAY-yymmdd-yymmdd-shop trùng ⇒ vẫn tạo kỳ mới, gom ĐƠN MỚI, mã có hậu tố chữ — KHÔNG bị nuốt thành "chạy song song" (0 kỳ, bỏ sót đơn)', async () => {
+        const f = buildFixture({ payoutConfigured: false });
+        f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+        const first = await f.run(MORNING);
+        expect(first).toHaveLength(1);
+
+        f.setEligible([order('DH-1', SHOP_A, 100_000), order('DH-2', SHOP_A, 50_000)]); // DH-1 đã nằm trong kỳ 1 ⇒ chỉ DH-2 là mới
+        const second = await f.run(AFTERNOON);
+
+        expectNoSwallowedError();
+        expect(second).toHaveLength(1);
+        const [a, b] = f.state.payouts;
+        expect(b.code).toBe(`${a.code}-B`);
+        expect(a.code).toMatch(/^PAY-250410-250410-[0-9A-Z]{8}$/);
+        expect(b.code.length).toBeLessThanOrEqual(30); // cột VarChar(30)
+        expect(f.linesOf(b.id).map((l) => l.orderCode)).toEqual(['DH-2']);
+        expect(b.grossRevenue.toString()).toBe('50000');
+      });
+
+      it('kỳ thứ ba cùng ngày ⇒ hậu tố -C; hậu tố không bao giờ là SỐ (khoá chi lại `<mã>-<lần thử>` sẽ đè khoá của kỳ khác)', async () => {
+        const f = buildFixture({ payoutConfigured: false });
+        f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+        await f.run(MORNING);
+        f.setEligible([order('DH-1', SHOP_A, 100_000), order('DH-2', SHOP_A, 50_000)]);
+        await f.run(AFTERNOON);
+        f.setEligible([order('DH-1', SHOP_A, 100_000), order('DH-2', SHOP_A, 50_000), order('DH-3', SHOP_A, 30_000)]);
+        await f.run(EVENING);
+
+        expectNoSwallowedError();
+        const codes = f.state.payouts.map((p) => p.code);
+        expect(new Set(codes).size).toBe(3);
+        expect(codes[1]).toMatch(/-B$/);
+        expect(codes[2]).toMatch(/-C$/);
+        for (const c of codes) expect(c).not.toMatch(/-[0-9]+$/);
+      });
+
+      it('uniquePayoutCode: hết hậu tố (26 kỳ trong ngày) ⇒ lỗi rõ ràng thay vì ghi đè/nuốt', async () => {
+        const tx = { shopPayout: { findUnique: jest.fn(() => Promise.resolve({ id: 'x' })) } };
+        await expect(uniquePayoutCode(tx as never, 'PAY-250410-250410-ABCDEF12')).rejects.toMatchObject({ errorCode: PAYOUT_ERR.PERIOD_OVERLAP });
+        expect(tx.shopPayout.findUnique).toHaveBeenCalledTimes(26);
+      });
+    });
+
     it('chạy lại ĐÚNG kỳ cũ ⇒ không tạo thêm kỳ, không đổi số liệu, không gọi PayOS lần hai, không ghi audit/outbox thêm', async () => {
       const f = buildFixture({ payoutConfigured: true });
       f.setEligible([order('DH-1', SHOP_A, 100_000)]);
@@ -577,7 +694,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
 
     it('payos.payout trả KHÔNG ok ⇒ failed + failReason "code: message", không có providerRef; phát PAYOUT_FAILED', async () => {
       const f = buildFixture({ payoutConfigured: true });
-      f.payos.payout.mockResolvedValueOnce({ ok: false, code: '99', message: 'Không gọi được cổng PayOS', raw: null });
+      f.payos.payout.mockResolvedValueOnce({ ok: false, code: '231', message: 'Số dư không đủ', raw: { code: '231' }, definite: true });
       f.setEligible([order('DH-1', SHOP_A, 100_000)]);
 
       const created = await f.run();
@@ -585,16 +702,66 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expectNoSwallowedError();
       const p = f.payoutOf(SHOP_A);
       expect(p.status).toBe(PAYOUT_STATUS.FAILED);
-      expect(p.failReason).toBe('99: Không gọi được cổng PayOS');
+      expect(p.failReason).toBe('231: Số dư không đủ');
+      expect(p.gatewayStatus).toBe('failed');
       expect(p.providerRef).toBeNull();
       expect(created[0].status).toBe(PAYOUT_STATUS.FAILED);
       expect(f.auditActions()).toEqual([PAYOUT_AUDIT.CREATED, PAYOUT_AUDIT.FAILED]);
       expect(f.outboxTypes()).toEqual([PAYMENT_EVENT.PAYOUT_CREATED, PAYMENT_EVENT.PAYOUT_FAILED]);
     });
 
+    it('[STL-08] PayOS KHÔNG RÕ kết quả (timeout / 5xx / mất kết nối) ⇒ `unknown` (KHÔNG failed), ghi gatewayAttemptedAt; chưa chắc tiền chưa đi', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.payos.payout.mockResolvedValueOnce({ ok: false, code: '99', message: 'Không gọi được cổng PayOS', raw: null, definite: false });
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+      await f.run();
+      expectNoSwallowedError();
+      const p = f.payoutOf(SHOP_A);
+      expect(p.status).toBe(PAYOUT_STATUS.UNKNOWN);
+      expect(p.gatewayStatus).toBe('unknown');
+      expect(p.gatewayAttemptedAt).toBeInstanceOf(Date);
+      expect(f.auditActions()).toEqual([PAYOUT_AUDIT.CREATED, PAYOUT_AUDIT.UNKNOWN]);
+    });
+
+    it('[STL-04] thực nhận dưới payout.min_amount ⇒ deferred, KHÔNG gọi PayOS; kỳ sau cộng dồn số dương mang sang', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.settings[SETTING_KEY.PAYOUT_MIN_AMOUNT] = 50_000;
+      f.setEligible([order('DH-1', SHOP_A, 40_000)]); // net 36.000 < 50.000
+      await f.run();
+      expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.DEFERRED });
+      expect(f.payos.payout).not.toHaveBeenCalled();
+
+      f.setEligible([order('DH-2', SHOP_A, 40_000)]); // kỳ sau: 36.000 + 36.000 (mang sang) = 72.000 ≥ 50.000
+      await f.run({ periodStart: new Date('2025-04-01T00:00:00.000Z'), periodEnd: new Date('2025-04-30T00:00:00.000Z') });
+      const p = f.payoutOf(SHOP_A);
+      expect(p.netPayout.toString()).toBe('72000');
+      expect(p.carriedDebt.toString()).toBe('-36000'); // carriedDebt ÂM = số dương mang sang
+      expect(p.status).toBe(PAYOUT_STATUS.PROCESSING);
+      expect(f.payos.payout).toHaveBeenCalledWith(contains({ amount: 72_000n }));
+    });
+
+    it('[STL-05] thực nhận > payout.auto_max_amount ⇒ awaiting_approval, KHÔNG gọi PayOS tới khi kế toán duyệt', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.settings[SETTING_KEY.PAYOUT_AUTO_MAX_AMOUNT] = 50_000;
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]); // net 90.000 > 50.000
+      await f.run();
+      expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.AWAITING_APPROVAL);
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    it('[STL-12] gian hàng bị khoá (suspended) ⇒ kỳ `held` + lý do, KHÔNG gọi PayOS', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.suspended.add(SHOP_A);
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+      await f.run();
+      expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.HELD });
+      expect(f.payoutOf(SHOP_A).holdReason).toContain('khoá');
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
     it('failReason dài bị cắt còn 500 ký tự (khớp VarChar(500))', async () => {
       const f = buildFixture({ payoutConfigured: true });
-      f.payos.payout.mockResolvedValueOnce({ ok: false, code: 'E1', message: 'x'.repeat(900), raw: null });
+      f.payos.payout.mockResolvedValueOnce({ ok: false, code: 'E1', message: 'x'.repeat(900), raw: null, definite: true });
       f.setEligible([order('DH-1', SHOP_A, 100_000)]);
       await f.run();
       expect(f.payoutOf(SHOP_A).failReason).toHaveLength(500);
@@ -686,7 +853,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       const p1 = f.payoutOf(SHOP_A);
       expect(p1.status).toBe(PAYOUT_STATUS.CARRIED);
       expect([p1.grossRevenue, p1.commission, p1.refundAmount, p1.carriedDebt, p1.netPayout].map(String)).toEqual(['0', '-10000', '100000', '0', '-90000']);
-      expect(f.linesOf(p1.id)).toEqual([{ payoutId: p1.id, orderCode: R1_KEY, kind: 'refund', gross: D(100_000), commission: D(10_000) }]);
+      expect(f.linesOf(p1.id)).toEqual([{ payoutId: p1.id, orderCode: R1_KEY, kind: 'refund', gross: D(100_000), commission: D(10_000), sourceOrderCode: 'DH-OLD' }]);
       expect(f.payos.payout).not.toHaveBeenCalled();
 
       // Kỳ 2 (tháng 4): doanh thu 200.000 ⇒ ròng 180.000 − nợ 90.000 = 90.000 được chi.
@@ -782,6 +949,22 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
         ['sale', 'DH-1', '1000000', '100000'],
         ['refund', R1_KEY, '250000', '25000'],
       ]);
+    });
+
+    it('PLAN-0022: dòng trừ do hoàn tiền mang MÃ ĐƠN (sourceOrderCode) để shop/kế toán biết khoản trừ thuộc đơn nào; dòng bán không ghi cột này (order_code đã là mã đơn)', async () => {
+      const f = buildFixture();
+      f.setEligible([order('DH-1', SHOP_A, 1_000_000), order('DH-2', SHOP_A, 500_000)]);
+      f.seedRefund({ id: R1, orderCode: 'DH-1', amount: 250_000 });
+
+      await f.run();
+
+      expectNoSwallowedError();
+      const lines = f.linesOf(f.payoutOf(SHOP_A).id);
+      expect(lines.filter((l) => l.kind === 'sale').map((l) => [l.orderCode, l.sourceOrderCode])).toEqual([
+        ['DH-1', undefined],
+        ['DH-2', undefined],
+      ]);
+      expect(lines.filter((l) => l.kind === 'refund').map((l) => [l.orderCode, l.sourceOrderCode])).toEqual([[R1_KEY, 'DH-1']]);
     });
 
     it('khoá dòng hoàn tiền = "RF-" + 26 ký tự hex đầu của id (vừa VarChar(30))', async () => {
@@ -1198,10 +1381,12 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
   /* ============================================================ */
   describe('markPaid', () => {
     const input = { providerRef: 'FT25031299999', note: 'CK tay 10h' };
+    /* processing / unknown: chỉ đánh dấu tay khi kế toán ĐÃ tra bảng điều khiển PayOS và xác nhận lệnh chi KHÔNG được thực hiện (chống chi trùng). */
+    const confirmed = { ...input, confirmGatewayNotExecuted: true };
 
-    it.each([PAYOUT_STATUS.PROCESSING, PAYOUT_STATUS.FAILED])('cho phép từ %s ⇒ paid + providerRef + paidAt, xoá failReason, audit + outbox', async (status) => {
+    it('cho phép từ failed ⇒ paid + providerRef + paidAt, xoá failReason, audit + outbox', async () => {
       const f = buildFixture({ payoutConfigured: true });
-      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status, id: 'p-1', failReason: status === 'failed' ? '99: lỗi' : null });
+      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.FAILED, id: 'p-1', failReason: '99: lỗi' });
 
       const res = await f.service.markPaid('p-1', input, actor);
 
@@ -1211,8 +1396,37 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(seed.paidAt).toBeInstanceOf(Date);
       expect(seed.version).toBe(1);
       expect(f.auditActions()).toEqual([PAYOUT_AUDIT.MARKED_PAID]);
-      expect(f.audit.write.mock.calls[0][2]).toMatchObject({ before: { status }, after: { status: 'paid', providerRef: input.providerRef, note: input.note } });
+      expect(f.audit.write.mock.calls[0][2]).toMatchObject({ before: { status: 'failed' }, after: { status: 'paid', providerRef: input.providerRef, note: input.note } });
       expect(f.outbox.publish.mock.calls[0][1]).toMatchObject({ eventType: PAYMENT_EVENT.PAYOUT_PAID, payload: contains({ payoutId: 'p-1', netPayout: '90000', status: 'paid', shopId: SHOP_A }) });
+    });
+
+    it.each([PAYOUT_STATUS.PROCESSING, PAYOUT_STATUS.UNKNOWN])('[STL-08] từ %s KHÔNG có confirmGatewayNotExecuted ⇒ 409 PAYOUT_GATEWAY_NOT_CONFIRMED, không đổi gì (chống chi trùng)', async (status) => {
+      const f = buildFixture({ payoutConfigured: true });
+      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status, id: 'p-1' });
+      const err = await catchBusiness(f.service.markPaid('p-1', input, actor));
+      expect(err.errorCode).toBe(PAYOUT_ERR.GATEWAY_NOT_CONFIRMED);
+      expect(err.httpStatus).toBe(409);
+      expect(seed.status).toBe(status);
+      expect(f.audit.write).not.toHaveBeenCalled();
+      expect(f.outbox.publish).not.toHaveBeenCalled();
+    });
+
+    it.each([PAYOUT_STATUS.PROCESSING, PAYOUT_STATUS.UNKNOWN])('từ %s CÓ confirmGatewayNotExecuted ⇒ paid, audit ghi cờ xác nhận', async (status) => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status, id: 'p-1' });
+      const res = await f.service.markPaid('p-1', confirmed, actor);
+      expect(res.status).toBe(PAYOUT_STATUS.PAID);
+      expect(f.audit.write.mock.calls[0][2]).toMatchObject({ after: { confirmGatewayNotExecuted: true } });
+    });
+
+    it('[STL-10] providerRef trùng kỳ khác (UNIQUE) ⇒ 409 PAYOUT_PROVIDER_REF_DUPLICATE, không audit/outbox', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.FAILED, id: 'p-1' });
+      f.db.shopPayout.updateMany.mockRejectedValueOnce(p2002());
+      const err = await catchBusiness(f.service.markPaid('p-1', input, actor));
+      expect(err.errorCode).toBe(PAYOUT_ERR.PROVIDER_REF_DUPLICATE);
+      expect(err.httpStatus).toBe(409);
+      expect(f.outbox.publish).not.toHaveBeenCalled();
     });
 
     it('từ PENDING: được khi PayOS CHƯA cấu hình (chuyển tay)', async () => {
@@ -1232,11 +1446,11 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(f.outbox.publish).not.toHaveBeenCalled();
     });
 
-    it.each([PAYOUT_STATUS.PAID, PAYOUT_STATUS.CARRIED, PAYOUT_STATUS.SETTLED])('từ %s ⇒ INVALID_STATE, không đổi gì, không audit/outbox', async (status) => {
+    it.each([PAYOUT_STATUS.PAID, PAYOUT_STATUS.CARRIED, PAYOUT_STATUS.SETTLED, PAYOUT_STATUS.HELD, PAYOUT_STATUS.DEFERRED, PAYOUT_STATUS.AWAITING_APPROVAL])('từ %s ⇒ INVALID_STATE, không đổi gì, không audit/outbox', async (status) => {
       for (const configured of [true, false]) {
         const f = buildFixture({ payoutConfigured: configured });
         const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: status === 'carried' ? -5_000 : 0, status, id: 'p-1' });
-        const err = await catchBusiness(f.service.markPaid('p-1', input, actor));
+        const err = await catchBusiness(f.service.markPaid('p-1', confirmed, actor));
         expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
         expect(seed.status).toBe(status);
         expect(seed.providerRef).toBeNull();
@@ -1250,7 +1464,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1' });
       f.db.shopPayout.updateMany.mockResolvedValueOnce({ count: 0 });
 
-      const err = await catchBusiness(f.service.markPaid('p-1', input, actor));
+      const err = await catchBusiness(f.service.markPaid('p-1', confirmed, actor));
 
       expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
       expect(err.httpStatus).toBe(409);
@@ -1269,7 +1483,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     it('hai kế toán bấm ĐỒNG THỜI: chỉ một thành công, sự kiện PAYOUT_PAID chỉ phát một lần', async () => {
       const f = buildFixture();
       f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1' });
-      const results = await Promise.allSettled([f.service.markPaid('p-1', { providerRef: 'A' }, actor), f.service.markPaid('p-1', { providerRef: 'B' }, actor)]);
+      const results = await Promise.allSettled([f.service.markPaid('p-1', { providerRef: 'A', confirmGatewayNotExecuted: true }, actor), f.service.markPaid('p-1', { providerRef: 'B', confirmGatewayNotExecuted: true }, actor)]);
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       expect(((results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason as BusinessException).errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
       expect(f.outbox.publish).toHaveBeenCalledTimes(1);
@@ -1279,8 +1493,8 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     it('đánh dấu lần hai ⇒ INVALID_STATE (paid)', async () => {
       const f = buildFixture();
       f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1' });
-      await f.service.markPaid('p-1', input, actor);
-      const err = await catchBusiness(f.service.markPaid('p-1', input, actor));
+      await f.service.markPaid('p-1', confirmed, actor);
+      const err = await catchBusiness(f.service.markPaid('p-1', confirmed, actor));
       expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
     });
 
@@ -1314,7 +1528,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     it('chạy lại mà PayOS lại từ chối ⇒ failed + failReason mới, KHÔNG phát processing', async () => {
       const f = buildFixture({ payoutConfigured: true });
       failed(f);
-      f.payos.payout.mockResolvedValueOnce({ ok: false, code: '231', message: 'Số TK không đúng', raw: null });
+      f.payos.payout.mockResolvedValueOnce({ ok: false, code: '231', message: 'Số TK không đúng', raw: null, definite: true });
       const res = await f.service.retry('p-1', actor);
       expect(res.status).toBe(PAYOUT_STATUS.FAILED);
       expect(res.failReason).toBe('231: Số TK không đúng');
@@ -1416,98 +1630,355 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     });
 
     /*
-     * Kỳ `processing` TREO: service ghi `processing` TRƯỚC rồi mới gọi PayOS; nếu tiến trình chết giữa chừng thì kỳ kẹt ở `processing` mãi.
-     * Quá STUCK_PROCESSING_MS (10 phút) kể từ updatedAt thì cho gửi lại (idempotency-key = mã kỳ nên không chi đôi); chưa quá hạn thì chặn
-     * vì PayOS có thể vẫn đang xử lý lệnh trước.
+     * PLAN-0026: `processing` / `unknown` KHÔNG gửi lại bằng `retry` — phải tra PayOS (reconcile) để biết lệnh đã đi chưa. Gửi lại sau từ chối CHẮC CHẮN dùng khoá MỚI.
      */
-    describe('kỳ processing bị TREO', () => {
-      const minutesAgo = (m: number) => new Date(Date.now() - m * MIN);
+    it.each([PAYOUT_STATUS.PROCESSING, PAYOUT_STATUS.UNKNOWN])('[STL-08] %s ⇒ retry bị từ chối (gợi ý Kiểm tra với PayOS), không gọi payos, không đổi gì', async (status) => {
+      const f = buildFixture({ payoutConfigured: true });
+      const seed = failed(f, { status, failReason: null, updatedAt: new Date(Date.now() - 60 * MIN) });
+      const err = await catchBusiness(f.service.retry('p-1', actor));
+      expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+      expect(err.message).toContain('Kiểm tra với PayOS');
+      expect(f.payos.payout).not.toHaveBeenCalled();
+      expect(seed.version).toBe(0);
+    });
 
-      it('processing quá 10 phút ⇒ được gửi lại: payos gọi đúng 1 lần với idempotencyKey = mã kỳ, ok ⇒ processing + providerRef, audit RETRIED + SENT', async () => {
+    it('[STL-08] failed do PayOS TỪ CHỐI chắc chắn ⇒ gửi lại bằng khoá MỚI `<mã kỳ>-2`', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const seed = failed(f, { gatewayStatus: 'failed', gatewayAttempt: 1 });
+      await f.service.retry('p-1', actor);
+      expect(f.payos.payout).toHaveBeenCalledWith(contains({ idempotencyKey: `${seed.code}-2`, referenceId: `${seed.code}-2` }));
+      expect(seed.gatewayAttempt).toBe(2);
+    });
+
+    it('failed do PayOS xác nhận CHƯA nhận (not_received) ⇒ gửi lại bằng CÙNG khoá (idempotent)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const seed = failed(f, { gatewayStatus: 'not_received', gatewayAttempt: 1 });
+      await f.service.retry('p-1', actor);
+      expect(f.payos.payout).toHaveBeenCalledWith(contains({ idempotencyKey: seed.code }));
+      expect(seed.gatewayAttempt).toBe(1);
+    });
+
+    it('gửi lại mà PayOS lại KHÔNG RÕ kết quả ⇒ `unknown` (không failed), vẫn không cho gửi lại tiếp', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      failed(f, { gatewayStatus: 'failed' });
+      f.payos.payout.mockResolvedValueOnce({ ok: false, code: '99', message: 'timeout', raw: null, definite: false });
+      const res = await f.service.retry('p-1', actor);
+      expect(res.status).toBe(PAYOUT_STATUS.UNKNOWN);
+      const err = await catchBusiness(f.service.retry('p-1', actor));
+      expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+      expect(f.payos.payout).toHaveBeenCalledTimes(1);
+    });
+
+    it('[STL-08] shop bị khoá ⇒ retry bị chặn, không gọi payos', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      failed(f);
+      f.suspended.add(SHOP_A);
+      const err = await catchBusiness(f.service.retry('p-1', actor));
+      expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    describe('approve', () => {
+      it('[STL-05] awaiting_approval + duyệt ⇒ processing → gửi PayOS đúng 1 lần, ghi người duyệt + audit APPROVED', async () => {
         const f = buildFixture({ payoutConfigured: true });
-        const seed = failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(11) });
-
-        const res = await f.service.retry('p-1', actor);
-
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.AWAITING_APPROVAL, id: 'p-1', bankSnapshot: BANK });
+        const res = await f.service.approve('p-1', actor);
         expect(f.payos.payout).toHaveBeenCalledTimes(1);
-        expect(f.payos.payout).toHaveBeenCalledWith(contains({ referenceId: seed.code, idempotencyKey: seed.code, amount: 90_000n }));
         expect(res.status).toBe(PAYOUT_STATUS.PROCESSING);
-        expect(res.providerRef).toBe('TX-1');
-        expect(f.auditActions()).toEqual([PAYOUT_AUDIT.RETRIED, PAYOUT_AUDIT.SENT]);
-        expect(f.audit.write.mock.calls[0][2]).toMatchObject({ before: { status: 'processing' }, after: { status: 'processing' } });
+        expect(seed.approvedBy).toBe(actor.userId);
+        expect(f.auditActions()).toEqual([PAYOUT_AUDIT.APPROVED, PAYOUT_AUDIT.SENT]);
       });
 
-      it('gửi lại xong kỳ không còn "treo" (updatedAt mới) ⇒ bấm chạy lại lần nữa bị từ chối, không chi lần hai', async () => {
+      it.each([PAYOUT_STATUS.PENDING, PAYOUT_STATUS.PROCESSING, PAYOUT_STATUS.PAID, PAYOUT_STATUS.HELD])('chỉ duyệt kỳ chờ duyệt: %s ⇒ PAYOUT_NOT_APPROVABLE', async (status) => {
         const f = buildFixture({ payoutConfigured: true });
-        failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(30) });
-        await f.service.retry('p-1', actor);
-
-        const err = await catchBusiness(f.service.retry('p-1', actor));
-
-        expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
-        expect(f.payos.payout).toHaveBeenCalledTimes(1);
-      });
-
-      it('processing treo mà PayOS từ chối lần gửi lại ⇒ failed + failReason (rồi xử lý như kỳ failed)', async () => {
-        const f = buildFixture({ payoutConfigured: true });
-        failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(15) });
-        f.payos.payout.mockResolvedValueOnce({ ok: false, code: '99', message: 'timeout', raw: null });
-
-        const res = await f.service.retry('p-1', actor);
-
-        expect(res.status).toBe(PAYOUT_STATUS.FAILED);
-        expect(res.failReason).toBe('99: timeout');
-      });
-
-      it.each([0, 5, 9])('processing MỚI (%i phút) ⇒ INVALID_STATE, không gọi payos, không đổi gì', async (minutes) => {
-        const f = buildFixture({ payoutConfigured: true });
-        const seed = failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(minutes) });
-
-        const err = await catchBusiness(f.service.retry('p-1', actor));
-
-        expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
-        expect(f.payos.payout).not.toHaveBeenCalled();
-        expect(seed.version).toBe(0);
-        expect(f.audit.write).not.toHaveBeenCalled();
-      });
-
-      it('processing treo nhưng PayOS CHƯA cấu hình ⇒ vẫn INVALID_STATE (dùng đánh dấu đã trả tay)', async () => {
-        const f = buildFixture({ payoutConfigured: false });
-        failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(60) });
-        const err = await catchBusiness(f.service.retry('p-1', actor));
-        expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status, id: 'p-1', bankSnapshot: BANK });
+        const err = await catchBusiness(f.service.approve('p-1', actor));
+        expect(err.errorCode).toBe(PAYOUT_ERR.NOT_APPROVABLE);
         expect(f.payos.payout).not.toHaveBeenCalled();
       });
 
-      it('processing treo nhưng net ≤ 0 ⇒ INVALID_STATE (không có khoản cần chi)', async () => {
+      it('hai người duyệt ĐỒNG THỜI ⇒ chỉ một lệnh chi PayOS', async () => {
         const f = buildFixture({ payoutConfigured: true });
-        failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(60), net: 0 });
-        const err = await catchBusiness(f.service.retry('p-1', actor));
-        expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
-        expect(f.payos.payout).not.toHaveBeenCalled();
-      });
-
-      it('processing treo + đánh dấu đã trả (markPaid) vẫn dùng được như trước', async () => {
-        const f = buildFixture({ payoutConfigured: true });
-        failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(60) });
-        const res = await f.service.markPaid('p-1', { providerRef: 'CK-TAY' }, actor);
-        expect(res.status).toBe(PAYOUT_STATUS.PAID);
-      });
-
-      /*
-       * Từng là nghi vấn race: updateMany của retry chỉ so `status` (processing → processing) nên không phân biệt được hai lần gửi lại đồng thời (cả hai
-       * "giành" được kỳ ⇒ payos.payout gọi 2 lần). Đã sửa: điều kiện where kèm `version` đã đọc ⇒ chỉ một người giành được, kể cả kỳ processing treo.
-       */
-      it('hai lần "chạy lại" ĐỒNG THỜI trên kỳ processing treo ⇒ chỉ một lệnh chi PayOS (compare-and-set theo version)', async () => {
-        const f = buildFixture({ payoutConfigured: true });
-        failed(f, { status: PAYOUT_STATUS.PROCESSING, failReason: null, updatedAt: minutesAgo(30) });
-
-        const results = await Promise.allSettled([f.service.retry('p-1', actor), f.service.retry('p-1', actor)]);
-
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.AWAITING_APPROVAL, id: 'p-1', bankSnapshot: BANK });
+        const results = await Promise.allSettled([f.service.approve('p-1', actor), f.service.approve('p-1', actor)]);
         expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-        expect(((results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason as BusinessException).httpStatus).toBe(409);
         expect(f.payos.payout).toHaveBeenCalledTimes(1);
-        expect(f.db.shopPayout.updateMany).toHaveBeenCalledWith(contains({ where: { id: 'p-1', status: 'processing', version: 0 } }));
+      });
+
+      it('shop bị khoá giữa lúc chờ duyệt ⇒ không gửi PayOS', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.AWAITING_APPROVAL, id: 'p-1', bankSnapshot: BANK });
+        f.suspended.add(SHOP_A);
+        const err = await catchBusiness(f.service.approve('p-1', actor));
+        expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+        expect(f.payos.payout).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('reconcileOne / reconcileProcessing — đối chiếu PayOS', () => {
+      const minutesAgo = (m: number) => new Date(Date.now() - m * MIN);
+      const withLookup = (f: Fixture) => {
+        const payos = f.payos as unknown as Record<string, jest.Mock>;
+        payos.getPayout = jest.fn();
+        payos.findPayoutByReference = jest.fn();
+        return payos;
+      };
+
+      it('[STL-08] processing có mã lệnh + PayOS SUCCEEDED ⇒ paid (paidAt), outbox PAYOUT_PAID', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const payos = withLookup(f);
+        payos.getPayout.mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1', providerRef: 'PO-1' });
+        const r = await f.service.reconcileOne('p-1', actor);
+        expect(r.outcome).toBe('paid');
+        expect(seed.status).toBe(PAYOUT_STATUS.PAID);
+        expect(seed.paidAt).toBeInstanceOf(Date);
+        expect(f.outboxTypes()).toEqual([PAYMENT_EVENT.PAYOUT_PAID]);
+      });
+
+      it('PayOS báo FAILED ⇒ failed + gatewayStatus=failed (gửi lại bằng khoá mới), outbox PAYOUT_FAILED', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        withLookup(f).getPayout.mockResolvedValue({ state: 'failed', detail: 'state=FAILED' });
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1', providerRef: 'PO-1' });
+        await f.service.reconcileOne('p-1', actor);
+        expect(seed).toMatchObject({ status: PAYOUT_STATUS.FAILED, gatewayStatus: 'failed' });
+        expect(f.outboxTypes()).toEqual([PAYMENT_EVENT.PAYOUT_FAILED]);
+      });
+
+      it('còn PROCESSING / không tra được ⇒ giữ nguyên, không audit', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const payos = withLookup(f);
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1', providerRef: 'PO-1' });
+        payos.getPayout.mockResolvedValueOnce({ state: 'processing', detail: 'PROCESSING' });
+        expect((await f.service.reconcileOne('p-1', actor)).outcome).toBe('processing');
+        payos.getPayout.mockResolvedValueOnce({ state: 'unknown', detail: 'HTTP 500' });
+        expect((await f.service.reconcileOne('p-1', actor)).outcome).toBe('unchanged');
+        expect(seed.status).toBe(PAYOUT_STATUS.PROCESSING);
+      });
+
+      it('[STL-08] unknown KHÔNG có mã lệnh ⇒ tìm theo referenceId; thấy SUCCEEDED ⇒ paid + lưu mã lệnh (tránh chi lại)', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const payos = withLookup(f);
+        payos.findPayoutByReference.mockResolvedValue({ state: 'found', id: 'PO-9', result: { state: 'succeeded', detail: 'SUCCEEDED' } });
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.UNKNOWN, id: 'p-1', gatewayAttemptedAt: minutesAgo(30) });
+        await f.service.reconcileOne('p-1', actor);
+        expect(payos.findPayoutByReference).toHaveBeenCalledWith(seed.code);
+        expect(seed).toMatchObject({ status: PAYOUT_STATUS.PAID, providerRef: 'PO-9' });
+      });
+
+      it('unknown + PayOS không có lệnh nào + đã chờ ≥ 10 phút ⇒ failed gatewayStatus=not_received (gửi lại CÙNG khoá); chưa đủ 10 phút ⇒ chờ', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const payos = withLookup(f);
+        payos.findPayoutByReference.mockResolvedValue({ state: 'not_found' });
+        const young = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.UNKNOWN, id: 'p-young', gatewayAttemptedAt: minutesAgo(3) });
+        expect((await f.service.reconcileOne('p-young', actor)).outcome).toBe('unchanged');
+        expect(young.status).toBe(PAYOUT_STATUS.UNKNOWN);
+        const old = f.seedPayout({ shopId: SHOP_B, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.UNKNOWN, id: 'p-old', gatewayAttemptedAt: minutesAgo(30) });
+        expect((await f.service.reconcileOne('p-old', actor)).outcome).toBe('not_received');
+        expect(old).toMatchObject({ status: PAYOUT_STATUS.FAILED, gatewayStatus: 'not_received' });
+      });
+
+      it('mã lệnh PayOS trùng kỳ khác (UNIQUE) ⇒ 409, kỳ giữ nguyên', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        withLookup(f).getPayout.mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-1', providerRef: 'PO-1' });
+        f.db.shopPayout.updateMany.mockRejectedValueOnce(p2002());
+        const err = await catchBusiness(f.service.reconcileOne('p-1', actor));
+        expect(err.errorCode).toBe(PAYOUT_ERR.PROVIDER_REF_DUPLICATE);
+        expect(seed.status).toBe(PAYOUT_STATUS.PROCESSING);
+      });
+
+      it('chỉ đối chiếu kỳ processing/unknown; kỳ khác ⇒ INVALID_STATE', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        withLookup(f);
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PENDING, id: 'p-1' });
+        const err = await catchBusiness(f.service.reconcileOne('p-1', actor));
+        expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+      });
+
+      it('job reconcileProcessing: gom processing + unknown đã chờ ≥ 1 phút, bỏ qua kỳ mới; đếm paid/failed', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const payos = withLookup(f);
+        payos.getPayout.mockImplementation((id: string) => Promise.resolve(id === 'PO-OK' ? { state: 'succeeded', detail: 'SUCCEEDED' } : { state: 'failed', detail: 'FAILED' }));
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-ok', providerRef: 'PO-OK', updatedAt: minutesAgo(5) });
+        f.seedPayout({ shopId: SHOP_B, start: '2025-02-01', end: '2025-02-28', net: 80_000, status: PAYOUT_STATUS.UNKNOWN, id: 'p-bad', providerRef: 'PO-BAD', updatedAt: minutesAgo(5) });
+        f.seedPayout({ shopId: '33333333-3333-4333-8333-333333333333', start: '2025-02-01', end: '2025-02-28', net: 70_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-new', providerRef: 'PO-NEW', updatedAt: new Date() });
+        const r = await f.service.reconcileProcessing();
+        expect(r).toEqual({ checked: 2, paid: 1, failed: 1 });
+      });
+    });
+
+    describe('PLAN-0040 Tầng 2 — giữ tay, số dư PayOS, gọn lỗi kỳ chi', () => {
+      it('[STL-13] giữ tay một shop: kỳ MỚI của shop vào `held` kèm lý do, KHÔNG gọi PayOS; shop khác chi bình thường', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        await f.service.createHold(SHOP_A, 'Đang điều tra khiếu nại hàng giả', actor);
+        f.setEligible([order('DH-1', SHOP_A, 100_000), order('DH-2', SHOP_B, 100_000)]);
+
+        await f.run();
+
+        expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.HELD });
+        expect(f.payoutOf(SHOP_A).holdReason).toContain('Đang điều tra khiếu nại hàng giả');
+        expect(f.payoutOf(SHOP_B).status).toBe(PAYOUT_STATUS.PROCESSING);
+        expect(f.payos.payout).toHaveBeenCalledTimes(1);
+      });
+
+      it('[STL-13] giữ tay chuyển ngay các kỳ pending/awaiting_approval của shop sang held; kỳ đang processing (PayOS đã nhận) không đụng tới', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const pending = f.seedPayout({ shopId: SHOP_A, start: '2025-01-01', end: '2025-01-31', net: 50_000, status: PAYOUT_STATUS.PENDING, id: 'p-pending' });
+        const waiting = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 50_000, status: PAYOUT_STATUS.AWAITING_APPROVAL, id: 'p-wait' });
+        const sent = f.seedPayout({ shopId: SHOP_A, start: '2025-03-01', end: '2025-03-31', net: 50_000, status: PAYOUT_STATUS.PROCESSING, id: 'p-sent' });
+
+        await f.service.createHold(SHOP_A, 'Kiểm tra gian lận', actor);
+
+        expect(pending.status).toBe(PAYOUT_STATUS.HELD);
+        expect(waiting.status).toBe(PAYOUT_STATUS.HELD);
+        expect(sent.status).toBe(PAYOUT_STATUS.PROCESSING);
+        expect(pending.holdReason).toContain('Kiểm tra gian lận');
+      });
+
+      it('[STL-13] mỗi shop chỉ một lệnh giữ đang hiệu lực ⇒ lệnh thứ hai 409 PAYOUT_HOLD_EXISTS; lý do quá ngắn ⇒ 400', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        await f.service.createHold(SHOP_A, 'Lý do thứ nhất', actor);
+
+        expect((await catchBusiness(f.service.createHold(SHOP_A, 'Lý do thứ hai', actor))).errorCode).toBe(PAYOUT_ERR.HOLD_EXISTS);
+        expect((await catchBusiness(f.service.createHold(SHOP_B, 'ngắn', actor))).errorCode).toBe('COMMON_VALIDATION_ERROR');
+      });
+
+      it('[STL-13] mở lệnh giữ ⇒ kỳ held của shop về pending (hết mọi lý do giữ khác), lệnh có releasedAt; mở lại lần hai ⇒ 409', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const held = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PENDING, id: 'p-1' });
+        const hold = await f.service.createHold(SHOP_A, 'Kiểm tra gian lận', actor);
+        expect(held.status).toBe(PAYOUT_STATUS.HELD);
+
+        const r = await f.service.releaseHold(hold.id, actor);
+
+        expect(r.released).toBe(1);
+        expect(held).toMatchObject({ status: PAYOUT_STATUS.PENDING, holdReason: null });
+        expect(f.holds[0].releasedAt).toBeInstanceOf(Date);
+        expect((await catchBusiness(f.service.releaseHold(hold.id, actor))).httpStatus).toBe(409);
+      });
+
+      it('[STL-13] mở lệnh giữ nhưng shop vẫn bị khoá ⇒ kỳ vẫn held (không mở nhầm)', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const held = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PENDING, id: 'p-1' });
+        const hold = await f.service.createHold(SHOP_A, 'Kiểm tra gian lận', actor);
+        f.suspended.add(SHOP_A);
+
+        const r = await f.service.releaseHold(hold.id, actor);
+
+        expect(r.released).toBe(0);
+        expect(held.status).toBe(PAYOUT_STATUS.HELD);
+      });
+
+      it('[STL-12b2] "Mở giữ" khi lý do giữ CÒN ⇒ 409 PAYOUT_STILL_HELD kèm lý do (không trả 200 im lặng); kỳ giữ nguyên', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.HELD, id: 'p-1' });
+        f.suspended.add(SHOP_A);
+
+        const err = await catchBusiness(f.service.releaseOne('p-1', actor));
+
+        expect(err).toMatchObject({ errorCode: PAYOUT_ERR.STILL_HELD, httpStatus: 409 });
+        expect(err.message).toContain('khoá');
+        expect(seed.status).toBe(PAYOUT_STATUS.HELD);
+
+        f.suspended.delete(SHOP_A);
+        const ok = await f.service.releaseOne('p-1', actor);
+        expect(ok.status).toBe(PAYOUT_STATUS.PENDING);
+      });
+
+      it('[STL-06] số dư tài khoản chi PayOS KHÔNG ĐỦ ⇒ KHÔNG gửi lệnh: kỳ về pending + lý do + báo kế toán nạp quỹ (không treo processing)', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.payos.payoutBalance.mockResolvedValue({ balance: 1_000n, code: '00', message: 'ok' });
+        f.setEligible([order('DH-1', SHOP_A, 100_000)]); // net 90.000
+
+        await f.run();
+
+        const p = f.payoutOf(SHOP_A);
+        expect(p.status).toBe(PAYOUT_STATUS.PENDING);
+        expect(p.failReason).toContain('Số dư');
+        expect(f.payos.payout).not.toHaveBeenCalled();
+        expect(f.notices).toHaveLength(1);
+        expect(f.notices[0]).toMatchObject({ userId: 'acc-1' });
+        expect(f.notices[0].title).toContain('nạp quỹ');
+      });
+
+      it('[STL-06] đủ số dư (hoặc không tra được số dư) ⇒ gửi như thường', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.payos.payoutBalance.mockResolvedValue({ balance: 5_000_000n, code: '00', message: 'ok' });
+        f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+        await f.run();
+        expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.PROCESSING);
+        expect(f.notices).toHaveLength(0);
+      });
+
+      it('[STL-06] PayOS từ chối vì lý do khác (sai TK…) ⇒ failed + báo kế toán; thông điệp nhắc nạp quỹ chỉ khi lỗi nói về số dư', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.payos.payout.mockResolvedValueOnce({ ok: false, code: '21', message: 'Số dư không đủ', raw: { code: '21' }, definite: true });
+        f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+        await f.run();
+        expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.FAILED);
+        expect(f.notices[0].content).toContain('Nạp thêm quỹ');
+      });
+
+      it('[STL-04d] kỳ `deferred` đã được cộng vào kỳ sau ⇒ chuyển `merged` (không còn là khoản chờ chi riêng)', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.settings[SETTING_KEY.PAYOUT_MIN_AMOUNT] = 50_000;
+        f.setEligible([order('DH-1', SHOP_A, 40_000)]);
+        await f.run();
+        const first = f.payoutOf(SHOP_A);
+        expect(first.status).toBe(PAYOUT_STATUS.DEFERRED);
+
+        f.setEligible([order('DH-2', SHOP_A, 40_000)]);
+        await f.run({ periodStart: new Date('2025-04-01T00:00:00.000Z'), periodEnd: new Date('2025-04-30T00:00:00.000Z') });
+
+        expect(f.state.payouts.find((p) => p.id === first.id)?.status).toBe(PAYOUT_STATUS.MERGED);
+        expect(f.state.payouts.filter((p) => p.status === PAYOUT_STATUS.PROCESSING)).toHaveLength(1);
+      });
+
+      it('[AUD-08] chạy kỳ cho shop A KHÔNG bị chặn bởi kỳ chồng của shop B (kiểm chồng theo từng shop)', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.seedPayout({ shopId: SHOP_B, start: '2025-03-01', end: '2025-03-31', net: 10_000, status: PAYOUT_STATUS.PAID });
+        f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+
+        const created = await f.service.run({ periodStart: new Date('2025-03-15T00:00:00.000Z'), periodEnd: new Date('2025-04-15T00:00:00.000Z'), shopId: SHOP_A }, actor);
+
+        expect(created).toHaveLength(1);
+        // chạy toàn sàn vẫn bị chặn bởi kỳ của shop B
+        expect((await catchBusiness(f.service.run({ periodStart: new Date('2025-03-20T00:00:00.000Z'), periodEnd: new Date('2025-04-20T00:00:00.000Z') }, actor))).errorCode).toBe(PAYOUT_ERR.PERIOD_OVERLAP);
+      });
+    });
+
+    describe('releaseHeld — mở giữ', () => {
+      it('[STL-12] shop được mở khoá ⇒ kỳ held về pending (tự động chi tắt), lưu snapshot TK hiện tại, xoá lý do giữ', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.HELD, id: 'p-1' });
+        seed.holdReason = 'Gian hàng đang bị khoá';
+        f.suspended.add(SHOP_A);
+        expect(await f.service.releaseHeld()).toBe(0); // vẫn bị khoá
+        f.suspended.delete(SHOP_A);
+        expect(await f.service.releaseHeld()).toBe(1);
+        expect(seed).toMatchObject({ status: PAYOUT_STATUS.PENDING, holdReason: null });
+        expect(seed.bankSnapshot).toEqual(BANK);
+        expect(f.payos.payout).not.toHaveBeenCalled();
+      });
+
+      it('tự động chi bật + PayOS cấu hình ⇒ mở giữ xong gửi luôn; kỳ vượt hạn mức ⇒ chờ duyệt', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        (f.system.settingBool as jest.Mock).mockResolvedValue(true);
+        f.settings[SETTING_KEY.PAYOUT_AUTO_MAX_AMOUNT] = 100_000;
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.HELD, id: 'p-small' });
+        f.seedPayout({ shopId: SHOP_B, start: '2025-02-01', end: '2025-02-28', net: 500_000, status: PAYOUT_STATUS.HELD, id: 'p-big' });
+        expect(await f.service.releaseHeld()).toBe(2);
+        expect(f.state.payouts.find((p) => p.id === 'p-small')?.status).toBe(PAYOUT_STATUS.PROCESSING);
+        expect(f.state.payouts.find((p) => p.id === 'p-big')?.status).toBe(PAYOUT_STATUS.AWAITING_APPROVAL);
+        expect(f.payos.payout).toHaveBeenCalledTimes(1);
+      });
+
+      it('đang trong thời gian giữ sau đổi TK ⇒ chưa mở', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        f.banks.set(SHOP_A, { ...BANK, changedAt: new Date(Date.now() - 3_600_000) });
+        f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.HELD, id: 'p-1' });
+        expect(await f.service.releaseHeld()).toBe(0);
       });
     });
 
@@ -1570,6 +2041,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
    */
   describe('tạm giữ chi trả 24 giờ sau khi shop đổi tài khoản ngân hàng', () => {
     const HOLD_MSG = 'Tài khoản ngân hàng vừa được thay đổi — tạm giữ chi trả 24 giờ để bảo vệ gian hàng';
+    const held = (p: { status: string; holdReason: string | null }) => ({ status: p.status, holdReason: p.holdReason });
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
     const changedBank = (hours: number | null): BankRec => ({ ...BANK, changedAt: hours === null ? null : hoursAgo(hours) });
 
@@ -1582,8 +2054,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
 
       expectNoSwallowedError();
       const p = f.payoutOf(SHOP_A);
-      expect(p.status).toBe(PAYOUT_STATUS.PENDING);
-      expect(p.failReason).toBe(HOLD_MSG);
+      expect(held(p)).toEqual({ status: PAYOUT_STATUS.HELD, holdReason: HOLD_MSG });
       expect(p.netPayout.toString()).toBe('90000');
       expect(p.bankSnapshot).toEqual(BANK); // snapshot chỉ gồm 3 trường, không kèm changedAt
       expect(f.payos.payout).not.toHaveBeenCalled();
@@ -1595,7 +2066,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       ['25 giờ (hết hạn giữ)', 25, false],
       ['7 ngày', 168, false],
       ['chưa từng đổi (null)', null, false],
-    ])('TK đổi %s ⇒ giữ chi trả = %s', async (_label, hours, held) => {
+    ])('TK đổi %s ⇒ giữ chi trả = %s', async (_label, hours, isHeld) => {
       const f = buildFixture({ payoutConfigured: true });
       f.banks.set(SHOP_A, changedBank(hours));
       f.setEligible([order('DH-1', SHOP_A, 100_000)]);
@@ -1603,8 +2074,8 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       await f.run();
 
       expectNoSwallowedError();
-      expect(f.payoutOf(SHOP_A).status).toBe(held ? PAYOUT_STATUS.PENDING : PAYOUT_STATUS.PROCESSING);
-      expect(f.payos.payout).toHaveBeenCalledTimes(held ? 0 : 1);
+      expect(f.payoutOf(SHOP_A).status).toBe(isHeld ? PAYOUT_STATUS.HELD : PAYOUT_STATUS.PROCESSING);
+      expect(f.payos.payout).toHaveBeenCalledTimes(isHeld ? 0 : 1);
     });
 
     it('giữ chi trả chỉ áp cho shop vừa đổi TK; shop khác cùng kỳ vẫn chi tự động', async () => {
@@ -1615,7 +2086,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       await f.run();
 
       expectNoSwallowedError();
-      expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.PENDING);
+      expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.HELD);
       expect(f.payoutOf(SHOP_B).status).toBe(PAYOUT_STATUS.PROCESSING);
       expect(f.payos.payout).toHaveBeenCalledTimes(1);
       expect(f.payos.payout).toHaveBeenCalledWith(contains({ toAccountNumber: '99887766' }));
@@ -1626,7 +2097,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       f.banks.set(SHOP_A, changedBank(1));
       f.setEligible([order('DH-1', SHOP_A, 100_000)]);
       await f.run();
-      expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.PENDING, failReason: HOLD_MSG });
+      expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.HELD, holdReason: HOLD_MSG });
       expect(f.payos.payout).not.toHaveBeenCalled();
     });
 
@@ -1681,12 +2152,160 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       const f = buildFixture({ payoutConfigured: true });
       f.banks.set(SHOP_A, changedBank(1));
       f.setEligible([order('DH-1', SHOP_A, 100_000)]);
-      await f.run(); // bị giữ ⇒ pending, snapshot = TK mới
-      expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.PENDING);
+      await f.run(); // bị giữ ⇒ held, snapshot = TK mới
+      expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.HELD);
 
       await Promise.allSettled([f.service.retry(f.payoutOf(SHOP_A).id, actor)]);
 
       expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+  });
+
+  /* ============================================================ */
+  /*
+   * PLAN-0040 Tầng 5.2 (PLAN-0026 §2.5): tên chủ TK lệch tên chủ shop ⇒ TK `pending_verification` (BankAccount.pendingVerification) ⇒ kỳ `held` với lý do rõ, KHÔNG chi cho tới khi quản lý
+   * sàn xác minh; từ lúc xác minh (changedAt = mốc xác minh) mới đếm giờ giữ sau đổi TK. Tên KHỚP ⇒ hành vi cũ (chỉ giữ theo giờ).
+   */
+  describe('PLAN-0040 5.2 — TK ngân hàng chờ sàn xác minh (tên chủ TK lệch tên chủ shop)', () => {
+    const UNVERIFIED = 'chờ sàn xác minh';
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
+    /* Tên lệch, chưa xác minh: dù đổi TK đã lâu (500 giờ) vẫn phải giữ. */
+    const unverified = (): BankRec => ({ ...BANK, changedAt: hoursAgo(500), pendingVerification: true });
+    /* Quản lý đã xác minh `hours` giờ trước: changedAt = mốc xác minh. */
+    const verifiedAgo = (hours: number): BankRec => ({ ...BANK, changedAt: hoursAgo(hours), pendingVerification: false });
+
+    it('[STL-11d] run: TK chờ xác minh + PayOS cấu hình ⇒ kỳ held với lý do "chờ sàn xác minh", KHÔNG gọi PayOS (kể cả khi đã qua giờ giữ)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.banks.set(SHOP_A, unverified());
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+
+      await f.run();
+
+      expectNoSwallowedError();
+      const p = f.payoutOf(SHOP_A);
+      expect(p.status).toBe(PAYOUT_STATUS.HELD);
+      expect(p.holdReason).toContain(UNVERIFIED);
+      expect(p.netPayout.toString()).toBe('90000');
+      expect(p.bankSnapshot).toEqual(BANK);
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    it('PayOS CHƯA cấu hình + TK chờ xác minh ⇒ vẫn held với lý do (kế toán không chuyển tay vào TK chưa xác minh)', async () => {
+      const f = buildFixture({ payoutConfigured: false });
+      f.banks.set(SHOP_A, unverified());
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+
+      await f.run();
+
+      expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.HELD });
+      expect(f.payoutOf(SHOP_A).holdReason).toContain(UNVERIFIED);
+    });
+
+    it('chỉ áp cho shop có TK chờ xác minh; shop khác cùng kỳ vẫn chi tự động', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.banks.set(SHOP_A, unverified());
+      f.setEligible([order('DH-A', SHOP_A, 100_000), order('DH-B', SHOP_B, 100_000)]);
+
+      await f.run();
+
+      expect(f.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.HELD);
+      expect(f.payoutOf(SHOP_B).status).toBe(PAYOUT_STATUS.PROCESSING);
+      expect(f.payos.payout).toHaveBeenCalledTimes(1);
+    });
+
+    it('lý do chờ xác minh được ưu tiên hơn "vừa đổi TK" (không nói nhầm là sẽ tự mở sau N giờ)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.banks.set(SHOP_A, { ...BANK, changedAt: hoursAgo(1), pendingVerification: true });
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]);
+
+      await f.run();
+
+      expect(f.payoutOf(SHOP_A).holdReason).toContain(UNVERIFIED);
+      expect(f.payoutOf(SHOP_A).holdReason).not.toContain('vừa được thay đổi');
+    });
+
+    it('[STL-11e] quản lý vừa xác minh (1 giờ) ⇒ vẫn trong thời gian giữ sau xác minh: held theo luật "vừa đổi TK"; qua giờ giữ ⇒ chi bình thường', async () => {
+      const f1 = buildFixture({ payoutConfigured: true });
+      f1.banks.set(SHOP_A, verifiedAgo(1));
+      f1.setEligible([order('DH-1', SHOP_A, 100_000)]);
+      await f1.run();
+      expect(f1.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.HELD });
+      expect(f1.payoutOf(SHOP_A).holdReason).toContain('vừa được thay đổi');
+      expect(f1.payos.payout).not.toHaveBeenCalled();
+
+      const f2 = buildFixture({ payoutConfigured: true });
+      f2.banks.set(SHOP_A, verifiedAgo(25)); // setting giữ = 24 giờ trong fixture
+      f2.setEligible([order('DH-1', SHOP_A, 100_000)]);
+      await f2.run();
+      expect(f2.payoutOf(SHOP_A).status).toBe(PAYOUT_STATUS.PROCESSING);
+      expect(f2.payos.payout).toHaveBeenCalledTimes(1);
+    });
+
+    it('kỳ net ≤ 0 không bị ảnh hưởng bởi TK chờ xác minh (settled/carried, không holdReason)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.banks.set(SHOP_A, unverified());
+      f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: -90_000, status: PAYOUT_STATUS.CARRIED });
+      f.setEligible([order('DH-1', SHOP_A, 100_000)]); // net 0
+
+      await f.run();
+
+      expect(f.payoutOf(SHOP_A)).toMatchObject({ status: PAYOUT_STATUS.SETTLED, holdReason: null });
+    });
+
+    it('releaseHeld: kỳ held vì TK chờ xác minh KHÔNG được job mở (dù đã qua giờ giữ); xác minh + qua giờ giữ ⇒ mở về pending với TK hiện tại', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.HELD, id: 'p-1' });
+      seed.holdReason = 'Tài khoản ngân hàng đang chờ sàn xác minh';
+      f.banks.set(SHOP_A, unverified());
+
+      expect(await f.service.releaseHeld()).toBe(0);
+      expect(seed.status).toBe(PAYOUT_STATUS.HELD);
+
+      f.banks.set(SHOP_A, verifiedAgo(2)); // vừa xác minh: còn trong giờ giữ
+      expect(await f.service.releaseHeld()).toBe(0);
+
+      f.banks.set(SHOP_A, verifiedAgo(25)); // hết giờ giữ kể từ lúc xác minh
+      expect(await f.service.releaseHeld()).toBe(1);
+      expect(seed).toMatchObject({ status: PAYOUT_STATUS.PENDING, holdReason: null });
+      expect(seed.bankSnapshot).toEqual(BANK);
+    });
+
+    it('nút "Mở giữ" khi TK còn chờ xác minh ⇒ 409 PAYOUT_STILL_HELD kèm lý do chờ xác minh, kỳ giữ nguyên', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.HELD, id: 'p-1' });
+      f.banks.set(SHOP_A, unverified());
+
+      const err = await catchBusiness(f.service.releaseOne('p-1', actor));
+
+      expect(err).toMatchObject({ errorCode: PAYOUT_ERR.STILL_HELD, httpStatus: 409 });
+      expect(err.message).toContain(UNVERIFIED);
+      expect(seed.status).toBe(PAYOUT_STATUS.HELD);
+    });
+
+    it('retry kỳ pending khi TK chờ xác minh ⇒ INVALID_STATE (không chi), kỳ giữ nguyên', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.banks.set(SHOP_A, unverified());
+      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.PENDING, id: 'p-1', bankSnapshot: BANK });
+
+      const err = await catchBusiness(f.service.retry('p-1', actor));
+
+      expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+      expect(err.message).toContain(UNVERIFIED);
+      expect(f.payos.payout).not.toHaveBeenCalled();
+      expect(seed.status).toBe(PAYOUT_STATUS.PENDING);
+    });
+
+    it('approve kỳ chờ duyệt khi TK chờ xác minh ⇒ INVALID_STATE (không gửi PayOS)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      f.banks.set(SHOP_A, unverified());
+      const seed = f.seedPayout({ shopId: SHOP_A, start: '2025-02-01', end: '2025-02-28', net: 90_000, status: PAYOUT_STATUS.AWAITING_APPROVAL, id: 'p-1', bankSnapshot: BANK });
+
+      const err = await catchBusiness(f.service.approve('p-1', actor));
+
+      expect(err.errorCode).toBe(PAYOUT_ERR.INVALID_STATE);
+      expect(err.message).toContain(UNVERIFIED);
+      expect(f.payos.payout).not.toHaveBeenCalled();
+      expect(seed.status).toBe(PAYOUT_STATUS.AWAITING_APPROVAL);
     });
   });
 
@@ -1698,6 +2317,12 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
 
     const row = (over: Partial<PayoutRow> = {}): PayoutRow => ({
       id: 'p-1',
+      gatewayStatus: null,
+      gatewayAttemptedAt: null,
+      gatewayAttempt: 1,
+      approvedBy: null,
+      approvedAt: null,
+      holdReason: null,
       code: CODE_A,
       shopId: SHOP_A,
       periodStart: new Date('2025-03-01T00:00:00.000Z'),
@@ -1719,7 +2344,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       ...over,
     });
     const build = () => {
-      const svc = { list: jest.fn(), getDetail: jest.fn(), run: jest.fn(), retry: jest.fn(), markPaid: jest.fn(), payosBalance: jest.fn(), shopNames: jest.fn().mockResolvedValue(new Map<string, string>()) };
+      const svc = { list: jest.fn(), getDetail: jest.fn(), run: jest.fn(), retry: jest.fn(), markPaid: jest.fn(), payosBalance: jest.fn(), shopLabels: jest.fn().mockResolvedValue(new Map<string, { name: string; code: string }>()) };
       return { svc, ctrl: new ShopPayoutController(svc as unknown as ShopPayoutService) };
     };
     const query = (over: Record<string, unknown> = {}) => Object.assign(new PayoutListQuery(), over);
@@ -1803,11 +2428,11 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
     it('tên gian hàng: sàn nhận shopName tra theo lô; vendor nhận tên shop của chính mình (không cần quyền đọc shop)', async () => {
       const { svc, ctrl } = build();
       svc.list.mockResolvedValue({ items: [row({ shopId: SHOP_A })], total: 1 });
-      svc.shopNames.mockResolvedValue(new Map([[SHOP_A, 'Shop A Chính Hãng']]));
+      svc.shopLabels.mockResolvedValue(new Map([[SHOP_A, { name: 'Shop A Chính Hãng', code: 'FT-A' }]]));
 
       const admin = await ctrl.list(query());
-      expect(admin.data!.content[0].shopName).toBe('Shop A Chính Hãng');
-      expect(svc.shopNames).toHaveBeenCalledWith([SHOP_A]);
+      expect(admin.data!.content[0]).toMatchObject({ shopName: 'Shop A Chính Hãng', shopCode: 'FT-A' }); // AUD-09: BE trả kèm tên + mã (kế toán không có quyền đọc shop)
+      expect(svc.shopLabels).toHaveBeenCalledWith([SHOP_A]);
 
       const mine = await ctrl.listMine(query(), shopCtx);
       expect(mine.data!.content[0].shopName).toBe('Shop A');
@@ -1832,6 +2457,8 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
         carriedDebt: '5000',
         netPayout: '875000',
         status: 'paid',
+        gatewayStatus: null,
+        holdReason: null,
         providerRef: 'TX-9',
         failReason: null,
         paidAt: '2025-04-02T03:00:00.000Z',
@@ -1855,14 +2482,17 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       svc.getDetail.mockResolvedValue({
         payout: row({ status: 'paid', failReason: null }),
         lines: [
-          { id: 'l-1', payoutId: 'p-1', orderCode: 'DH-1', kind: 'sale', gross: D(100_000), commission: D(10_000) },
-          { id: 'l-2', payoutId: 'p-1', orderCode: R1_KEY, kind: 'refund', gross: D(25_000), commission: D(2_500) },
+          { id: 'l-1', payoutId: 'p-1', orderCode: 'DH-1', sourceOrderCode: null, kind: 'sale', gross: D(100_000), commission: D(10_000) },
+          { id: 'l-2', payoutId: 'p-1', orderCode: R1_KEY, sourceOrderCode: 'DH-1', kind: 'refund', gross: D(25_000), commission: D(2_500) },
+          { id: 'l-3', payoutId: 'p-1', orderCode: 'RF-00000000000000000000000000', sourceOrderCode: null, kind: 'refund', gross: D(1_000), commission: D(100) }, // dòng cũ không backfill được
         ],
       });
       const res = await ctrl.detail('p-1');
+      // PLAN-0022: orderCode luôn là mã ĐƠN (dòng refund: đơn bị hoàn); lineKey = khoá kỹ thuật của dòng
       expect(res.data!.lines).toEqual([
-        { id: 'l-1', orderCode: 'DH-1', kind: 'sale', gross: '100000', commission: '10000' },
-        { id: 'l-2', orderCode: R1_KEY, kind: 'refund', gross: '25000', commission: '2500' },
+        { id: 'l-1', orderCode: 'DH-1', lineKey: 'DH-1', kind: 'sale', gross: '100000', commission: '10000' },
+        { id: 'l-2', orderCode: 'DH-1', lineKey: R1_KEY, kind: 'refund', gross: '25000', commission: '2500' },
+        { id: 'l-3', orderCode: 'RF-00000000000000000000000000', lineKey: 'RF-00000000000000000000000000', kind: 'refund', gross: '1000', commission: '100' },
       ]);
     });
 
@@ -1898,11 +2528,12 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(argOf(prisma.order.findMany).where).toEqual({
         isDeleted: false,
         status: 'completed',
-        paymentMethodCode: { not: 'cod' },
+        AND:[{OR:[{paymentMethodCode:{not:'cod'}},{collectionMode:'carrier_cod',paymentStatus:{in:['paid','partially_refunded']}}]}],
         paymentStatus: { in: ['paid', 'partially_refunded'] },
         OR: [{ deliveredAt: { lte: cutoff } }, { deliveredAt: null, completedAt: { lte: cutoff } }],
-        // đơn đang có yêu cầu đổi trả CHƯA xử lý xong (requested/approved) thì giữ lại, không đưa vào kỳ
-        returns: { none: { status: { in: ['requested', 'approved'] } } },
+        // đơn đang có yêu cầu đổi trả CHƯA xử lý xong thì giữ lại, không đưa vào kỳ (PLAN-0022 §3: requested · approved · escalated · received; refunded/rejected/cancelled/expired = đã kết thúc)
+        // + yêu cầu bị SHOP từ chối mà khách còn trong hạn khiếu nại (escalateDueAt > now) cũng giữ lại — khiếu nại thắng thì khoản hoàn mới phát sinh (BE-Order, PLAN-0022)
+        returns: { none: { OR: [{ status: { in: ['requested', 'approved', 'escalated', 'received'] } }, { status: 'rejected', rejectedBy: 'shop', escalateDueAt: { gt: expect.any(Date) as unknown } }] } },
       });
     });
 
@@ -1910,7 +2541,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       const { prisma, api } = build();
       prisma.order.findMany.mockResolvedValue([]);
       await api.settlementOrders(7, new Date('2025-03-31T00:00:00.000Z'));
-      expect(argOf(prisma.order.findMany).select).toEqual({ code: true, shopId: true, total: true, platformDiscount: true, commissionRateSnapshot: true, deliveredAt: true, completedAt: true });
+      expect(argOf(prisma.order.findMany).select).toEqual({ code: true, fulfilmentMode:true, shopId: true, total: true, platformDiscount: true, subtotal: true, shopDiscount: true, shopShippingDiscount: true, commissionRateSnapshot: true, deliveredAt: true, completedAt: true });
     });
 
     it('hạn đổi trả tính theo số ngày truyền vào (0 ngày ⇒ cutoff = periodEnd)', async () => {
@@ -1926,8 +2557,8 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       const delivered = new Date('2025-02-01T00:00:00.000Z');
       const completed = new Date('2025-02-03T00:00:00.000Z');
       prisma.order.findMany.mockResolvedValue([
-        { code: 'DH-1', shopId: SHOP_A, total: D(90_000), platformDiscount: D(10_000), commissionRateSnapshot: D('10.00'), deliveredAt: delivered, completedAt: completed },
-        { code: 'DH-2', shopId: SHOP_B, total: D(50_000), platformDiscount: D(0), commissionRateSnapshot: D('5.00'), deliveredAt: null, completedAt: completed },
+        { code: 'DH-1', shopId: SHOP_A, total: D(90_000), platformDiscount: D(10_000), subtotal: D(100_000), shopDiscount: D(0), shopShippingDiscount: D(0), commissionRateSnapshot: D('10.00'), deliveredAt: delivered, completedAt: completed },
+        { code: 'DH-2', shopId: SHOP_B, total: D(50_000), platformDiscount: D(0), subtotal: D(50_000), shopDiscount: D(0), shopShippingDiscount: D(0), commissionRateSnapshot: D('5.00'), deliveredAt: null, completedAt: completed },
       ]);
 
       const rows = await api.settlementOrders(7, new Date('2025-03-31T00:00:00.000Z'));
@@ -1956,5 +2587,36 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(r.get('DH-1')!.total.toString()).toBe('90000');
       expect(r.get('DH-1')!.platformDiscount.toString()).toBe('10000');
     });
+  });
+});
+
+describe('PLAN-0043 — chặn chi tiền thật từ đơn hãng giả', () => {
+  it('kỳ mới có nguồn giả ở endpoint thật phải pending, không gửi tiền', async () => {
+    const f = buildFixture({ payoutConfigured: true });
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set(['DH-FAKE']));
+    f.setEligible([order('DH-FAKE', SHOP_A, 500000)]);
+    await f.run();
+    const payout = f.payoutOf(SHOP_A);
+    expect(payout.status).toBe(PAYOUT_STATUS.PENDING);
+    expect(payout.failReason).toContain('giả lập');
+    expect(f.payos.payout).not.toHaveBeenCalled();
+    await expect(f.service.retry(payout.id, actor)).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+  });
+  it('không đối soát/đánh dấu tay kỳ fake cũ khi đổi sang endpoint thật', async () => {
+    const f = buildFixture({ payoutConfigured: true });
+    const payout = f.seedPayout({ shopId: SHOP_A, start: '2025-01-01', end: '2025-02-01', net: 450000, status: PAYOUT_STATUS.PROCESSING, providerRef: 'MOCK-OLD' });
+    f.seedSale('DH-FAKE', 500000, 50000, { payoutId: payout.id });
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set(['DH-FAKE']));
+    await expect(f.service.reconcileOne(payout.id, actor)).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+    await expect(f.service.markPaid(payout.id, { providerRef: 'BANK-REAL', confirmGatewayNotExecuted: true }, actor)).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+    expect(f.state.payouts[0].status).toBe(PAYOUT_STATUS.PROCESSING);
+  });
+  it('đường mock loopback được chi giả lập', async () => {
+    const f = buildFixture({ payoutConfigured: true });
+    Object.defineProperty(f.payos, 'isMockEndpoint', { value: true });
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set(['DH-FAKE']));
+    f.setEligible([order('DH-FAKE', SHOP_A, 500000)]);
+    await f.run();
+    expect(f.payos.payout).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,14 +2,16 @@ import { createHmac } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpException, HttpStatus, Logger, RequestMethod } from '@nestjs/common';
-import { HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { HEADERS_METADATA, HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import type { ModuleRef } from '@nestjs/core';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import type { AuditLogRow } from '@common/audit/audit';
 import { BusinessException, NotFoundException, ServiceUnavailableException } from '@common/exception/business.exception';
+import type { NotifyCommand } from '@common/gateway/notification.gateway';
 import { ORDER_PAYMENT_GATEWAY } from '@common/gateway/payment.gateway';
-import type { PaymentInitiateInput } from '@common/gateway/payment.gateway';
+import type { PaymentInitiateInput, RefundPayee } from '@common/gateway/payment.gateway';
+import type { UserDirectoryGateway } from '@common/gateway/user-directory.gateway';
 import type { OutboxEventRow } from '@common/outbox/outbox';
 import type { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma } from '@common/prisma/types';
@@ -18,11 +20,15 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { IS_PUBLIC_KEY, PERMISSIONS_KEY } from '@common/security/decorators';
 import { RATE_LIMIT_KEY } from '@common/security/rate-limit.guard';
 import type { Env } from '@config/env';
-import { METHOD, PAY_STATUS, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, REFUND_KIND, REFUND_STATUS, TX_TYPE } from '../foundation/payment.constants';
+import type { ShopQueryApi } from '@modules/shop/queryapi/shop.queryapi';
+import type { SystemQueryApi } from '@modules/system/queryapi/system.queryapi';
+import { GATEWAY_STATUS, METHOD, PAY_STATUS, PAYEE_SOURCE, PAYMENT_AUDIT, PAYMENT_ERR, PAYMENT_EVENT, REFUND_GATEWAY_STALL_MS, REFUND_KIND, REFUND_STATUS, TX_TYPE } from '../foundation/payment.constants';
 import { PayosService } from '../payos/payos.service';
 import { AdminPaymentController, PaymentController, PaymentPublicController } from './payment.controllers';
 import { PaymentService } from './payment.service';
+import type { RefundResponse } from './payment.service';
 import type { ShopWalletService } from '../shop-wallet/shop-wallet.service';
+import type { ShopWalletTopupSettleService } from '../shop-wallet/shop-wallet-topup-settle.service';
 
 /*
  * Test luồng PayOS của PaymentService (webhook · return · initiate · retry · hoàn tiền · extras) + controller.
@@ -113,6 +119,11 @@ interface PaymentRow {
   cardLast4: string | null;
   transferContent: string | null;
   refundedAmount: Dec;
+  receivedAmount: Dec;
+  linkAttempts: number;
+  lastLinkError: string | null;
+  lastCheckedAt: Date | null;
+  lastGatewayStatus: string | null;
   gatewayResponse: unknown;
   paidAt: Date | null;
   expiresAt: Date | null;
@@ -149,6 +160,16 @@ interface RefundRow {
   processedAt: Date | null;
   kind: string;
   gatewayAttemptedAt: Date | null;
+  payeeBankBin: string | null;
+  payeeAccountNumber: string | null;
+  payeeAccountName: string | null;
+  payeeSource: string | null;
+  gatewayStatus: string | null;
+  gatewayPayoutId: string | null;
+  gatewayAttempt: number;
+  gatewaySubmittedAt: Date | null;
+  gatewayAlertedAt: Date | null;
+  needsManual: boolean;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -162,13 +183,16 @@ type Where = Record<string, unknown>;
 type PaidInfo = { paymentId: string; methodCode: string; transactionCode: string | null; bankCode: string | null; paidAt: Date };
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !(v instanceof Date) && !Prisma.Decimal.isDecimal(v);
-const DECIMAL_FIELDS = new Set(['amount', 'refundedAmount']);
+const DECIMAL_FIELDS = new Set(['amount', 'refundedAmount', 'receivedAmount']);
+const LIVE_STATUSES: ReadonlySet<string> = new Set(['pending', 'processing', 'paid']);
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /* Bộ so khớp `where` kiểu Prisma — chỉ phần service dùng (bằng nhau, `in`, `not`, lọc theo quan hệ); toán tử lạ ⇒ ném để test không "đúng nhầm". */
 function matchesRow(row: object, where: Where, relations: Record<string, (r: object) => object | undefined> = {}): boolean {
   const record = row as Record<string, unknown>;
   return Object.entries(where).every(([key, cond]) => {
+    if (key === 'AND') return (cond as Where[]).every((c) => matchesRow(row, c, relations));
+    if (key === 'OR') return (cond as Where[]).some((c) => matchesRow(row, c, relations));
     if (key in relations) {
       const related = relations[key](row);
       return related !== undefined && matchesRow(related, cond as Where);
@@ -177,7 +201,9 @@ function matchesRow(row: object, where: Where, relations: Record<string, (r: obj
     if (isPlainObject(cond)) {
       return Object.entries(cond).every(([op, arg]) => {
         if (op === 'in') return (arg as unknown[]).includes(actual);
+        if (op === 'notIn') return !(arg as unknown[]).includes(actual);
         if (op === 'not') return actual !== arg;
+        if (op === 'lte') return (actual as { lte?: (x: unknown) => boolean } | null)?.lte ? (actual as { lte: (x: unknown) => boolean }).lte(arg) : Number(actual) <= Number(arg);
         if (op === 'lt') return actual instanceof Date && arg instanceof Date && actual.getTime() < arg.getTime();
         throw new Error(`Toán tử where chưa hỗ trợ trong DB giả: ${op}`);
       });
@@ -185,6 +211,9 @@ function matchesRow(row: object, where: Where, relations: Record<string, (r: obj
     return actual === cond;
   });
 }
+
+/* Giả lập P2002 của Prisma (vi phạm unique) — dùng cho unique index một phần `uq_refunds_provider_ref`. */
+const p2002 = (): Error => Object.assign(new Error('Unique constraint failed on the fields: (`provider_ref`)'), { code: 'P2002' });
 
 function applyData(row: object, data: Record<string, unknown>): void {
   const target = row as Record<string, unknown>;
@@ -275,6 +304,23 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
     });
   };
 
+  type OrderBy = Record<string, 'asc' | 'desc'>;
+  /* orderBy kiểu Prisma (một khoá hoặc mảng khoá) cho DB giả: so sánh Date / chuỗi theo thứ tự khoá. */
+  const sortRows = <T extends object>(rows: T[], orderBy?: OrderBy | OrderBy[]): T[] => {
+    const keys = (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []).flatMap((o) => Object.entries(o));
+    const val = (r: T, k: string): number | string => {
+      const v = (r as Record<string, unknown>)[k];
+      return v instanceof Date ? v.getTime() : String(v);
+    };
+    return [...rows].sort((a, b) => {
+      for (const [k, dir] of keys) {
+        const x = val(a, k);
+        const y = val(b, k);
+        if (x !== y) return (x < y ? -1 : 1) * (dir === 'desc' ? -1 : 1);
+      }
+      return 0;
+    });
+  };
   const copy = <T extends object>(r: T | undefined): T | null => (r ? { ...r } : null);
   const newestFirst = <T extends { createdAt: Date }>(rows: T[], orderBy?: { createdAt: 'asc' | 'desc' }): T[] =>
     orderBy ? [...rows].sort((a, b) => (orderBy.createdAt === 'desc' ? b.createdAt.getTime() - a.createdAt.getTime() : a.createdAt.getTime() - b.createdAt.getTime())) : rows;
@@ -312,6 +358,22 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
         const rows = [...state.payments.values()].filter((r) => matchesRow(r, where) && (!refunds?.none || !hasRelated(r.id, refunds.none)));
         return copy(newestFirst(rows, args.orderBy)[0]);
       },
+      updateMany: async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
+        calls.push('payment.updateMany');
+        await tick();
+        const rows = [...state.payments.values()].filter((r) => matchesRow(r, where));
+        for (const row of rows) {
+          const before = { ...row };
+          applyData(row, data);
+          st?.undo.push(() => Object.assign(row, before));
+        }
+        return { count: rows.length };
+      },
+      findMany: async (args: { where: Where; orderBy?: { createdAt: 'asc' | 'desc' }; take?: number }) => {
+        calls.push('payment.findMany');
+        await tick();
+        return newestFirst([...state.payments.values()].filter((r) => matchesRow(r, args.where)), args.orderBy).slice(0, args.take ?? state.payments.size).map((r) => ({ ...r }));
+      },
       count: async (args: { where: Where }) => {
         calls.push('payment.count');
         await tick();
@@ -325,6 +387,8 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
       create: async ({ data }: { data: Record<string, unknown> }) => {
         calls.push('payment.create');
         await tick();
+        // Chỉ mục thật uq_payments_order_live: UNIQUE (order_id) WHERE status IN (pending, processing, paid) — đơn chỉ có MỘT payment sống. DB giả ném P2002 như Postgres (jest từng không bắt được lỗi này).
+        if (LIVE_STATUSES.has(String(data.status)) && [...state.payments.values()].some((r) => r.orderId === data.orderId && LIVE_STATUSES.has(r.status))) throw p2002();
         const row = {
           id: `pay-${++seq}`,
           transactionCode: null,
@@ -333,6 +397,11 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
           cardLast4: null,
           transferContent: null,
           refundedAmount: D(0),
+          receivedAmount: D(0),
+          linkAttempts: 0,
+          lastLinkError: null,
+          lastCheckedAt: null,
+          lastGatewayStatus: null,
           gatewayResponse: null,
           paidAt: null,
           expiresAt: null,
@@ -352,6 +421,9 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
         maybeFail('payment.update');
         await tick();
         const row = must(state.payments.get(where.id), `payment ${where.id}`);
+        // Cùng chỉ mục uq_payments_order_live: đưa payment KHÔNG sống (cancelled…) lên pending/processing/paid khi đơn đã có payment sống khác ⇒ P2002 (payment đã sống mà đổi trạng thái sống khác thì không đụng chỉ mục).
+        const nextStatus = typeof data.status === 'string' ? data.status : undefined;
+        if (nextStatus && LIVE_STATUSES.has(nextStatus) && !LIVE_STATUSES.has(row.status) && [...state.payments.values()].some((r) => r.id !== row.id && r.orderId === row.orderId && LIVE_STATUSES.has(r.status))) throw p2002();
         const before = { ...row };
         applyData(row, data);
         st?.undo.push(() => Object.assign(row, before));
@@ -365,9 +437,17 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
         const rows = state.txns.filter((r) => matchesRow(r, args.where, { payment: (t) => state.payments.get((t as TxnRow).paymentId) }));
         return copy(newestFirst(rows, args.orderBy)[0]);
       },
+      findMany: async (args: { where: Where; orderBy?: { createdAt: 'asc' | 'desc' }; take?: number }) => {
+        calls.push('paymentTransaction.findMany');
+        await tick();
+        const rows = state.txns.filter((r) => matchesRow(r, args.where, { payment: (t) => state.payments.get((t as TxnRow).paymentId) }));
+        return newestFirst(rows, args.orderBy).slice(0, args.take ?? rows.length).map((r) => ({ ...r }));
+      },
       create: async ({ data }: { data: Record<string, unknown> }) => {
         calls.push('paymentTransaction.create');
         await tick();
+        // Chỉ mục thật uq_payment_transactions_provider_ref: UNIQUE (type, provider_ref) WHERE provider_ref IS NOT NULL — DB giả phải ném P2002 như Postgres (jest từng không bắt được lỗi trùng này).
+        if (data.providerRef != null && state.txns.some((t) => t.type === data.type && t.providerRef === data.providerRef)) throw p2002();
         const row = { id: `txn-${++seq}`, amount: null, providerRef: null, rawRequest: null, rawResponse: null, ...data, createdAt: nextDate() } as unknown as TxnRow;
         state.txns.push(row);
         st?.undo.push(() => state.txns.splice(state.txns.indexOf(row), 1));
@@ -412,11 +492,18 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
         const row = [...state.refunds.values()].find((r) => matchesRow(r, args.where));
         return row ? { ...row } : null;
       },
-      findMany: async (args: { where: Where; orderBy?: { updatedAt: 'asc' | 'desc' }; take?: number; include?: { payment?: boolean } }) => {
+      findMany: async (args: { where: Where; orderBy?: OrderBy | OrderBy[]; take?: number; skip?: number; include?: { payment?: unknown }; select?: Record<string, boolean> }) => {
         calls.push('refund.findMany');
         await tick();
-        const rows = [...state.refunds.values()].filter((r) => matchesRow(r, args.where)).sort((a, b) => (args.orderBy?.updatedAt === 'desc' ? -1 : 1) * (a.updatedAt.getTime() - b.updatedAt.getTime()));
-        return rows.slice(0, args.take ?? rows.length).map((r) => (args.include?.payment ? { ...r, payment: { ...must(state.payments.get(r.paymentId), 'payment của refund') } } : { ...r }));
+        // Lọc theo quan hệ `payment` (vd phương thức thanh toán của khoản hoàn) như Prisma — để job tự chi lọc COD ngay trong truy vấn.
+        const rows = sortRows([...state.refunds.values()].filter((r) => matchesRow(r, args.where, { payment: (x) => state.payments.get((x as RefundRow).paymentId) })), args.orderBy);
+        const page = rows.slice(args.skip ?? 0, (args.skip ?? 0) + (args.take ?? rows.length));
+        return page.map((r) => (args.include?.payment ? { ...r, payment: { ...must(state.payments.get(r.paymentId), 'payment của refund') } } : { ...r }));
+      },
+      count: async (args: { where: Where }) => {
+        calls.push('refund.count');
+        await tick();
+        return [...state.refunds.values()].filter((r) => matchesRow(r, args.where)).length;
       },
       /* So-sánh-rồi-đặt (compare-and-set) NGUYÊN TỬ như UPDATE … WHERE: lọc + ghi không xen await ⇒ hai lệnh đồng thời chỉ một lệnh thắng. */
       updateMany: async ({ where, data }: { where: Where; data: Record<string, unknown> }) => {
@@ -424,6 +511,9 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
         maybeFail('refund.updateMany');
         await tick();
         const rows = [...state.refunds.values()].filter((r) => matchesRow(r, where));
+        // unique index một phần trên provider_ref (khác NULL): dòng khác đang giữ mã này ⇒ P2002 (cả lệnh không ghi gì, như UPDATE bị rollback)
+        const newRef = data.providerRef;
+        if (rows.length > 0 && typeof newRef === 'string' && [...state.refunds.values()].some((o) => o.providerRef === newRef && !rows.includes(o))) throw p2002();
         for (const row of rows) {
           const before = { ...row };
           applyData(row, data);
@@ -434,7 +524,7 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
       create: async ({ data }: { data: Record<string, unknown> }) => {
         calls.push('refund.create');
         await tick();
-        const row = { id: `refund-${++seq}`, providerRef: null, note: null, processedBy: null, processedAt: null, version: 0, returnRequestId: null, shopId: null, kind: 'order', gatewayAttemptedAt: null, updatedAt: new Date(), ...data, amount: D(data.amount as string), createdAt: nextDate() } as unknown as RefundRow;
+        const row = { id: `refund-${++seq}`, providerRef: null, note: null, processedBy: null, processedAt: null, version: 0, returnRequestId: null, shopId: null, kind: 'order', gatewayAttemptedAt: null, payeeBankBin: null, payeeAccountNumber: null, payeeAccountName: null, payeeSource: null, gatewayStatus: null, gatewayPayoutId: null, gatewayAttempt: 0, gatewaySubmittedAt: null, gatewayAlertedAt: null, needsManual: false, updatedAt: new Date(), ...data, amount: D(data.amount as string), createdAt: nextDate() } as unknown as RefundRow;
         state.refunds.set(row.id, row);
         st?.undo.push(() => state.refunds.delete(row.id));
         return { ...row };
@@ -479,12 +569,24 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
   };
 
   const payos = new PayosService(env);
-  const createLink = jest.spyOn(payos, 'createPaymentLink').mockResolvedValue({ checkoutUrl: LINK_URL, qrCode: QR, paymentLinkId: 'plink-1' });
+  const createLinkDepth: number[] = []; // số transaction đang mở lúc gọi PayOS (phải là 0 — HTTP ngoài transaction)
+  const createLink = jest.spyOn(payos, 'createPaymentLink').mockImplementation(() => {
+    createLinkDepth.push(activeTx);
+    return Promise.resolve({ checkoutUrl: LINK_URL, qrCode: QR, paymentLinkId: 'plink-1' });
+  });
   const getLink = jest.spyOn(payos, 'getPaymentLink').mockResolvedValue({});
   const cancelLink = jest.spyOn(payos, 'cancelPaymentLink').mockResolvedValue(true);
   const payout = jest.spyOn(payos, 'payout').mockResolvedValue({ ok: true, code: '00', message: 'ok', transactionId: 'TX-123', raw: { code: '00', data: { transactionId: 'TX-123' } } });
+  /* PayOS "00" chỉ là đã NHẬN lệnh; kết quả cuối lấy bằng getPayout — mặc định giả lập đã SUCCEEDED (test từng ca đổi sang processing/failed/unknown). */
+  const getPayout = jest.spyOn(payos, 'getPayout').mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
 
   const orders = {
+    simulatedOrderCodes: jest.fn(() => Promise.resolve(new Set<string>())),
+    /* AUD-01: khoá ĐƠN trước khi khoá payment — ghi vào `calls` để test thứ tự khoá. */
+    lockOrder: jest.fn((_orderCode: string, _tx: unknown): Promise<void> => {
+      calls.push('order.lock');
+      return Promise.resolve();
+    }),
     onPaid: jest.fn((_orderCode: string, _info: PaidInfo, _tx: unknown): Promise<void> => {
       onPaidDepth.push(activeTx);
       return Promise.resolve();
@@ -495,11 +597,30 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
       return Promise.resolve();
     }),
     canRetryPayment: jest.fn((_orderCode: string): Promise<boolean> => Promise.resolve(true)),
+    extendPaymentDeadline: jest.fn((_orderCode: string, _until: Date, _tx: unknown): Promise<void> => Promise.resolve()),
     markReturnRefunded: jest.fn((_returnRequestId: string, _tx: unknown): Promise<void> => Promise.resolve()),
   };
   const moduleRef = { get: jest.fn((_token: unknown, _options: unknown) => orders) };
   const wallet = { codAvailability: jest.fn(), applyCodCommission: jest.fn((): Promise<void> => Promise.resolve()), applyCodRefund: jest.fn((): Promise<void> => Promise.resolve()) };
-  const service = new PaymentService(db as unknown as PrismaService, payos, wallet as unknown as ShopWalletService, env, moduleRef as unknown as ModuleRef);
+  /* Thông báo (PLAN-0022): kế toán = staffUserIdsWithPermission('payment.refund.process'); shop = thành viên active; cả hai chỉ ghi qua NotificationGateway (mock). */
+  const notifications: Array<{ cmd: NotifyCommand; tx: unknown }> = [];
+  const notifier = {
+    notify: jest.fn((cmd: NotifyCommand, tx?: unknown): Promise<void> => {
+      notifications.push({ cmd, tx });
+      return Promise.resolve();
+    }),
+    notifyMany: jest.fn((cmds: NotifyCommand[], tx?: unknown): Promise<void> => {
+      for (const cmd of cmds) notifications.push({ cmd, tx });
+      return Promise.resolve();
+    }),
+  };
+  const users = { staffUserIdsWithPermission: jest.fn((_code: string): Promise<string[]> => Promise.resolve(['acc-1', 'acc-2'])) };
+  const shops = { activeMemberUserIds: jest.fn((_shopId: string): Promise<string[]> => Promise.resolve(['shop-user-1'])), findManyBrief: jest.fn((_ids: string[]): Promise<Map<string, { name: string; code: string }>> => Promise.resolve(new Map())) };
+  /* Hạn thanh toán PayOS của đơn (setting order.vnpay_timeout_minutes) — mặc định 30 phút như hệ thống thật. */
+  const system = { settingNumber: jest.fn((key: string): Promise<number> => Promise.resolve(key === 'refund.auto_max_amount' ? 2_000_000 : 30)) };
+  /* PLAN-0041: webhook không thuộc đơn hàng ⇒ không phải khoản nạp cọc (null) — đường đơn hàng của spec này không đổi. */
+  const topups = { settleWebhookIfTopup: jest.fn((_code: string, _data: Record<string, unknown>, _paidOk: boolean): Promise<null> => Promise.resolve(null)) };
+  const service = new PaymentService(db as unknown as PrismaService, payos, wallet as unknown as ShopWalletService, env, moduleRef as unknown as ModuleRef, notifier, users as unknown as UserDirectoryGateway, shops as unknown as ShopQueryApi, system as unknown as SystemQueryApi, topups as unknown as ShopWalletTopupSettleService);
 
   /* ---- hạt giống dữ liệu ---- */
   const seedPayment = (o: Partial<PaymentRow> = {}): PaymentRow => {
@@ -517,6 +638,11 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
       cardLast4: null,
       transferContent: null,
       refundedAmount: D(0),
+      receivedAmount: D(0),
+      linkAttempts: 0,
+      lastLinkError: null,
+      lastCheckedAt: null,
+      lastGatewayStatus: null,
       gatewayResponse: null,
       paidAt: null,
       expiresAt: new Date('2099-01-01T00:00:00.000Z'),
@@ -563,6 +689,16 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
       processedAt: null,
       kind: 'order',
       gatewayAttemptedAt: null,
+      payeeBankBin: null,
+      payeeAccountNumber: null,
+      payeeAccountName: null,
+      payeeSource: null,
+      gatewayStatus: null,
+      gatewayPayoutId: null,
+      gatewayAttempt: 0,
+      gatewaySubmittedAt: null,
+      gatewayAlertedAt: null,
+      needsManual: false,
       version: 0,
       createdAt: nextDate(),
       updatedAt: new Date(), // "tươi" theo đồng hồ thật — test refund treo đặt `updatedAt` lùi về quá khứ
@@ -583,11 +719,19 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
     getLink,
     cancelLink,
     payout,
+    getPayout,
+    notifications,
+    notifier,
+    users,
+    shops,
+    wallet,
+    system,
     orders,
     txOptions,
     moduleRef,
     service,
     onPaidDepth,
+    createLinkDepth,
     onRefundedDepth,
     seedPayment,
     seedPayos,
@@ -611,6 +755,19 @@ function buildFixture(opts: { payosConfigured?: boolean; payoutConfigured?: bool
   };
 }
 type Fixture = ReturnType<typeof buildFixture>;
+
+/*
+ * PLAN-0022: PayOS payout "00" chỉ là đã NHẬN lệnh ⇒ processRefund trả refund `processing` (gatewayStatus submitted). Helper mô phỏng PayOS báo xong (getPayout mặc định SUCCEEDED) rồi chạy
+ * job đối soát `reconcileGatewayRefunds` (cùng đường mà worker chạy mỗi phút) để refund thành `done`; trả refund cuối cùng.
+ */
+async function processAndSettle(f: Fixture, refundId: string, input: { providerRef?: string; note?: string } = {}, who: AuthenticatedActor = actor): Promise<RefundResponse> {
+  await f.service.processRefund(who, refundId, input);
+  await f.service.reconcileGatewayRefunds();
+  return f.service.getRefund(refundId);
+}
+
+/* Tài khoản nhận hoàn do khách khai (COD bắt buộc). Tên có dấu + chữ thường để kiểm tra chuẩn hoá. */
+const PAYEE: RefundPayee = { bankBin: '970415', accountNumber: '1122334455', accountName: 'Trần Thị Bé' };
 
 const initiateInput = (o: Partial<PaymentInitiateInput> = {}): PaymentInitiateInput => ({ orderId: 'order-1', orderCode: ORDER_CODE, shopId: 'shop-1', userId: USER, amount: BigInt(AMOUNT), methodCode: METHOD.PAYOS, clientIp: '203.0.113.9', ...o });
 
@@ -867,8 +1024,6 @@ describe('PaymentService — PayOS', () => {
     describe('số tiền lệch ⇒ KHÔNG paid, ghi giao dịch mismatch + audit, vẫn trả 200', () => {
       const cases: Array<[string, number | undefined, string]> = [
         ['thiếu 1 đồng', 349_999, '349999'],
-        ['dư 1 đồng', 350_001, '350001'],
-        ['nhân nhầm 100', 35_000_000, '35000000'],
         ['số tiền 0', 0, '0'],
         ['không có trường amount', undefined, '0'],
       ];
@@ -892,16 +1047,178 @@ describe('PaymentService — PayOS', () => {
         expect(audit[0]).toMatchObject({ entityId: p.id, afterSummary: { method: METHOD.PAYOS, reason: 'amount_mismatch', expected: '350000', received, source: 'webhook' } });
       });
 
-      it('sau webhook lệch, webhook ĐÚNG số tiền vẫn được ghi nhận paid (payment còn pending)', async () => {
+      it('[PAY-07] trả thiếu: cộng dồn received_amount, KHÔNG paid; thông tin tài khoản đối ứng được giữ để hoàn về sau', async () => {
         const f = buildFixture();
         const p = f.seedPayos();
-        await f.service.handlePayos(signed(webhookData({ amount: 349_999 })));
-        const r = await f.service.handlePayos(signed(webhookData()));
+        await f.service.handlePayos(signed(webhookData({ amount: 100_000 })));
+        expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PENDING });
+        expect(f.payment(p.id).receivedAmount.toString()).toBe('100000');
+        expect(f.payment(p.id).gatewayResponse).toMatchObject({ counterAccountNumber: '0011223344' });
+      });
+
+      it('[PAY-07] trả thiếu hai lần cho đến khi đủ ⇒ paid (cộng dồn các khoản khác mã giao dịch), không hoàn gì', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        await f.service.handlePayos(signed(webhookData({ amount: 100_000, reference: 'TF-A' })));
+        const r = await f.service.handlePayos(signed(webhookData({ amount: 250_000, reference: 'TF-B' })));
 
         expect(r.body.message).toBe('Success');
         expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+        expect(f.payment(p.id).receivedAmount.toString()).toBe('350000');
         expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
-        expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK).map((t) => t.status)).toEqual(['mismatch', 'ok']);
+        expect(f.state.refunds.size).toBe(0);
+      });
+
+      it('PayOS gửi LẠI đúng khoản trả thiếu (cùng mã giao dịch) ⇒ không cộng lần hai', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        await f.service.handlePayos(signed(webhookData({ amount: 100_000, reference: 'TF-A' })));
+        await f.service.handlePayos(signed(webhookData({ amount: 100_000, reference: 'TF-A' })));
+
+        expect(f.payment(p.id).receivedAmount.toString()).toBe('100000');
+        expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)).toHaveLength(1);
+      });
+
+      it('[PAY-07b] trả thiếu rồi payment bị huỷ (đơn hết hạn) ⇒ tự tạo yêu cầu hoàn `mismatch` đúng số đã nhận + báo kế toán; gọi lại không tạo thêm', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        await f.service.handlePayos(signed(webhookData({ amount: 120_000 })));
+
+        await f.db.$transaction((tx) => f.service.cancel(ORDER_CODE, 'Hết hạn thanh toán', tx as unknown as Tx));
+        await f.db.$transaction((tx) => f.service.cancel(ORDER_CODE, 'Hết hạn thanh toán', tx as unknown as Tx));
+
+        expect(f.payment(p.id).status).toBe(PAY_STATUS.CANCELLED);
+        const refunds = [...f.state.refunds.values()];
+        expect(refunds).toHaveLength(1);
+        expect(refunds[0]).toMatchObject({ kind: REFUND_KIND.MISMATCH, status: REFUND_STATUS.REQUESTED, paymentId: p.id });
+        expect(refunds[0].amount.toString()).toBe('120000');
+      });
+
+      it.each([
+        ['dư 1 đồng', 350_001, '1'],
+        ['nhân nhầm 100', 35_000_000, '34650000'],
+      ])('[PAY-08] trả thừa (%s): đơn vẫn paid đúng giá trị + tự tạo yêu cầu hoàn `mismatch` phần thừa, không đảo doanh thu', async (_label, amount, excess) => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+
+        const r = await f.service.handlePayos(signed(webhookData({ amount })));
+
+        expect(r.body.message).toBe('Success');
+        expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+        expect(f.payment(p.id).receivedAmount.toString()).toBe(String(amount));
+        expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+        const refunds = [...f.state.refunds.values()];
+        expect(refunds).toHaveLength(1);
+        expect(refunds[0]).toMatchObject({ kind: REFUND_KIND.MISMATCH, paymentId: p.id });
+        expect(refunds[0].amount.toString()).toBe(excess);
+      });
+
+      it('[PAY-08] hoàn xong phần thừa KHÔNG đổi trạng thái thanh toán (vẫn paid) và KHÔNG báo order', async () => {
+        const f = buildFixture({ payoutConfigured: true });
+        const p = f.seedPayos();
+        await f.service.handlePayos(signed(webhookData({ amount: 380_000 })));
+        const refund = [...f.state.refunds.values()][0];
+
+        await processAndSettle(f, refund.id);
+
+        expect(f.refund(refund.id).status).toBe(REFUND_STATUS.DONE);
+        expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+        expect(f.payment(p.id).refundedAmount.toString()).toBe('30000');
+        expect(f.orders.onRefunded).not.toHaveBeenCalled();
+      });
+
+      it('[PAY-09] khách trả HAI LẦN cùng một link (hai mã giao dịch khác nhau) ⇒ khoản thứ hai hoàn `duplicate_payment`, đơn không đổi, chỉ một lần onPaid', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A' })));
+        const r = await f.service.handlePayos(signed(webhookData({ reference: 'TF-B' })));
+
+        expect(r.body.message).toBe('Success');
+        expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+        const refunds = [...f.state.refunds.values()];
+        expect(refunds).toHaveLength(1);
+        expect(refunds[0]).toMatchObject({ kind: REFUND_KIND.DUPLICATE_PAYMENT, paymentId: p.id });
+        expect(refunds[0].amount.toString()).toBe('350000');
+        // webhook thứ hai bị PayOS gửi lại ⇒ không hoàn lần hai
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-B' })));
+        expect(f.state.refunds.size).toBe(1);
+      });
+
+      it('[PAY-09] return đã ghi paid rồi webhook ĐẦU TIÊN đến ⇒ cùng khoản tiền đó, KHÔNG bị coi là trả trùng', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: 350_000 });
+        await f.service.handlePayosReturn(String(PAYOS_CODE));
+        expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A' })));
+
+        expect(f.state.refunds.size).toBe(0);
+      });
+
+      // Phát hiện khi kiểm PLAN-0041: khách chuyển HAI lần cho cùng một link; return/poll thấy luỹ kế đủ TRƯỚC khi hai webhook về ⇒ cả hai webhook đều là phần của đơn.
+      it('[PAY-09b] return đã ghi paid (luỹ kế đủ) rồi HAI webhook của hai khoản chuyển (tổng = đơn) ⇒ KHÔNG hoàn, received không đổi', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: AMOUNT });
+        await f.service.handlePayosReturn(String(PAYOS_CODE));
+        expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+        const a1 = 200_000;
+
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A1', amount: a1 })));
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A2', amount: AMOUNT - a1 })));
+
+        expect(f.state.refunds.size).toBe(0);
+        expect(f.payment(p.id).receivedAmount.toString()).toBe(String(AMOUNT));
+      });
+
+      it('[PAY-09c] return đã ghi paid rồi webhook khoản đúng đơn + webhook khoản THỨ HAI cùng số tiền (khách trả trùng thật) ⇒ hoàn đúng MỘT khoản trùng', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: AMOUNT });
+        await f.service.handlePayosReturn(String(PAYOS_CODE));
+
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A', amount: AMOUNT })));
+        expect(f.state.refunds.size).toBe(0);
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-B', amount: AMOUNT })));
+
+        const refunds = [...f.state.refunds.values()];
+        expect(refunds).toHaveLength(1);
+        expect(refunds[0]).toMatchObject({ kind: REFUND_KIND.DUPLICATE_PAYMENT, paymentId: p.id });
+        expect(refunds[0].amount.toString()).toBe(String(AMOUNT));
+        expect(f.payment(p.id).receivedAmount.toString()).toBe(String(AMOUNT * 2));
+      });
+
+      it('[PAY-09d] trả thiếu (webhook 150k) rồi poll thấy đủ ⇒ paid; webhook phần còn lại về sau và webhook gửi lại ⇒ KHÔNG hoàn', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A', amount: 150_000 })));
+        expect(f.payment(p.id).status).not.toBe(PAY_STATUS.PAID);
+        f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: AMOUNT });
+        await f.service.handlePayosReturn(String(PAYOS_CODE));
+        expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A', amount: 150_000 }))); // gửi lại đúng khoản cũ
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-B', amount: AMOUNT - 150_000 })));
+
+        expect(f.state.refunds.size).toBe(0);
+        expect(f.payment(p.id).receivedAmount.toString()).toBe(String(AMOUNT));
+      });
+
+      it('[PAY-09e] return đã ghi paid; webhook nhỏ rồi webhook lớn vượt đơn ⇒ hoàn đúng PHẦN VƯỢT, không hoàn cả khoản', async () => {
+        const f = buildFixture();
+        const p = f.seedPayos();
+        f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: AMOUNT });
+        await f.service.handlePayosReturn(String(PAYOS_CODE));
+        const a1 = 100_000;
+
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-A', amount: a1 }))); // nằm trong luỹ kế đã tính
+        await f.service.handlePayos(signed(webhookData({ reference: 'TF-B', amount: AMOUNT }))); // 100k + 350k = 450k > 350k ⇒ vượt 100k
+
+        const refunds = [...f.state.refunds.values()];
+        expect(refunds).toHaveLength(1);
+        expect(refunds[0].amount.toString()).toBe(String(a1));
+        expect(f.payment(p.id).receivedAmount.toString()).toBe(String(AMOUNT + a1));
       });
     });
 
@@ -950,11 +1267,52 @@ describe('PaymentService — PayOS', () => {
       expect(f.queryRawCalls[0].values).toEqual([p.id]);
       const tx = f.calls.indexOf('$transaction');
       const lockAt = f.calls.indexOf('$queryRaw');
-      const readAt = f.calls.indexOf('payment.findUnique');
+      const readAt = f.calls.indexOf('payment.findUnique', lockAt); // đọc trạng thái SAU khi khoá (lần findUnique trước đó chỉ lấy orderCode để khoá đơn, không khoá payment)
       expect(tx).toBeGreaterThanOrEqual(0);
       expect(lockAt).toBeGreaterThan(tx);
       expect(readAt).toBeGreaterThan(lockAt);
       expect(f.calls.indexOf('payment.update')).toBeGreaterThan(readAt);
+    });
+
+    it('AUD-01: khoá ĐƠN trước, PAYMENT sau (cùng thứ tự với khách huỷ đơn: đơn → payment) — nếu đảo, webhook ∥ huỷ deadlock', async () => {
+      const f = buildFixture();
+      f.seedPayos();
+
+      await f.service.handlePayos(signed(webhookData()));
+
+      expect(f.orders.lockOrder).toHaveBeenCalledTimes(1);
+      expect(f.orders.lockOrder.mock.calls[0][0]).toBe(ORDER_CODE);
+      const tx = f.calls.indexOf('$transaction');
+      const orderLockAt = f.calls.indexOf('order.lock');
+      const paymentLockAt = f.calls.indexOf('$queryRaw');
+      expect(orderLockAt).toBeGreaterThan(tx);
+      expect(paymentLockAt).toBeGreaterThan(orderLockAt);
+      expect(f.calls.indexOf('payment.update')).toBeGreaterThan(paymentLockAt);
+    });
+
+    it('AUD-01: dính deadlock (40P01) với đường khác ⇒ thử lại cả transaction và vẫn ghi nhận đúng MỘT lần (không trả 500 cho PayOS)', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      f.orders.lockOrder.mockRejectedValueOnce(Object.assign(new Error('deadlock detected'), { code: '40P01' }));
+
+      const r = await f.service.handlePayos(signed(webhookData()));
+
+      expect(r).toEqual({ statusCode: 200, body: { code: '00', message: 'Success' } });
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
+      expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)).toHaveLength(1);
+      expect(f.calls.filter((c) => c === '$transaction')).toHaveLength(2); // lần 1 bị huỷ (rollback), lần 2 thành công
+    });
+
+    it('AUD-01: lỗi KHÔNG phải deadlock thì không thử lại (vẫn 500 để PayOS gửi lại)', async () => {
+      const f = buildFixture();
+      f.seedPayos();
+      f.orders.lockOrder.mockRejectedValueOnce(new Error('DB down'));
+
+      const r = await f.service.handlePayos(signed(webhookData()));
+
+      expect(r.statusCode).toBe(500);
+      expect(f.orders.lockOrder).toHaveBeenCalledTimes(1);
     });
 
     it('hai webhook ĐỒNG THỜI cùng payload ⇒ chỉ cộng tiền 1 lần (nhờ khoá dòng)', async () => {
@@ -991,6 +1349,56 @@ describe('PaymentService — PayOS', () => {
   });
 
   // ------------------------------------------------------------------ return (trang kết quả của FE)
+
+  describe('confirmPaymentStatus — hỏi lại PayOS trước khi huỷ đơn quá hạn (PLAN-0025)', () => {
+    it('đơn không có giao dịch PayOS (COD / chưa tạo link) ⇒ unpaid, không hỏi PayOS', async () => {
+      const f = buildFixture();
+      expect(await f.service.confirmPaymentStatus(ORDER_CODE)).toBe('unpaid');
+      expect(f.getLink).not.toHaveBeenCalled();
+    });
+
+    it('payment đã paid ⇒ paid, không hỏi PayOS', async () => {
+      const f = buildFixture();
+      f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date(), version: 1 });
+      expect(await f.service.confirmPaymentStatus(ORDER_CODE)).toBe('paid');
+      expect(f.getLink).not.toHaveBeenCalled();
+    });
+
+    it('[PAY-04] pending + PayOS báo PAID đúng số tiền (mất webhook) ⇒ ghi nhận qua đường webhook (paid, onPaid 1 lần) rồi trả paid — đơn KHÔNG bị huỷ oan', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: AMOUNT, amountRemaining: 0 });
+      expect(await f.service.confirmPaymentStatus(ORDER_CODE)).toBe('paid');
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+      expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+    });
+
+    it('pending + PayOS báo PENDING/EXPIRED/CANCELLED ⇒ unpaid (được huỷ)', async () => {
+      for (const status of ['PENDING', 'EXPIRED', 'CANCELLED']) {
+        const f = buildFixture();
+        f.seedPayos();
+        f.getLink.mockResolvedValue({ status });
+        expect(await f.service.confirmPaymentStatus(ORDER_CODE)).toBe('unpaid');
+        expect(f.orders.onPaid).not.toHaveBeenCalled();
+      }
+    });
+
+    it('[PAY-13] PayOS lỗi / không trả trạng thái ⇒ unknown (KHÔNG coi là chưa trả), không ghi gì', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      f.getLink.mockResolvedValue({});
+      expect(await f.service.confirmPaymentStatus(ORDER_CODE)).toBe('unknown');
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.PENDING);
+    });
+
+    it('PAID nhưng SỐ TIỀN lệch ⇒ không ghi paid (unpaid) — tiền lệch xử lý ở luồng riêng', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: AMOUNT - 1000 });
+      expect(await f.service.confirmPaymentStatus(ORDER_CODE)).toBe('unpaid');
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.PENDING);
+    });
+  });
 
   describe('handlePayosReturn', () => {
     const UNKNOWN = { success: false, orderCode: null, status: 'UNKNOWN', message: 'Không tìm thấy giao dịch' };
@@ -1061,14 +1469,15 @@ describe('PaymentService — PayOS', () => {
       expect(hook).toEqual({ statusCode: 200, body: { code: '00', message: 'Success' } });
       expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
       expect(f.state.outbox).toHaveLength(1);
-      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)).toHaveLength(1);
+      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK).map((t) => t.status)).toEqual(['ok', 'seen']); // webhook đến sau chỉ ghi nhận mã khoản (để về sau phân biệt khoản trùng), KHÔNG cộng tiền
+      expect(f.payment(p.id).receivedAmount.toString()).toBe(String(AMOUNT));
       // gatewayResponse cuối có đủ counterAccount*
       expect(f.payment(p.id).gatewayResponse).toMatchObject({ counterAccountBankId: '970436', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A', orderCode: PAYOS_CODE });
       expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID, version: versionAfterReturn }); // bổ sung dữ liệu, không đổi trạng thái/version
 
       // ⇒ processRefund tự động (payout) chạy được thay vì MANUAL_REQUIRED
       const refund = f.seedRefund(f.payment(p.id));
-      const res = await f.service.processRefund(actor, refund.id, {});
+      const res = await processAndSettle(f, refund.id);
       expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ toBin: '970436', toAccountNumber: '0011223344', amount: 100_000n }));
       expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-123' });
     });
@@ -1135,8 +1544,7 @@ describe('PaymentService — PayOS', () => {
     });
 
     it.each([
-      ['lệch số tiền', { status: 'PAID', amountPaid: 100_000 }, '100000'],
-      ['dư tiền', { status: 'PAID', amountPaid: 350_001 }, '350001'],
+      ['lệch số tiền (thiếu)', { status: 'PAID', amountPaid: 100_000 }, '100000'],
       ['PayOS không trả amountPaid', { status: 'PAID' }, '0'],
     ])('PayOS báo PAID nhưng %s ⇒ success=false (MISMATCH), KHÔNG paid, ghi giao dịch mismatch', async (_label, info, received) => {
       const f = buildFixture();
@@ -1150,6 +1558,31 @@ describe('PaymentService — PayOS', () => {
       expect(f.orders.onPaid).not.toHaveBeenCalled();
       expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)[0]).toMatchObject({ status: 'mismatch', amount: received });
       expect(f.state.outbox).toHaveLength(0);
+    });
+
+    it('[PAY-08] PayOS báo PAID với số tiền DƯ ⇒ success (đơn paid đúng giá trị) + tự tạo yêu cầu hoàn phần thừa', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: 350_001 });
+
+      const r = await f.service.handlePayosReturn(String(PAYOS_CODE));
+
+      expect(r).toMatchObject({ success: true, status: 'PAID' });
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+      expect([...f.state.refunds.values()].map((x) => [x.kind, x.amount.toString()])).toEqual([[REFUND_KIND.MISMATCH, '1']]);
+    });
+
+    it('[PAY-04b] hỏi lại PayOS nhiều lần mà không có tiền mới ⇒ im lặng: không tạo thêm giao dịch / thông báo', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: 100_000 });
+      await f.service.handlePayosReturn(String(PAYOS_CODE));
+      const notified = f.notifications.length;
+      await f.service.handlePayosReturn(String(PAYOS_CODE));
+      await f.service.handlePayosReturn(String(PAYOS_CODE));
+
+      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)).toHaveLength(1);
+      expect(f.notifications.length).toBe(notified);
     });
 
     it.each([
@@ -1180,34 +1613,66 @@ describe('PaymentService — PayOS', () => {
       jest.spyOn(Date, 'now').mockReturnValue(NOW);
     });
 
-    it('tạo link thành công ⇒ trả paymentUrl + qrCode, payment pending 30 phút, ghi create_url với rawRequest.checkoutUrl', async () => {
+    it('[CK-15] initiate PayOS CHỈ tạo payment pending (hạn theo setting) — KHÔNG gọi PayOS / mạng trong transaction đặt hàng, paymentUrl null', async () => {
       const f = buildFixture();
 
       const r = await f.initiateInTx(initiateInput());
 
       const expiresAt = new Date(NOW + THIRTY_MIN);
-      expect(r).toEqual({ paymentId: expect.any(String) as string, status: 'unpaid', paymentUrl: LINK_URL, qrCode: QR, expiresAt });
-
+      expect(r).toEqual({ paymentId: expect.any(String) as string, status: 'unpaid', paymentUrl: null, qrCode: null, expiresAt });
       const p = f.payment(r.paymentId);
       expect(p).toMatchObject({ orderId: 'order-1', orderCode: ORDER_CODE, userId: USER, methodCode: METHOD.PAYOS, status: PAY_STATUS.PENDING, expiresAt, transferContent: null, createdBy: USER });
       expect(p.amount.toString()).toBe('350000');
+      expect(f.createLink).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(f.txnsOf(p.id)).toHaveLength(0);
+      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.INITIATED)).toMatchObject({ entityId: p.id, entityCode: ORDER_CODE, afterSummary: { method: METHOD.PAYOS, amount: '350000' } });
+    });
 
+    it('hạn link PayOS lấy từ setting order.vnpay_timeout_minutes (không còn hằng 30 phút)', async () => {
+      const f = buildFixture();
+      f.system.settingNumber.mockResolvedValue(45);
+
+      const r = await f.initiateInTx(initiateInput());
+
+      expect(r.expiresAt).toEqual(new Date(NOW + 45 * 60_000));
+    });
+
+    it('createCheckoutLinks (SAU commit) ⇒ gọi PayOS, ghi create_url với rawRequest.checkoutUrl, đếm link_attempts, trả paymentUrl + qrCode', async () => {
+      const f = buildFixture();
+      const r = await f.initiateInTx(initiateInput());
+
+      const out = await f.service.createCheckoutLinks([ORDER_CODE]);
+
+      const expiresAt = new Date(NOW + THIRTY_MIN);
+      expect(out.get(ORDER_CODE)).toEqual({ paymentUrl: LINK_URL, qrCode: QR, expiresAt });
       expect(f.createLink).toHaveBeenCalledTimes(1);
       const arg = f.createLink.mock.calls[0][0];
       expect(Number.isSafeInteger(arg.orderCode)).toBe(true);
       expect(arg.orderCode).toBeGreaterThanOrEqual(NOW * 1000);
       expect(arg.orderCode).toBeLessThanOrEqual(NOW * 1000 + 999);
       expect(arg).toMatchObject({ amount: 350_000n, description: ORDER_CODE, returnUrl: 'https://shop.fitly.test/checkout/payos-return', cancelUrl: 'https://shop.fitly.test/checkout/payos-return', expiresAt });
-
-      const [txn] = f.txnsOf(p.id, TX_TYPE.CREATE_URL);
-      expect(f.txnsOf(p.id)).toHaveLength(1);
+      const [txn] = f.txnsOf(r.paymentId, TX_TYPE.CREATE_URL);
+      expect(f.txnsOf(r.paymentId)).toHaveLength(1);
       expect(txn).toMatchObject({ status: 'ok', amount: '350000', providerRef: String(arg.orderCode), rawRequest: { payosOrderCode: arg.orderCode, checkoutUrl: LINK_URL, paymentLinkId: 'plink-1' } });
-      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.INITIATED)).toMatchObject({ entityId: p.id, entityCode: ORDER_CODE, afterSummary: { method: METHOD.PAYOS, amount: '350000' } });
+      expect(f.payment(r.paymentId)).toMatchObject({ linkAttempts: 1, lastLinkError: null });
+    });
+
+    it('createCheckoutLinks IDEMPOTENT: đơn đã có link ⇒ trả link cũ, không gọi PayOS lần hai', async () => {
+      const f = buildFixture();
+      await f.initiateInTx(initiateInput());
+      await f.service.createCheckoutLinks([ORDER_CODE]);
+
+      const again = await f.service.createCheckoutLinks([ORDER_CODE, ORDER_CODE]);
+
+      expect(f.createLink).toHaveBeenCalledTimes(1);
+      expect(again.get(ORDER_CODE)).toMatchObject({ paymentUrl: LINK_URL });
     });
 
     it('link vừa tạo nhận được webhook trả tiền: orderCode PayOS lưu ở create_url dẫn đúng tới payment', async () => {
       const f = buildFixture();
       const r = await f.initiateInTx(initiateInput());
+      await f.service.createCheckoutLinks([ORDER_CODE]);
       const code = f.createLink.mock.calls[0][0].orderCode;
 
       const hook = await f.service.handlePayos(signed(webhookData({}, code)));
@@ -1221,8 +1686,9 @@ describe('PaymentService — PayOS', () => {
       const f = buildFixture();
       f.createLink.mockRestore();
       fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ code: '00', data: { checkoutUrl: LINK_URL, qrCode: QR, paymentLinkId: 'plink-9' } }), { status: 200 }));
-
       const r = await f.initiateInTx(initiateInput());
+
+      await f.service.createCheckoutLinks([ORDER_CODE]);
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, init] = fetchMock.mock.calls[0];
@@ -1234,17 +1700,19 @@ describe('PaymentService — PayOS', () => {
       expect(sent.signature).toBe(hmac(`amount=350000&cancelUrl=https://shop.fitly.test/checkout/payos-return&description=${ORDER_CODE}&orderCode=${sent.orderCode}&returnUrl=https://shop.fitly.test/checkout/payos-return`));
     });
 
-    it('PayOS không tạo được link (checkoutUrl null) ⇒ NÉM ServiceUnavailableException và đơn bị rollback (không còn payment/giao dịch/audit)', async () => {
+    it('[CK-15] PayOS không tạo được link (checkoutUrl null) ⇒ KHÔNG ném: payment vẫn pending + last_link_error + link_attempts, đơn không rollback; extras báo linkRetryable', async () => {
       const f = buildFixture();
       f.createLink.mockResolvedValue({ checkoutUrl: null, qrCode: null, paymentLinkId: null });
+      const r = await f.initiateInTx(initiateInput());
 
-      const err = await thrown(f.initiateInTx(initiateInput()));
+      const out = await f.service.createCheckoutLinks([ORDER_CODE]);
 
-      expect(err).toBeInstanceOf(ServiceUnavailableException);
-      expect(err).toMatchObject({ errorCode: PAYMENT_ERR.PAYOS_NOT_CONFIGURED, httpStatus: HttpStatus.SERVICE_UNAVAILABLE });
-      expect(f.state.payments.size).toBe(0);
-      expect(f.state.txns).toHaveLength(0);
-      expect(f.state.audits).toHaveLength(0);
+      expect(out.get(ORDER_CODE)).toMatchObject({ error: expect.any(String) as string });
+      expect(f.payment(r.paymentId)).toMatchObject({ status: PAY_STATUS.PENDING, linkAttempts: 1 });
+      expect(f.payment(r.paymentId).lastLinkError).toEqual(expect.any(String));
+      expect(f.txnsOf(r.paymentId, TX_TYPE.CREATE_URL)).toHaveLength(0);
+      f.payment(r.paymentId).expiresAt = new Date('2099-01-01T00:00:00.000Z'); // hạn thật tính theo đồng hồ thật
+      expect(await f.service.extrasForOrder(ORDER_CODE)).toMatchObject({ paymentUrl: null, linkRetryable: true });
     });
 
     it.each([
@@ -1252,16 +1720,38 @@ describe('PaymentService — PayOS', () => {
       ['PayOS trả mã 00 nhưng thiếu checkoutUrl', () => Promise.resolve(new Response(JSON.stringify({ code: '00', data: {} }), { status: 200 }))],
       ['timeout', () => Promise.reject(Object.assign(new Error('timeout'), { name: 'TimeoutError' }))],
       ['lỗi mạng', () => Promise.reject(new Error('ECONNREFUSED'))],
-    ])('qua HTTP thật: %s ⇒ initiate ném ServiceUnavailable, không để lại payment', async (_label, makeResponse) => {
+    ])('[CK-15] qua HTTP thật: %s ⇒ createCheckoutLinks trả {error}, payment pending (đơn vẫn có), thử lại được', async (_label, makeResponse) => {
       const f = buildFixture();
       f.createLink.mockRestore();
       fetchMock.mockImplementationOnce(() => makeResponse());
+      const r = await f.initiateInTx(initiateInput());
 
-      const err = await thrown(f.initiateInTx(initiateInput()));
+      const out = await f.service.createCheckoutLinks([ORDER_CODE]);
 
-      expect(err).toBeInstanceOf(ServiceUnavailableException);
-      expect(f.state.payments.size).toBe(0);
-      expect(f.state.txns).toHaveLength(0);
+      expect(out.get(ORDER_CODE)).toHaveProperty('error');
+      expect(f.payment(r.paymentId)).toMatchObject({ status: PAY_STATUS.PENDING, linkAttempts: 1 });
+      expect(f.txnsOf(r.paymentId, TX_TYPE.CREATE_URL)).toHaveLength(0);
+    });
+
+    it('[CK-16] nhiều đơn con: gọi PayOS SONG SONG nhưng không quá 3 yêu cầu cùng lúc', async () => {
+      const f = buildFixture();
+      for (let i = 0; i < 7; i += 1) f.seedPayment({ orderCode: `FT-P${i}`, methodCode: METHOD.PAYOS, status: PAY_STATUS.PENDING });
+      let running = 0;
+      let peak = 0;
+      f.createLink.mockImplementation(async () => {
+        running += 1;
+        peak = Math.max(peak, running);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        running -= 1;
+        return { checkoutUrl: LINK_URL, qrCode: QR, paymentLinkId: 'plink-x' };
+      });
+
+      const out = await f.service.createCheckoutLinks(Array.from({ length: 7 }, (_v, i) => `FT-P${i}`));
+
+      expect(out.size).toBe(7);
+      expect(f.createLink).toHaveBeenCalledTimes(7);
+      expect(peak).toBeLessThanOrEqual(3);
+      expect(peak).toBeGreaterThan(1);
     });
 
     it('PayOS chưa cấu hình ⇒ method không khả dụng: ném BusinessException, không tạo payment, không gọi PayOS/mạng', async () => {
@@ -1276,16 +1766,16 @@ describe('PaymentService — PayOS', () => {
       expect(f.state.payments.size).toBe(0);
     });
 
-    it('cấu hình bị mất giữa chừng (sau khi kiểm method) ⇒ createPayosLink ném ServiceUnavailable PAYOS_NOT_CONFIGURED, rollback', async () => {
+    it('cấu hình bị mất giữa chừng (sau khi tạo payment) ⇒ createCheckoutLinks báo {error} PAYOS_NOT_CONFIGURED, payment giữ pending', async () => {
       const f = buildFixture();
-      jest.spyOn(f.payos, 'isConfigured', 'get').mockReturnValueOnce(true).mockReturnValue(false);
+      const r = await f.initiateInTx(initiateInput());
+      jest.spyOn(f.payos, 'isConfigured', 'get').mockReturnValue(false);
 
-      const err = await thrown(f.initiateInTx(initiateInput()));
+      const out = await f.service.createCheckoutLinks([ORDER_CODE]);
 
-      expect(err).toBeInstanceOf(ServiceUnavailableException);
-      expect(err).toMatchObject({ errorCode: PAYMENT_ERR.PAYOS_NOT_CONFIGURED, httpStatus: 503 });
+      expect(out.get(ORDER_CODE)).toHaveProperty('error');
       expect(f.createLink).not.toHaveBeenCalled();
-      expect(f.state.payments.size).toBe(0);
+      expect(f.payment(r.paymentId).status).toBe(PAY_STATUS.PENDING);
     });
 
     it('method payos bị tắt trong DB ⇒ ném METHOD_INACTIVE, không gọi PayOS', async () => {
@@ -1402,17 +1892,26 @@ describe('PaymentService — PayOS', () => {
       expect(f.state.payments.size).toBe(3);
     });
 
-    it('PayOS không tạo được link ⇒ ném ServiceUnavailable và hoàn tác (giao dịch cũ vẫn pending, không có payment mới)', async () => {
+    it('PayOS không tạo được link ⇒ ném ServiceUnavailable; payment mới giữ pending + last_link_error (KHÔNG mồ côi), lần bấm sau DÙNG LẠI payment đó', async () => {
       const f = buildFixture();
       const old = f.seedPayos();
-      f.createLink.mockResolvedValue({ checkoutUrl: null, qrCode: null, paymentLinkId: null });
+      f.createLink.mockResolvedValueOnce({ checkoutUrl: null, qrCode: null, paymentLinkId: null });
 
       const err = await thrown(f.service.retryPayos(actor_of(USER), ORDER_CODE));
 
       expect(err).toBeInstanceOf(ServiceUnavailableException);
-      expect(f.payment(old.id)).toMatchObject({ status: PAY_STATUS.PENDING, version: 0 });
-      expect(f.state.payments.size).toBe(1);
-      expect(f.state.txns).toHaveLength(1);
+      expect(f.payment(old.id).status).toBe(PAY_STATUS.CANCELLED);
+      expect(f.state.payments.size).toBe(2);
+      const fresh = [...f.state.payments.values()].find((x) => x.id !== old.id);
+      expect(fresh).toMatchObject({ status: PAY_STATUS.PENDING, linkAttempts: 1 });
+      expect(fresh?.lastLinkError).toEqual(expect.any(String));
+      expect(f.txnsOf(fresh!.id, TX_TYPE.CREATE_URL)).toHaveLength(0);
+
+      const again = await f.service.retryPayos(actor_of(USER), ORDER_CODE);
+      expect(again.paymentUrl).toBe(LINK_URL);
+      expect(f.state.payments.size).toBe(2); // dùng lại payment chưa có link, không sinh thêm
+      expect(f.txnsOf(fresh!.id, TX_TYPE.CREATE_URL)).toHaveLength(1);
+      expect(f.payment(fresh!.id).lastLinkError).toBeNull();
     });
 
     describe('chặn retry cho đơn không còn thanh toán được (order.canRetryPayment)', () => {
@@ -1468,11 +1967,19 @@ describe('PaymentService — PayOS', () => {
       });
     });
 
-    it('transaction retry có timeout 20 giây (gọi PayOS tối đa 8s bên trong, mặc định 5s của Prisma sẽ làm hỏng)', async () => {
+    it('[CK-16] retry gọi PayOS NGOÀI transaction (không giữ khoá DB trong lúc chờ HTTP)', async () => {
       const f = buildFixture();
       f.seedPayos();
       await f.service.retryPayos(actor_of(USER), ORDER_CODE);
-      expect(f.txOptions).toEqual([{ timeout: 20_000 }]);
+      expect(f.createLinkDepth).toEqual([0]);
+    });
+
+    it('[PAY-10b] retry GIA HẠN hạn thanh toán của đơn (qua cổng order) trong cùng transaction khoá đơn', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(NOW);
+      const f = buildFixture();
+      f.seedPayos();
+      await f.service.retryPayos(actor_of(USER), ORDER_CODE);
+      expect(f.orders.extendPaymentDeadline).toHaveBeenCalledWith(ORDER_CODE, new Date(NOW + THIRTY_MIN), expect.anything());
     });
 
     describe('huỷ link PayOS cũ (best-effort, sau khi transaction commit)', () => {
@@ -1497,7 +2004,7 @@ describe('PaymentService — PayOS', () => {
         expect(f.cancelLink).not.toHaveBeenCalled();
       });
 
-      it('tạo link mới thất bại (rollback) ⇒ KHÔNG huỷ link cũ (khách vẫn dùng được link đang có)', async () => {
+      it('tạo link mới thất bại ⇒ KHÔNG huỷ link cũ (khách vẫn trả được bằng link đang có)', async () => {
         const f = buildFixture();
         f.seedPayos();
         f.createLink.mockResolvedValue({ checkoutUrl: null, qrCode: null, paymentLinkId: null });
@@ -1550,11 +2057,196 @@ describe('PaymentService — PayOS', () => {
     });
   });
 
+  // ------------------------------------------------------------------ Tầng 1.4–1.6 (PLAN-0040): hỏi PayOS định kỳ · tự chi hoàn nhỏ · hoàn tay khi lệnh chi không rõ
+
+  describe('reconcilePendingPayos — hỏi PayOS khi mất webhook (PAY-04b)', () => {
+    const minutes = (m: number): Date => new Date(Date.now() + m * 60_000);
+
+    it('[PAY-04b] link pending sắp hết hạn, PayOS báo PAID ⇒ ghi nhận paid đúng đường webhook (nguồn poll), lưu last_checked_at + last_gateway_status; lần sau chưa hỏi lại', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos({ expiresAt: minutes(1) });
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: 350_000 });
+
+      const r = await f.service.reconcilePendingPayos();
+
+      expect(r).toEqual({ checked: 1, paid: 1, mismatch: 0 });
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID, lastGatewayStatus: 'PAID' });
+      expect(f.payment(p.id).lastCheckedAt).toBeInstanceOf(Date);
+      expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.PAID)).toMatchObject({ afterSummary: expect.objectContaining({ source: 'poll' }) as unknown });
+      expect(await f.service.reconcilePendingPayos()).toEqual({ checked: 0, paid: 0, mismatch: 0 });
+    });
+
+    it('PayOS báo còn PENDING / EXPIRED ⇒ chỉ ghi last_gateway_status, payment giữ nguyên (job huỷ đơn xử lý hết hạn)', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos({ expiresAt: minutes(1) });
+      f.getLink.mockResolvedValue({ status: 'EXPIRED' });
+
+      const r = await f.service.reconcilePendingPayos();
+
+      expect(r).toMatchObject({ checked: 1, paid: 0 });
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PENDING, lastGatewayStatus: 'EXPIRED' });
+      expect(f.orders.onPaid).not.toHaveBeenCalled();
+    });
+
+    it('payment còn xa hạn và mới tạo (< 10 phút) ⇒ KHÔNG hỏi PayOS', async () => {
+      const f = buildFixture();
+      f.seedPayos({ expiresAt: minutes(25), createdAt: new Date() });
+
+      const r = await f.service.reconcilePendingPayos();
+
+      expect(r.checked).toBe(0);
+      expect(f.getLink).not.toHaveBeenCalled();
+    });
+
+    it('PayOS lỗi mạng ⇒ nuốt lỗi, không làm hỏng job, payment giữ pending', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos({ expiresAt: minutes(1) });
+      f.getLink.mockRejectedValue(new Error('ECONNRESET'));
+
+      await expect(f.service.reconcilePendingPayos()).resolves.toMatchObject({ checked: 1, paid: 0 });
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.PENDING);
+    });
+
+    it('PayOS chưa cấu hình ⇒ không làm gì', async () => {
+      const f = buildFixture({ payosConfigured: false });
+      f.seedPayos({ expiresAt: minutes(1) });
+      expect(await f.service.reconcilePendingPayos()).toEqual({ checked: 0, paid: 0, mismatch: 0 });
+    });
+  });
+
+  describe('autoProcessRefunds — tự chi hoàn nhỏ (REF-01, REF-02)', () => {
+    const ACCOUNT_BANK = { counterAccountBankId: '970436', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A' };
+    function setupAuto(o: { amount?: number; payoutConfigured?: boolean; max?: number; gatewayResponse?: unknown } = {}) {
+      const f = buildFixture({ payoutConfigured: o.payoutConfigured ?? true });
+      if (o.max !== undefined) f.system.settingNumber.mockImplementation((key: string) => Promise.resolve(key === 'refund.auto_max_amount' ? (o.max as number) : 30));
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date('2026-10-03T09:30:00.000Z'), transactionCode: String(PAYOS_CODE), gatewayResponse: o.gatewayResponse === undefined ? webhookData(ACCOUNT_BANK) : o.gatewayResponse, version: 1 });
+      const refund = f.seedRefund(payment, { amount: D(o.amount ?? 100_000) });
+      return { f, refund };
+    }
+
+    it('[REF-01] khoản ≤ mức tự chi, có tài khoản đã trả ⇒ gửi lệnh PayOS bằng tác nhân HỆ THỐNG (refund processing, đã nhận lệnh)', async () => {
+      const { f, refund } = setupAuto();
+
+      const r = await f.service.autoProcessRefunds();
+
+      expect(r).toEqual({ submitted: 1, skipped: 0, failed: 0 });
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ referenceId: refund.id, amount: 100_000n, toBin: '970436', toAccountNumber: '0011223344' }));
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, processedBy: '00000000-0000-0000-0000-000000000000' });
+    });
+
+    it('[REF-02] khoản VƯỢT mức tự chi ⇒ KHÔNG tự chi (chờ kế toán)', async () => {
+      const { f, refund } = setupAuto({ amount: 3_000_000 });
+
+      expect(await f.service.autoProcessRefunds()).toEqual({ submitted: 0, skipped: 0, failed: 0 });
+      expect(f.payout).not.toHaveBeenCalled();
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.REQUESTED);
+    });
+
+    it('refund.auto_max_amount = 0 ⇒ tắt tự chi', async () => {
+      const { f } = setupAuto({ max: 0 });
+      expect(await f.service.autoProcessRefunds()).toEqual({ submitted: 0, skipped: 0, failed: 0 });
+      expect(f.payout).not.toHaveBeenCalled();
+    });
+
+    it('payout chưa cấu hình ⇒ không tự chi', async () => {
+      const { f } = setupAuto({ payoutConfigured: false });
+      expect(await f.service.autoProcessRefunds()).toEqual({ submitted: 0, skipped: 0, failed: 0 });
+    });
+
+    it('không xác định được tài khoản nhận ⇒ bỏ qua (kế toán chuyển tay)', async () => {
+      const { f, refund } = setupAuto({ gatewayResponse: null });
+      const r = await f.service.autoProcessRefunds();
+      expect(r.submitted).toBe(0);
+      expect(f.payout).not.toHaveBeenCalled();
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.REQUESTED);
+    });
+
+    it('PayOS từ chối chắc chắn ⇒ refund failed + báo kế toán, job không ném và KHÔNG tự thử lại ở lần chạy sau', async () => {
+      const { f, refund } = setupAuto();
+      f.payout.mockResolvedValue({ ok: false, code: '231', message: 'Sai tài khoản', raw: { code: '231' } });
+
+      const r = await f.service.autoProcessRefunds();
+      expect(r).toEqual({ submitted: 0, skipped: 0, failed: 1 });
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.FAILED);
+
+      f.payout.mockClear();
+      await f.service.autoProcessRefunds();
+      expect(f.payout).not.toHaveBeenCalled();
+    });
+
+    it('[REF-02] khoản mới vượt mức tự chi ⇒ báo kế toán MỘT lần ngay lúc tạo yêu cầu', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const p = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date(), transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(ACCOUNT_BANK), version: 1, amount: D(5_000_000), receivedAmount: D(5_000_000) });
+
+      await f.db.$transaction((tx) => f.service.requestRefund({ orderCode: p.orderCode, shopId: null, amount: 3_000_000n, reason: 'Huỷ đơn', returnRequestId: null, actorUserId: null }, tx as unknown as Tx));
+
+      const titles = f.notifications.map((n) => n.cmd.title);
+      expect(titles.filter((t) => t.startsWith('Khoản hoàn mới cần xử lý'))).toHaveLength(2); // 2 kế toán (acc-1, acc-2) — mỗi người một thông báo
+    });
+  });
+
+  describe('AUD-14 — hoàn tay khi lệnh chi PayOS KHÔNG RÕ kết quả', () => {
+    const ACCOUNT_BANK = { counterAccountBankId: '970436', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A' };
+    function setupUnknown() {
+      const f = buildFixture({ payoutConfigured: true });
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date('2026-10-03T09:30:00.000Z'), transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(ACCOUNT_BANK), version: 1 });
+      const refund = f.seedRefund(payment, { status: REFUND_STATUS.FAILED, gatewayAttemptedAt: new Date(), gatewayAttempt: 1 });
+      return { f, refund };
+    }
+
+    it('[REF-04b] PayOS ĐÃ nhận lệnh (tra theo referenceId) ⇒ 409 PAYMENT_REFUND_RECONCILE_REQUIRED, refund giữ nguyên failed, không ghi sổ tay', async () => {
+      const { f, refund } = setupUnknown();
+      const find = jest.spyOn(f.payos, 'findPayoutByReference').mockResolvedValue({ state: 'found', id: 'po-1', result: { state: 'processing', detail: 'x' } });
+
+      const err = await thrown(f.service.processRefund(actor, refund.id, { providerRef: 'FT-TAY-0001' }));
+
+      expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_RECONCILE_REQUIRED, httpStatus: 409 });
+      expect(find).toHaveBeenCalledWith(refund.id);
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, providerRef: null });
+    });
+
+    it('[REF-04b2] PayOS KHÔNG có lệnh nào theo referenceId ⇒ cho ghi sổ tay', async () => {
+      const { f, refund } = setupUnknown();
+      jest.spyOn(f.payos, 'findPayoutByReference').mockResolvedValue({ state: 'not_found' });
+
+      await f.service.processRefund(actor, refund.id, { providerRef: 'FT-TAY-0002' });
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'FT-TAY-0002' });
+      expect(f.payout).not.toHaveBeenCalled();
+    });
+
+    it('không tra được PayOS ⇒ 409; kèm confirmGatewayNotExecuted=true thì ghi sổ', async () => {
+      const { f, refund } = setupUnknown();
+      jest.spyOn(f.payos, 'findPayoutByReference').mockResolvedValue({ state: 'unknown', detail: 'timeout' });
+
+      const blocked = await thrown(f.service.processRefund(actor, refund.id, { providerRef: 'FT-TAY-0003' }));
+      expect(blocked).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_RECONCILE_REQUIRED });
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.FAILED);
+
+      await f.service.processRefund(actor, refund.id, { providerRef: 'FT-TAY-0003', confirmGatewayNotExecuted: true });
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.DONE);
+    });
+
+    it('PayOS đã TỪ CHỐI chắc chắn (gatewayStatus failed) ⇒ không cần tra: ghi sổ tay như cũ', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date(), transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(ACCOUNT_BANK), version: 1 });
+      const refund = f.seedRefund(payment, { status: REFUND_STATUS.FAILED, gatewayStatus: GATEWAY_STATUS.FAILED, gatewayAttempt: 1 });
+      const find = jest.spyOn(f.payos, 'findPayoutByReference');
+
+      await f.service.processRefund(actor, refund.id, { providerRef: 'FT-TAY-0004' });
+
+      expect(find).not.toHaveBeenCalled();
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.DONE);
+    });
+  });
+
   describe('extrasForOrder — PayOS', () => {
     it('đơn pending chưa hết hạn ⇒ trả lại checkoutUrl đã lưu để khách mở lại link', async () => {
       const f = buildFixture();
       f.seedPayos();
-      expect(await f.service.extrasForOrder(ORDER_CODE)).toEqual({ paymentUrl: LINK_URL, transactionCode: null, cardBrand: null, cardLast4: null });
+      expect(await f.service.extrasForOrder(ORDER_CODE)).toEqual({ paymentUrl: LINK_URL, linkRetryable: false, transactionCode: null, cardBrand: null, cardLast4: null });
     });
 
     it('lấy link của lần tạo GẦN NHẤT khi payment có nhiều create_url', async () => {
@@ -1605,7 +2297,7 @@ describe('PaymentService — PayOS', () => {
 
     it('đơn không có payment ⇒ toàn null', async () => {
       const f = buildFixture();
-      expect(await f.service.extrasForOrder('FT0000000000')).toEqual({ paymentUrl: null, transactionCode: null, cardBrand: null, cardLast4: null });
+      expect(await f.service.extrasForOrder('FT0000000000')).toEqual({ paymentUrl: null, linkRetryable: false, transactionCode: null, cardBrand: null, cardLast4: null });
     });
   });
 
@@ -1613,7 +2305,7 @@ describe('PaymentService — PayOS', () => {
 
   describe('requestRefund (dùng cho hoàn đơn đổi trả và hoàn khoản trả trùng)', () => {
     const REQ = { orderCode: ORDER_CODE, shopId: null, reason: 'Khách đổi ý', returnRequestId: null, actorUserId: 'staff-1' };
-    const request = (f: Fixture, amount: bigint, o: { paymentId?: string } = {}) => f.db.$transaction((tx) => f.service.requestRefund({ ...REQ, amount, ...o }, tx as unknown as Tx));
+    const request = (f: Fixture, amount: bigint, o: { paymentId?: string; payee?: RefundPayee | null; shopId?: string | null; returnRequestId?: string | null } = {}) => f.db.$transaction((tx) => f.service.requestRefund({ ...REQ, amount, ...o }, tx as unknown as Tx));
     const paid = (o: Partial<PaymentRow> = {}): Partial<PaymentRow> => ({ status: PAY_STATUS.PAID, paidAt: new Date('2026-10-03T09:30:00.000Z'), version: 1, ...o });
 
     it('chưa thu tiền (payment pending) ⇒ refundId null, không tạo refund', async () => {
@@ -1635,14 +2327,14 @@ describe('PaymentService — PayOS', () => {
     });
 
     it.each([
-      [METHOD.COD, 'manual_transfer'],
+      [METHOD.COD, 'gateway'], // PLAN-0022: COD có tài khoản khách khai ⇒ chi qua PayOS payout như PayOS
       ['bank_transfer', 'manual_transfer'], // dữ liệu lịch sử
       ['vnpay', 'manual_transfer'], // dữ liệu lịch sử: không còn cổng ⇒ hoàn tay
       [METHOD.PAYOS, 'gateway'],
     ])('payment %s ⇒ refund method %s', async (methodCode, method) => {
       const f = buildFixture();
       f.seedPayment(paid({ methodCode }));
-      const { refundId } = await request(f, 50_000n);
+      const { refundId } = await request(f, 50_000n, { payee: PAYEE });
       expect(f.refund(must(refundId, 'refundId')).method).toBe(method);
     });
 
@@ -1777,7 +2469,7 @@ describe('PaymentService — PayOS', () => {
       await f.service.handlePayos(signed(webhookData()));
       const [refund] = [...f.state.refunds.values()];
 
-      const res = await f.service.processRefund(actor, refund.id, {});
+      const res = await processAndSettle(f, refund.id);
 
       expect(res.status).toBe(REFUND_STATUS.DONE);
       expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ amount: 350_000n, toBin: '970436', toAccountNumber: '0011223344', idempotencyKey: refund.id }));
@@ -1826,12 +2518,16 @@ describe('PaymentService — PayOS', () => {
       await f.service.handlePayos(signed(webhookData())); // khách trả ở link CŨ
       await f.service.handlePayos(signed(webhookData({}, newCode))); // rồi trả tiếp ở link MỚI
 
-      expect([...f.state.payments.values()].map((p) => p.status)).toEqual([PAY_STATUS.PAID, PAY_STATUS.PAID]);
+      // Chỉ mục thật uq_payments_order_live ⇒ đơn chỉ có MỘT payment `paid`: khoản link CŨ lên paid (huỷ payment chờ của link mới trước), khoản link MỚI không lên paid mà bị hoàn trùng (giữ nguyên trạng thái).
+      expect([...f.state.payments.values()].map((p) => p.status)).toEqual([PAY_STATUS.PAID, PAY_STATUS.CANCELLED]);
       expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
       expect(f.state.outbox.filter((e) => e.eventType === PAYMENT_EVENT.PAID)).toHaveLength(1);
       expect(f.state.refunds.size).toBe(1);
       const [refund] = [...f.state.refunds.values()];
-      expect(f.payment(refund.paymentId).transactionCode).toBe(String(newCode));
+      expect(refund).toMatchObject({ kind: REFUND_KIND.DUPLICATE_PAYMENT, status: REFUND_STATUS.REQUESTED });
+      expect(refund.amount.toString()).toBe('350000');
+      expect(f.txnsOf(refund.paymentId, TX_TYPE.CREATE_URL)[0].providerRef).toBe(String(newCode)); // hoàn gắn đúng payment của link MỚI
+      expect(f.payment(refund.paymentId).receivedAmount.toString()).toBe('350000');
     });
 
     it('trang return cũng đi qua đường này: PayOS báo PAID cho khoản thứ hai ⇒ paid + hoàn, success=true', async () => {
@@ -1962,7 +2658,7 @@ describe('PaymentService — PayOS', () => {
 
       it('refund đã done ⇒ INVALID_STATE "Đã hoàn xong", KHÔNG gọi payout lần nữa (chống hoàn đôi tuần tự)', async () => {
         const { f, refund } = setup();
-        await f.service.processRefund(actor, refund.id, {});
+        await processAndSettle(f, refund.id);
 
         const err = await thrown(f.service.processRefund(actor, refund.id, {}));
 
@@ -1988,6 +2684,7 @@ describe('PaymentService — PayOS', () => {
         const { f, refund } = setup();
 
         const results = await Promise.allSettled([f.service.processRefund(actor, refund.id, {}), f.service.processRefund(actor, refund.id, {})]);
+        await f.service.reconcileGatewayRefunds(); // PayOS đã nhận lệnh ⇒ job đối soát chốt xong
 
         expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
         const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
@@ -2003,6 +2700,7 @@ describe('PaymentService — PayOS', () => {
       it('NĂM lệnh đồng thời ⇒ vẫn chỉ một lần payout', async () => {
         const { f, refund } = setup();
         const results = await Promise.allSettled(Array.from({ length: 5 }, () => f.service.processRefund(actor, refund.id, {})));
+        await f.service.reconcileGatewayRefunds();
         expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
         expect(f.payout).toHaveBeenCalledTimes(1);
         expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
@@ -2011,9 +2709,11 @@ describe('PaymentService — PayOS', () => {
       it('HAI refund một phần của CÙNG payment xử lý song song ⇒ refundedAmount cộng dồn đúng 150.000 (không mất cập nhật)', async () => {
         const { f, payment } = setup({ refund: { id: REFUND_ID, amount: D(100_000) } });
         f.seedRefund(payment, { id: REFUND_ID_2, amount: D(50_000) });
+        f.payout.mockImplementation((input) => Promise.resolve({ ok: true, code: '00', message: 'ok', transactionId: `TX-${input.referenceId.slice(0, 8)}`, raw: {} })); // mã lệnh chi duy nhất mỗi refund
+        await Promise.all([f.service.processRefund(actor, REFUND_ID, {}), f.service.processRefund(actor, REFUND_ID_2, {})]); // cả hai đã được PayOS nhận lệnh
         f.syncTransactions(2); // ép hai transaction ghi sổ cùng tới cửa
 
-        await Promise.all([f.service.processRefund(actor, REFUND_ID, {}), f.service.processRefund(actor, REFUND_ID_2, {})]);
+        await Promise.all([f.service.processRefund(actor, REFUND_ID, {}), f.service.processRefund(actor, REFUND_ID_2, {})]); // bấm lại ⇒ tra PayOS (succeeded) ⇒ ghi sổ song song
 
         expect(f.payment(payment.id).refundedAmount.toString()).toBe('150000');
         expect(f.payment(payment.id).status).toBe(PAY_STATUS.PARTIALLY_REFUNDED);
@@ -2026,6 +2726,8 @@ describe('PaymentService — PayOS', () => {
       it('hai refund song song cộng lại đúng bằng số đã thu ⇒ khoản hoàn sau cùng báo "đã hoàn đủ" (payment REFUNDED)', async () => {
         const { f, payment } = setup({ refund: { id: REFUND_ID, amount: D(100_000) } });
         f.seedRefund(payment, { id: REFUND_ID_2, amount: D(250_000) });
+        f.payout.mockImplementation((input) => Promise.resolve({ ok: true, code: '00', message: 'ok', transactionId: `TX-${input.referenceId.slice(0, 8)}`, raw: {} }));
+        await Promise.all([f.service.processRefund(actor, REFUND_ID, {}), f.service.processRefund(actor, REFUND_ID_2, {})]);
         f.syncTransactions(2);
 
         await Promise.all([f.service.processRefund(actor, REFUND_ID, {}), f.service.processRefund(actor, REFUND_ID_2, {})]);
@@ -2116,22 +2818,36 @@ describe('PaymentService — PayOS', () => {
 
       it('đủ điều kiện hoàn tự động (có tài khoản + cấu hình payout) thì providerRef nhập vào bị bỏ qua: vẫn gọi payout', async () => {
         const { f, refund } = setup();
-        const res = await f.service.processRefund(actor, refund.id, { providerRef: 'FT-IGNORED' });
+        const res = await processAndSettle(f, refund.id, { providerRef: 'FT-IGNORED' });
         expect(f.payout).toHaveBeenCalledTimes(1);
         expect(res.providerRef).toBe('payos-refund:TX-123');
       });
     });
 
     describe('payout thành công', () => {
-      it('refund done, providerRef "payos-refund:<transactionId>", payment partially_refunded, onRefunded (kèm cờ hoàn đủ = false) + outbox đủ trường', async () => {
+      it('PayOS NHẬN lệnh (00) ⇒ refund VẪN processing (gatewayStatus submitted), chưa ghi sổ; job đối soát thấy SUCCEEDED ⇒ done, providerRef "payos-refund:<payoutId>", onRefunded + outbox đủ trường', async () => {
         const { f, payment, refund } = setup();
 
-        const res = await f.service.processRefund(actor, refund.id, { note: 'Đã kiểm tra' });
+        const submitted = await f.service.processRefund(actor, refund.id, { note: 'Đã kiểm tra' });
 
         expect(f.payout).toHaveBeenCalledTimes(1);
         expect(f.payout).toHaveBeenCalledWith({ referenceId: REFUND_ID, amount: 100_000n, toBin: '970436', toAccountNumber: '0011223344', description: `Hoan tien don ${ORDER_CODE}`, idempotencyKey: REFUND_ID });
+        // chưa xong: mới NHẬN lệnh
+        expect(submitted).toMatchObject({ id: REFUND_ID, status: REFUND_STATUS.PROCESSING, method: 'gateway', providerRef: null, gatewayStatus: GATEWAY_STATUS.SUBMITTED, note: 'Đã kiểm tra', needsManual: false });
+        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: null, gatewayPayoutId: 'TX-123', gatewayAttempt: 1, payeeSource: PAYEE_SOURCE.PAYER, processedBy: actor.userId, version: 1 });
+        expect(f.refund(refund.id).gatewaySubmittedAt).toBeInstanceOf(Date);
+        expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
+        expect(f.orders.onRefunded).not.toHaveBeenCalled();
+        expect(f.state.outbox).toHaveLength(0);
+        expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(0);
+        expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_GATEWAY_SUBMITTED)).toMatchObject({ entityId: REFUND_ID, afterSummary: { payoutId: 'TX-123', attempt: 1, reference: REFUND_ID, payeeSource: 'payer' } });
 
-        expect(res).toMatchObject({ id: REFUND_ID, orderCode: ORDER_CODE, status: REFUND_STATUS.DONE, method: 'gateway', providerRef: 'payos-refund:TX-123', note: 'Đã kiểm tra' });
+        const job = await f.service.reconcileGatewayRefunds();
+
+        expect(job).toEqual({ checked: 1, finalized: 1, failed: 0, pending: 0 });
+        expect(f.getPayout).toHaveBeenCalledWith('TX-123');
+        const res = await f.service.getRefund(refund.id);
+        expect(res).toMatchObject({ id: REFUND_ID, orderCode: ORDER_CODE, status: REFUND_STATUS.DONE, method: 'gateway', providerRef: 'payos-refund:TX-123', gatewayStatus: GATEWAY_STATUS.SUCCEEDED, note: 'Đã kiểm tra', needsManual: false });
         expect(res.amount.amount).toBe('100000');
         expect(res.processedAt).not.toBeNull();
         expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-123', processedBy: actor.userId, version: 2 });
@@ -2140,7 +2856,7 @@ describe('PaymentService — PayOS', () => {
         expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
 
         expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(1);
-        expect(f.txnsOf(payment.id, TX_TYPE.REFUND)[0]).toMatchObject({ status: 'ok', providerRef: 'payos-refund:TX-123', rawResponse: { code: '00', data: { transactionId: 'TX-123' } } });
+        expect(f.txnsOf(payment.id, TX_TYPE.REFUND)[0]).toMatchObject({ status: 'ok', providerRef: 'payos-refund:TX-123', rawResponse: { payoutId: 'TX-123', state: 'succeeded', detail: 'SUCCEEDED' } });
 
         expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
         expect(f.orders.onRefunded.mock.calls[0].slice(0, 3)).toEqual([ORDER_CODE, 100_000n, REFUND_ID]);
@@ -2154,31 +2870,43 @@ describe('PaymentService — PayOS', () => {
           aggregateId: REFUND_ID,
           payload: { refundId: REFUND_ID, orderCode: ORDER_CODE, userId: USER, amount: '100000', methodCode: METHOD.PAYOS, shopId: null },
         });
-        expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_PROCESSED)).toMatchObject({ entityId: REFUND_ID, afterSummary: { amount: '100000', method: 'gateway', providerRef: 'payos-refund:TX-123' } });
+        expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_PROCESSED)).toMatchObject({ entityId: REFUND_ID, actorUserId: null, afterSummary: { amount: '100000', method: 'gateway', providerRef: 'payos-refund:TX-123', via: 'poll', payoutId: 'TX-123', initiatedBy: actor.userId } });
       });
 
       it('refund của một shop ⇒ outbox mang shopId (để ví COD đảo hoa hồng)', async () => {
         const { f, refund } = setup({ refund: { shopId: 'shop-1' } });
-        await f.service.processRefund(actor, refund.id, {});
+        await processAndSettle(f, refund.id);
         expect(f.state.outbox[0].payload).toMatchObject({ shopId: 'shop-1', methodCode: METHOD.PAYOS });
       });
 
-      it('PayOS không trả transactionId ⇒ providerRef dùng id của refund', async () => {
-        const { f, refund } = setup();
+      it('PayOS nhận lệnh nhưng KHÔNG trả mã lệnh chi (không tra cứu được) ⇒ KHÔNG đoán là xong: giữ processing, báo kế toán MỘT lần, cần người xem; không chi lại', async () => {
+        const { f, payment, refund } = setup();
         f.payout.mockResolvedValue({ ok: true, code: '00', message: 'ok', raw: { code: '00' } });
-        const res = await f.service.processRefund(actor, refund.id, {});
-        expect(res.providerRef).toBe(`payos-refund:${REFUND_ID}`);
+
+        const submitted = await f.service.processRefund(actor, refund.id, {});
+        await f.service.reconcileGatewayRefunds();
+        await f.service.reconcileGatewayRefunds();
+
+        expect(submitted).toMatchObject({ status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED, providerRef: null });
+        expect(f.getPayout).not.toHaveBeenCalled(); // không có mã để tra
+        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, gatewayPayoutId: null, providerRef: null, needsManual: true });
+        expect(f.refund(refund.id).gatewayAlertedAt).toBeInstanceOf(Date);
+        expect((await f.service.getRefund(refund.id)).needsManual).toBe(true);
+        expect(f.payment(payment.id).refundedAmount.toString()).toBe('0');
+        expect(f.orders.onRefunded).not.toHaveBeenCalled();
+        expect(f.notifications.filter((n) => n.cmd.title.includes('treo bất thường')).map((n) => n.cmd.userId)).toEqual(['acc-1', 'acc-2']); // đúng MỘT lần dù job chạy hai lần
+        expect(f.payout).toHaveBeenCalledTimes(1);
       });
 
       it('hoàn toàn bộ số tiền ⇒ payment REFUNDED + cờ hoàn đủ = true; hoàn nốt phần còn lại sau lần một phần cũng ⇒ REFUNDED', async () => {
         const full = setup({ refund: { amount: D(350_000) } });
-        await full.f.service.processRefund(actor, REFUND_ID, {});
+        await processAndSettle(full.f, REFUND_ID);
         expect(full.f.payment(full.payment.id)).toMatchObject({ status: PAY_STATUS.REFUNDED });
         expect(full.f.payment(full.payment.id).refundedAmount.toString()).toBe('350000');
         expect(full.f.orders.onRefunded.mock.calls[0][4]).toBe(true);
 
         const rest = setup({ payment: { refundedAmount: D(100_000), status: PAY_STATUS.PARTIALLY_REFUNDED }, refund: { amount: D(250_000) } });
-        await rest.f.service.processRefund(actor, REFUND_ID, {});
+        await processAndSettle(rest.f, REFUND_ID);
         expect(rest.f.payment(rest.payment.id)).toMatchObject({ status: PAY_STATUS.REFUNDED });
         expect(rest.f.payment(rest.payment.id).refundedAmount.toString()).toBe('350000');
         expect(rest.f.orders.onRefunded.mock.calls[0][4]).toBe(true);
@@ -2186,7 +2914,7 @@ describe('PaymentService — PayOS', () => {
 
       it('refund gắn yêu cầu đổi trả ⇒ báo markReturnRefunded đúng 1 lần', async () => {
         const { f, refund } = setup({ refund: { returnRequestId: 'return-1' } });
-        await f.service.processRefund(actor, refund.id, {});
+        await processAndSettle(f, refund.id);
         expect(f.orders.markReturnRefunded).toHaveBeenCalledTimes(1);
         expect(f.orders.markReturnRefunded.mock.calls[0][0]).toBe('return-1');
       });
@@ -2214,6 +2942,15 @@ describe('PaymentService — PayOS', () => {
         expect(f.payment(payment.id).refundedAmount.toString()).toBe('0');
         expect(f.orders.onRefunded).not.toHaveBeenCalled();
         expect(f.state.outbox).toHaveLength(0);
+        // kế toán (mọi người có quyền hoàn tiền) được báo — trong CÙNG transaction với việc đánh failed
+        expect(f.users.staffUserIdsWithPermission).toHaveBeenCalledWith('payment.refund.process');
+        expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([
+          ['acc-1', `Hoàn tiền đơn ${ORDER_CODE} thất bại`],
+          ['acc-2', `Hoàn tiền đơn ${ORDER_CODE} thất bại`],
+        ]);
+        expect(f.notifications[0].cmd).toMatchObject({ type: 'payment', link: '/payment/refunds', payload: { refundId: REFUND_ID, orderCode: ORDER_CODE } });
+        expect(f.notifications[0].tx).toBeDefined();
+        expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_FAILED)).toMatchObject({ entityId: REFUND_ID });
       });
 
       it('refund failed xử lý lại được: payout gọi lại với CÙNG idempotencyKey/referenceId (không chi đôi), xong ⇒ done', async () => {
@@ -2222,7 +2959,7 @@ describe('PaymentService — PayOS', () => {
 
         await thrown(f.service.processRefund(actor, refund.id, {}));
         expect(f.refund(refund.id).status).toBe(REFUND_STATUS.FAILED);
-        const res = await f.service.processRefund(actor, refund.id, {});
+        const res = await processAndSettle(f, refund.id);
 
         expect(res.status).toBe(REFUND_STATUS.DONE);
         expect(f.payout).toHaveBeenCalledTimes(2);
@@ -2239,13 +2976,15 @@ describe('PaymentService — PayOS', () => {
       it('khoá dòng payment (SELECT … FOR UPDATE) trong transaction TRƯỚC khi đọc payment để cộng dồn', async () => {
         const { f, refund } = setup();
 
-        await f.service.processRefund(actor, refund.id, {});
+        await processAndSettle(f, refund.id);
 
         const locks = f.queryRawCalls.filter((c) => /FOR UPDATE/i.test(c.sql));
         expect(locks).toHaveLength(1);
         expect(locks[0].values).toEqual([refund.paymentId]);
-        const tx = f.calls.indexOf('$transaction');
         const lockAt = f.calls.indexOf('$queryRaw');
+        expect(f.calls.lastIndexOf('order.lock', lockAt)).toBeGreaterThanOrEqual(0); // AUD-01: khoá ĐƠN trước khi khoá payment
+        expect(f.calls.lastIndexOf('order.lock', lockAt)).toBeLessThan(lockAt);
+        const tx = f.calls.lastIndexOf('$transaction', lockAt); // transaction ghi sổ = transaction gần nhất mở TRƯỚC câu khoá
         expect(tx).toBeGreaterThan(f.calls.indexOf('refund.findUniqueOrThrow'));
         expect(lockAt).toBeGreaterThan(tx);
         expect(f.calls.indexOf('payment.findUnique', lockAt)).toBeGreaterThan(lockAt);
@@ -2267,18 +3006,27 @@ describe('PaymentService — PayOS', () => {
         expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(0);
       });
 
-      it('lỗi khi ghi sổ sau payout thành công ⇒ transaction ghi sổ hoàn tác (payment/sổ/outbox không đổi) nhưng refund GIỮ processing + providerRef để chỉ ghi sổ lại (không chi đôi)', async () => {
+      it('PayOS đã xác nhận SUCCEEDED nhưng ghi sổ lỗi ⇒ transaction ghi sổ hoàn tác (payment/sổ/outbox không đổi), refund GIỮ processing + providerRef để chỉ ghi sổ lại (không chi đôi)', async () => {
         const { f, payment, refund } = setup();
         f.orders.onRefunded.mockRejectedValueOnce(new Error('order down'));
+        await f.service.processRefund(actor, refund.id, {});
 
-        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
+        const job = await f.service.reconcileGatewayRefunds(); // job nuốt lỗi từng refund (log), không ném
 
-        expect((err as Error).message).toBe('order down');
-        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: 'payos-refund:TX-123' }); // cổng đã chi: dấu vết còn, KHÔNG về requested
+        expect(job).toEqual({ checked: 1, finalized: 0, failed: 0, pending: 0 });
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: 'payos-refund:TX-123', gatewayStatus: GATEWAY_STATUS.SUCCEEDED }); // tiền đã đi: dấu vết còn, KHÔNG về requested
         expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
         expect(f.payment(payment.id).refundedAmount.toString()).toBe('0');
         expect(f.state.outbox).toHaveLength(0);
         expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(0);
+        expect(f.payout).toHaveBeenCalledTimes(1);
+
+        // lượt job sau: chỉ ghi sổ nốt, KHÔNG tra PayOS lần nữa và KHÔNG gửi lệnh mới
+        f.getPayout.mockClear();
+        expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 1, finalized: 1, failed: 0, pending: 0 });
+        expect(f.getPayout).not.toHaveBeenCalled();
+        expect(f.refund(refund.id).status).toBe(REFUND_STATUS.DONE);
         expect(f.payout).toHaveBeenCalledTimes(1);
       });
     });
@@ -2325,7 +3073,7 @@ describe('PaymentService — PayOS', () => {
       expect(refund).toMatchObject({ paymentId: second.id, kind: REFUND_KIND.DUPLICATE_PAYMENT, status: REFUND_STATUS.REQUESTED, shopId: null, returnRequestId: null });
       expect(auditsOf(f, PAYMENT_AUDIT.REFUND_REQUESTED)[0]).toMatchObject({ afterSummary: { kind: REFUND_KIND.DUPLICATE_PAYMENT, amount: '350000' } });
 
-      const res = await f.service.processRefund(actor, refund.id, {});
+      const res = await processAndSettle(f, refund.id);
 
       expect(res).toMatchObject({ status: REFUND_STATUS.DONE, kind: REFUND_KIND.DUPLICATE_PAYMENT, needsReconcile: false, providerRef: 'payos-refund:TX-123' });
       // đơn không bị đụng: vẫn paid, order không được báo hoàn (kể cả markReturnRefunded)
@@ -2346,12 +3094,14 @@ describe('PaymentService — PayOS', () => {
       expect(f.state.outbox.map((e) => e.eventType)).toEqual([PAYMENT_EVENT.PAID]);
       // nhưng vẫn ghi sổ + audit đầy đủ
       expect(auditsOf(f, PAYMENT_AUDIT.REFUND_PROCESSED)).toHaveLength(1);
-      expect(auditsOf(f, PAYMENT_AUDIT.REFUND_PROCESSED)[0]).toMatchObject({ actorUserId: actor.userId, entityId: refund.id, afterSummary: { kind: REFUND_KIND.DUPLICATE_PAYMENT, amount: '350000', providerRef: 'payos-refund:TX-123', via: 'process' } });
+      expect(auditsOf(f, PAYMENT_AUDIT.REFUND_PROCESSED)[0]).toMatchObject({ actorUserId: null, entityId: refund.id, afterSummary: { kind: REFUND_KIND.DUPLICATE_PAYMENT, amount: '350000', providerRef: 'payos-refund:TX-123', via: 'poll', initiatedBy: actor.userId } });
+      // khoản trùng không có "đơn" để order báo khách ⇒ payment gửi thông báo cho KHÁCH (không báo shop: không thuộc shop nào)
+      expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([[USER, `Đã hoàn khoản thanh toán trùng đơn ${ORDER_CODE}`]]);
     });
 
     it('gọi lại KHÔNG hoàn thêm: process lần hai = INVALID_STATE, webhook trùng lặp không tạo yêu cầu/chi tiền mới, đơn vẫn paid', async () => {
       const { f, order, second, refund } = await payTwice();
-      await f.service.processRefund(actor, refund.id, {});
+      await processAndSettle(f, refund.id);
 
       const again = await thrown(f.service.processRefund(actor, refund.id, {}));
       await f.service.handlePayos(signed(webhookData({}, NEW_CODE))); // webhook lặp của khoản trùng
@@ -2372,7 +3122,7 @@ describe('PaymentService — PayOS', () => {
       const { refundId } = await f.db.$transaction((tx) => f.service.requestRefund({ orderCode: ORDER_CODE, shopId: 'shop-1', amount: 350_000n, reason: 'Huỷ đơn', returnRequestId: null, actorUserId: 'staff-1' }, tx as unknown as Tx));
       expect(f.refund(must(refundId, 'refundId')).kind).toBe(REFUND_KIND.ORDER);
 
-      await f.service.processRefund(actor, must(refundId, 'refundId'), {});
+      await processAndSettle(f, must(refundId, 'refundId'));
 
       expect(order).toEqual({ paymentStatus: 'refunded', refundCalls: 1 });
       expect(f.state.outbox.map((e) => e.eventType)).toEqual([PAYMENT_EVENT.REFUNDED]);
@@ -2418,7 +3168,8 @@ describe('PaymentService — PayOS', () => {
       const { f, order, second, refund } = await payTwice();
       f.failNth('payment.update', 1, new Error('db chết'));
 
-      await thrown(f.service.processRefund(actor, refund.id, {}));
+      await f.service.processRefund(actor, refund.id, {});
+      await f.service.reconcileGatewayRefunds(); // PayOS báo xong nhưng ghi sổ lỗi (job nuốt + log)
       expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: 'payos-refund:TX-123' });
       await f.service.retryFinalizeRefund(actor, refund.id);
 
@@ -2446,19 +3197,20 @@ describe('PaymentService — PayOS', () => {
       const refund = f.seedRefund(payment, o.refund);
       return { f, payment, refund };
     }
-    /* Cổng đã chi nhưng bước ghi sổ lỗi: refund kẹt `processing` có providerRef. */
+    /* PayOS đã xác nhận SUCCEEDED (providerRef đã ghi) nhưng bước ghi sổ lỗi: refund kẹt `processing` có providerRef. Lỗi ghi sổ xảy ra ở job đối soát (nuốt + log). */
     async function stuckAfterGatewayPaid(o: Parameters<typeof setup>[0] = {}) {
       const s = setup(o);
       s.f.failNth('payment.update', 1, new Error('db chết'));
-      const err = await thrown(s.f.service.processRefund(actor, s.refund.id, {}));
-      return { ...s, err };
+      await s.f.service.processRefund(actor, s.refund.id, {});
+      await s.f.service.reconcileGatewayRefunds();
+      return { ...s, err: (errorSpy.mock.calls as unknown[][]).map((c) => (c[0] as { err?: unknown }).err)[0] };
     }
 
     describe('cổng ĐÃ chi + ghi sổ lỗi', () => {
       it('refund GIỮ processing + providerRef (không nhả về requested); payment / sổ / outbox không đổi; cổng chỉ bị gọi 1 lần', async () => {
         const { f, payment, refund, err } = await stuckAfterGatewayPaid();
 
-        expect((err as Error).message).toBe('db chết');
+        expect((err as Error).message).toBe('db chết'); // job log đúng lỗi ghi sổ
         expect(f.payout).toHaveBeenCalledTimes(1);
         expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: 'payos-refund:TX-123' });
         expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
@@ -2543,10 +3295,11 @@ describe('PaymentService — PayOS', () => {
       it('lỗi ghi sổ VĨNH VIỄN (tổng hoàn vượt số đã thu) ⇒ refund vẫn processing + providerRef; retry-finalize báo lại đúng lỗi đó, KHÔNG gọi cổng, không ghi gì', async () => {
         const s = setup({ payment: { status: PAY_STATUS.PARTIALLY_REFUNDED, refundedAmount: D(300_000) }, refund: { amount: D(100_000) } });
 
-        const first = await thrown(s.f.service.processRefund(actor, s.refund.id, {}));
+        await s.f.service.processRefund(actor, s.refund.id, {});
+        await s.f.service.reconcileGatewayRefunds();
         const retry = await thrown(s.f.service.retryFinalizeRefund(actor, s.refund.id));
 
-        expect(first).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_EXCEEDS });
+        expect((errorSpy.mock.calls as unknown[][])[0][0]).toMatchObject({ err: expect.objectContaining({ errorCode: PAYMENT_ERR.REFUND_EXCEEDS }) as unknown });
         expect(retry).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_EXCEEDS });
         expect(s.f.payout).toHaveBeenCalledTimes(1);
         expect(s.f.refund(s.refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: 'payos-refund:TX-123' });
@@ -2585,10 +3338,10 @@ describe('PaymentService — PayOS', () => {
       });
     });
 
-    describe('cổng chi nhưng GHI providerRef lỗi (DB chết đúng lúc đó)', () => {
-      it('refund VẪN processing (KHÔNG nhả về requested để ai đó bấm gọi lại ngay); quá hạn mới chiếm lại và gọi lại với CÙNG idempotency-key', async () => {
+    describe('PayOS nhận lệnh nhưng GHI dấu "đã nhận lệnh" lỗi (DB chết đúng lúc đó)', () => {
+      it('refund VẪN processing (KHÔNG nhả về requested để ai đó bấm gọi lại ngay); quá hạn mới chiếm lại và gửi lại với CÙNG idempotency-key', async () => {
         const { f, refund } = setup();
-        f.failNth('refund.updateMany', 2, new Error('db chết')); // #1 chiếm, #2 ghi providerRef
+        f.failNth('refund.updateMany', 2, new Error('db chết')); // #1 chiếm, #2 ghi dấu đã nhận lệnh
 
         const err = await thrown(f.service.processRefund(actor, refund.id, {}));
 
@@ -2600,7 +3353,7 @@ describe('PaymentService — PayOS', () => {
         expect(f.payout).toHaveBeenCalledTimes(1);
 
         f.refund(refund.id).updatedAt = minutesAgo(11);
-        const res = await f.service.processRefund(actor, refund.id, {});
+        const res = await processAndSettle(f, refund.id);
 
         expect(res.status).toBe(REFUND_STATUS.DONE);
         expect(f.payout.mock.calls.map((c) => c[0].idempotencyKey)).toEqual([REFUND_ID, REFUND_ID]); // PayOS trả lại đúng lệnh cũ, không chi đôi
@@ -2631,7 +3384,7 @@ describe('PaymentService — PayOS', () => {
       it('quá 10 phút ⇒ process chiếm lại bằng compare-and-set rồi chạy bình thường (PayOS: cùng idempotency-key)', async () => {
         const { f, payment, refund } = setup({ refund: { status: REFUND_STATUS.PROCESSING, processedBy: 'user-other', version: 1, updatedAt: minutesAgo(11) } });
 
-        const res = await f.service.processRefund(actor, refund.id, {});
+        const res = await processAndSettle(f, refund.id);
 
         expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-123' });
         expect(f.payout).toHaveBeenCalledTimes(1);
@@ -2652,6 +3405,7 @@ describe('PaymentService — PayOS', () => {
         const { f, refund } = setup({ refund: { status: REFUND_STATUS.PROCESSING, version: 1, updatedAt: minutesAgo(11) } });
 
         const results = await Promise.allSettled([f.service.processRefund(actor, refund.id, {}), f.service.processRefund(actor_of('user-acc-2'), refund.id, {})]);
+        await f.service.reconcileGatewayRefunds();
 
         expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
         expect((results.find((r): r is PromiseRejectedResult => r.status === 'rejected')?.reason as BusinessException).errorCode).toBe(PAYMENT_ERR.INVALID_STATE);
@@ -2750,6 +3504,399 @@ describe('PaymentService — PayOS', () => {
         expect(await f.service.recoverStuckRefunds()).toEqual({ finalized: 0, released: 0, flagged: 0 });
         expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
       });
+    });
+  });
+});
+
+/* ================================================================ PLAN-0040 Tầng 2b ================================================================ */
+
+describe('PLAN-0040 Tầng 2b — vá sót về tiền (AUD-18 … AUD-22)', () => {
+  const realFetch = globalThis.fetch;
+  const ACCOUNT_BANK = { counterAccountBankId: '970436', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A' };
+  const PAID_AT = new Date('2026-10-03T09:30:00.000Z');
+
+  beforeEach(() => {
+    globalThis.fetch = jest.fn((): Promise<Response> => Promise.reject(new Error('fetch chưa được stub — không được gọi mạng thật')));
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
+
+  const cancelOrder = (f: Fixture) => f.db.$transaction((tx) => f.service.cancel(ORDER_CODE, 'Khách huỷ đơn', tx as unknown as Tx));
+  /* Webhook một khoản `amount` mang mã khoản `reference` vào link `code` (mặc định link của payment seedPayos). */
+  const pay = (f: Fixture, amount: number, reference: string, code: number = PAYOS_CODE) => f.service.handlePayos(signed(webhookData({ amount, reference }, code)));
+  const refundsOf = (f: Fixture, paymentId: string): RefundRow[] => [...f.state.refunds.values()].filter((r) => r.paymentId === paymentId);
+  /* Bất biến tiền: Σ hoàn không `failed` của payment. */
+  const refundSum = (rs: RefundRow[]): number => rs.filter((r) => r.status !== REFUND_STATUS.FAILED).reduce((s, r) => s + Number(r.amount.toString()), 0);
+
+  // ------------------------------------------------------------------ AUD-18 / AUD-19
+  describe('AUD-18 / AUD-19 — tiền đến MUỘN trên payment đã huỷ (không kẹt tiền, webhook luôn 200)', () => {
+    it('[MNY-02b/02c] trả thiếu 100k → đơn huỷ (hoàn mismatch 100k) → khách chuyển NỐT phần còn lại ⇒ webhook 200 (không PAYMENT_REFUND_EXCEEDS), payment giữ cancelled, hoàn đúng phần mới, Σ hoàn = Σ đã nhận', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await pay(f, 100_000, 'TF-A');
+      await cancelOrder(f);
+      expect(refundsOf(f, p.id).map((r) => r.amount.toString())).toEqual(['100000']);
+
+      const late = await pay(f, 250_000, 'TF-B');
+
+      expect(late.statusCode).toBe(200);
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.CANCELLED });
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('350000'); // tiền đã về PayOS ĐƯỢC GHI — không bị rollback như trước
+      const rs = refundsOf(f, p.id);
+      expect(rs.map((r) => [r.kind, r.amount.toString(), r.status])).toEqual([
+        [REFUND_KIND.MISMATCH, '100000', REFUND_STATUS.REQUESTED],
+        [REFUND_KIND.MISMATCH, '250000', REFUND_STATUS.REQUESTED],
+      ]);
+      expect(refundSum(rs)).toBe(350_000);
+      expect(f.orders.onPaid).not.toHaveBeenCalled(); // KHÔNG đẩy payment sang paid trái thiết kế
+      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK).map((t) => t.status)).toEqual(['mismatch', 'late']);
+    });
+
+    it('hoàn cả hai khoản xong: refundedAmount = received, KHÔNG vướng trần hoàn (REFUND_EXCEEDS) khi ghi sổ', async () => {
+      const f = buildFixture();
+      let n = 0;
+      f.payout.mockImplementation(() => Promise.resolve({ ok: true, code: '00', message: 'ok', transactionId: `TX-${++n}`, raw: { code: '00' } })); // mỗi lệnh chi một mã giao dịch riêng (providerRef là UNIQUE)
+      const p = f.seedPayos();
+      await pay(f, 100_000, 'TF-A');
+      await cancelOrder(f);
+      await pay(f, 250_000, 'TF-B');
+
+      for (const r of refundsOf(f, p.id)) expect((await processAndSettle(f, r.id)).status).toBe(REFUND_STATUS.DONE);
+
+      expect(f.payment(p.id).refundedAmount.toString()).toBe('350000');
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.CANCELLED);
+      expect(f.orders.onRefunded).not.toHaveBeenCalled(); // hoàn mismatch không đụng đơn
+    });
+
+    it('[MNY-08] đơn đã huỷ + đã có hoàn 100k, khách chuyển thêm 50k (vẫn chưa đủ) ⇒ webhook 200 và bù hoàn đúng 50k (Σ hoàn = Σ nhận = 150k)', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await pay(f, 100_000, 'TF-A');
+      await cancelOrder(f);
+
+      const late = await pay(f, 50_000, 'TF-B');
+
+      expect(late.statusCode).toBe(200);
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('150000');
+      expect(refundsOf(f, p.id).map((r) => r.amount.toString())).toEqual(['100000', '50000']);
+      expect(refundSum(refundsOf(f, p.id))).toBe(150_000);
+    });
+
+    it('[MNY-09] đơn huỷ TRƯỚC khi có tiền (payment cancelled, received 0), khách chuyển 100k vào link cũ ⇒ 200, hoàn 100k về TK người trả; kế toán + khách được báo ĐÚNG sự thật', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await cancelOrder(f);
+      expect(f.state.refunds.size).toBe(0);
+
+      const late = await pay(f, 100_000, 'TF-A');
+
+      expect(late.statusCode).toBe(200);
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.CANCELLED });
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('100000');
+      const [refund] = refundsOf(f, p.id);
+      expect(refund).toMatchObject({ kind: REFUND_KIND.MISMATCH, status: REFUND_STATUS.REQUESTED, method: 'gateway', needsManual: false, shopId: null });
+      expect(refund.amount.toString()).toBe('100000');
+      // kế toán: nói rõ yêu cầu hoàn ĐÃ được tạo (không còn câu "tiền sẽ được hoàn" khi thực tế không có yêu cầu nào)
+      const acct = f.notifications.filter((n) => n.cmd.userId === 'acc-1' && n.cmd.title.startsWith('Tiền về muộn'));
+      expect(acct).toHaveLength(1);
+      expect(acct[0].cmd.content).toContain('Yêu cầu hoàn');
+      expect(acct[0].cmd.payload).toMatchObject({ reason: 'late_payment', refundId: refund.id });
+      expect(f.notifications.filter((n) => n.cmd.userId === USER && n.cmd.title.includes('sẽ được hoàn'))).toHaveLength(1);
+      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.FAILED && (a.afterSummary as { reason?: string } | null)?.reason === 'late_payment')).toBeDefined();
+    });
+
+    it('idempotent: PayOS gửi LẠI đúng khoản đến muộn (cùng mã khoản) ⇒ không cộng, không hoàn thêm, không thông báo thêm', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await cancelOrder(f);
+      await pay(f, 100_000, 'TF-A');
+      const notified = f.notifications.length;
+
+      const again = await pay(f, 100_000, 'TF-A');
+
+      expect(again.statusCode).toBe(200);
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('100000');
+      expect(refundsOf(f, p.id)).toHaveLength(1);
+      expect(f.notifications).toHaveLength(notified);
+    });
+
+    it('trang return / poll hỏi lại mà PayOS vẫn báo cùng số luỹ kế ⇒ im lặng (không tạo giao dịch, không hoàn thêm); số luỹ kế TĂNG ⇒ chỉ bù phần tăng', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await cancelOrder(f);
+      await pay(f, 100_000, 'TF-A');
+      const txns = f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK).length;
+
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: 100_000 });
+      const r = await f.service.handlePayosReturn(String(PAYOS_CODE));
+      expect(r).toMatchObject({ success: false, status: 'MISMATCH' }); // payment không lên paid
+      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)).toHaveLength(txns);
+      expect(refundsOf(f, p.id)).toHaveLength(1);
+
+      f.getLink.mockResolvedValue({ status: 'PAID', amountPaid: 130_000 });
+      await f.service.handlePayosReturn(String(PAYOS_CODE));
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('130000');
+      expect(refundsOf(f, p.id).map((x) => x.amount.toString())).toEqual(['100000', '30000']);
+    });
+
+    it('yêu cầu hoàn cũ ở trạng thái `failed` VẪN được tính là đã phủ (kế toán chạy lại được) ⇒ tiền về thêm chỉ bù phần chênh, không chi hai lần cùng một khoản', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await pay(f, 100_000, 'TF-A');
+      await cancelOrder(f);
+      const [first] = refundsOf(f, p.id);
+      f.refund(first.id).status = REFUND_STATUS.FAILED;
+
+      await pay(f, 50_000, 'TF-B');
+
+      expect(refundsOf(f, p.id).map((r) => [r.amount.toString(), r.status])).toEqual([
+        ['100000', REFUND_STATUS.FAILED],
+        ['50000', REFUND_STATUS.REQUESTED],
+      ]);
+    });
+
+    it('cancel() chạy lại sau khi tiền về muộn đã được bù ⇒ không tạo thêm yêu cầu (idempotent theo số dư, không theo "đã có yêu cầu thì thôi")', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await pay(f, 100_000, 'TF-A');
+      await cancelOrder(f);
+      await pay(f, 50_000, 'TF-B');
+      f.payment(p.id).status = PAY_STATUS.PENDING; // ép cancel() chạy lại trên payment đã được bù đủ
+
+      await cancelOrder(f);
+
+      expect(refundsOf(f, p.id).map((r) => r.amount.toString())).toEqual(['100000', '50000']);
+    });
+
+    it('khoản ĐẦU TIÊN đã đủ giá trị đơn sau khi đơn huỷ ⇒ GIỮ hành vi cũ (PAY-06b/CONC-02/CONC-08): payment paid + onPaid một lần, không hoàn mismatch ở tầng payment', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await cancelOrder(f);
+
+      const late = await pay(f, AMOUNT, 'TF-A');
+
+      expect(late.statusCode).toBe(200);
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID });
+      expect(f.orders.onPaid).toHaveBeenCalledTimes(1); // order (đã huỷ) tự tạo yêu cầu hoàn đủ ở onPaid
+      expect(f.state.refunds.size).toBe(0);
+    });
+
+    it('khoản ĐẦU TIÊN dư so với đơn sau khi huỷ ⇒ paid + onPaid, phần thừa hoàn `mismatch` như cũ', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+      await cancelOrder(f);
+
+      await pay(f, AMOUNT + 20_000, 'TF-A');
+
+      expect(f.payment(p.id).status).toBe(PAY_STATUS.PAID);
+      expect(refundsOf(f, p.id).map((r) => [r.kind, r.amount.toString()])).toEqual([[REFUND_KIND.MISMATCH, '20000']]);
+    });
+
+    it('đơn đã được trả bằng payment KHÁC (paid): payment cũ (cancelled) nhận tiền ⇒ KHÔNG lên paid (chỉ mục uq_payments_order_live), hoàn kiểu `duplicate_payment` đúng số nhận — kể cả khoản thiếu', async () => {
+      const f = buildFixture();
+      f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, receivedAmount: D(AMOUNT), transactionCode: '1790000000000001', version: 1 }, 1790000000000001);
+      const old = f.seedPayos({ status: PAY_STATUS.CANCELLED });
+
+      const r = await pay(f, 100_000, 'TF-A');
+
+      expect(r.statusCode).toBe(200);
+      expect(f.payment(old.id).status).toBe(PAY_STATUS.CANCELLED);
+      expect(refundsOf(f, old.id).map((x) => [x.kind, x.amount.toString()])).toEqual([[REFUND_KIND.DUPLICATE_PAYMENT, '100000']]);
+      expect(f.orders.onPaid).not.toHaveBeenCalled();
+    });
+
+    it('link CŨ trả ĐỦ khi link MỚI đang chờ ⇒ payment chờ bị huỷ TRƯỚC khi payment cũ lên paid (nếu không UPDATE vi phạm chỉ mục "một payment sống/đơn" ⇒ webhook 500 mãi); phần link mới đã nhận được hoàn', async () => {
+      const f = buildFixture();
+      const old = f.seedPayos({ status: PAY_STATUS.CANCELLED });
+      const fresh = f.seedPayos({}, 1790000000000002);
+      await pay(f, 30_000, 'TF-N', 1790000000000002); // khách lỡ chuyển 30k vào link mới (thiếu)
+
+      const r = await pay(f, AMOUNT, 'TF-O'); // rồi trả đủ ở link cũ
+
+      expect(r.statusCode).toBe(200);
+      expect(f.payment(old.id).status).toBe(PAY_STATUS.PAID);
+      expect(f.payment(fresh.id).status).toBe(PAY_STATUS.CANCELLED);
+      expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+      expect(refundsOf(f, fresh.id).map((x) => [x.kind, x.amount.toString()])).toEqual([[REFUND_KIND.MISMATCH, '30000']]);
+    });
+  });
+
+  // ------------------------------------------------------------------ AUD-20
+  describe('AUD-20 — tự chi hoàn KHÔNG áp dụng cho payment COD', () => {
+    const COD_PAYEE = { payeeBankBin: '970415', payeeAccountNumber: '1122334455', payeeAccountName: 'TRAN THI BE', payeeSource: 'customer' };
+    function seedCod(f: Fixture, refundId: string) {
+      const payment = f.seedPayment({ methodCode: METHOD.COD, status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, orderCode: 'FT2610030009' });
+      return f.seedRefund(payment, { id: refundId, amount: D(100_000), ...COD_PAYEE });
+    }
+    function seedPayosRefund(f: Fixture, refundId: string) {
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(ACCOUNT_BANK), version: 1 });
+      return f.seedRefund(payment, { id: refundId, amount: D(100_000) });
+    }
+
+    it('[AUD-20] refund của payment COD đủ mọi điều kiện khác (gateway, có TK khách khai, ≤ ngưỡng) ⇒ job KHÔNG gửi lệnh PayOS, refund giữ `requested` cho kế toán', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const cod = seedCod(f, REFUND_ID_2);
+
+      expect(await f.service.autoProcessRefunds()).toEqual({ submitted: 0, skipped: 0, failed: 0 });
+
+      expect(f.payout).not.toHaveBeenCalled();
+      expect(f.refund(cod.id).status).toBe(REFUND_STATUS.REQUESTED);
+    });
+
+    it('refund PayOS vẫn tự chi bình thường (ngoại lệ chỉ cho COD)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const payos = seedPayosRefund(f, REFUND_ID);
+
+      expect(await f.service.autoProcessRefunds()).toEqual({ submitted: 1, skipped: 0, failed: 0 });
+
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ referenceId: payos.id, amount: 100_000n }));
+    });
+
+    it('khoản COD cũ nhất KHÔNG chiếm hết lô: lọc trong truy vấn nên khoản PayOS phía sau vẫn được tự chi (limit = 1)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const cod = seedCod(f, REFUND_ID_2); // tạo trước ⇒ cũ hơn
+      const payos = seedPayosRefund(f, REFUND_ID);
+
+      expect(await f.service.autoProcessRefunds(1)).toEqual({ submitted: 1, skipped: 0, failed: 0 });
+
+      expect(f.refund(payos.id).status).toBe(REFUND_STATUS.PROCESSING);
+      expect(f.refund(cod.id).status).toBe(REFUND_STATUS.REQUESTED);
+    });
+
+    it('kế toán vẫn DUYỆT TAY được refund COD (processRefund không bị chặn): lệnh PayOS chỉ đi khi kế toán bấm, không phải do job', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const cod = seedCod(f, REFUND_ID_2);
+
+      const res = await f.service.processRefund(actor, cod.id, {});
+
+      expect(res.status).toBe(REFUND_STATUS.PROCESSING);
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.refund(cod.id).processedBy).toBe(actor.userId);
+    });
+  });
+
+  // ------------------------------------------------------------------ AUD-21
+  describe('AUD-21 — webhook THIẾU mã khoản (reference + transactionDateTime)', () => {
+    const bare = (amount: number): Record<string, unknown> => signed(webhookData({ amount, reference: undefined, transactionDateTime: undefined }));
+
+    it('[MNY-03a] gửi lại cùng payload (cùng số tiền, không mã khoản) ⇒ coi là replay: KHÔNG cộng dồn, đơn chưa paid, chỉ một giao dịch', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+
+      const a = await f.service.handlePayos(bare(175_000));
+      const b = await f.service.handlePayos(bare(175_000));
+
+      expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PENDING });
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('175000');
+      expect(f.txnsOf(p.id, TX_TYPE.PAYOS_WEBHOOK)).toHaveLength(1);
+      expect(f.orders.onPaid).not.toHaveBeenCalled();
+    });
+
+    it('ca hợp lệ "trả thiếu rồi trả phần còn lại" (KHÁC số tiền) không bị chặn dù thiếu mã khoản ⇒ cộng dồn tới đủ thì paid', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+
+      await f.service.handlePayos(bare(100_000));
+      await f.service.handlePayos(bare(250_000));
+
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID });
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('350000');
+      expect(f.orders.onPaid).toHaveBeenCalledTimes(1);
+    });
+
+    it('có mã khoản khác nhau + cùng số tiền vẫn là HAI khoản (hành vi cũ không đổi — PayOS thật luôn kèm mã)', async () => {
+      const f = buildFixture();
+      const p = f.seedPayos();
+
+      await pay(f, 175_000, 'TF-A');
+      await pay(f, 175_000, 'TF-B');
+
+      expect(f.payment(p.id)).toMatchObject({ status: PAY_STATUS.PAID });
+      expect(f.payment(p.id).receivedAmount.toString()).toBe('350000');
+    });
+  });
+
+  // ------------------------------------------------------------------ AUD-22
+  describe('AUD-22 — bấm "Thanh toán lại" hai lần đồng thời', () => {
+    const OTHER_LINK = 'https://pay.payos.vn/web/from-other-click';
+
+    it('lần bấm đồng thời kia đã huỷ payment cũ + tạo payment chờ (đã có link) trước khi ta giữ được khoá đơn ⇒ trả link ĐÓ (200), không tạo payment/link thứ hai', async () => {
+      const f = buildFixture();
+      const old = f.seedPayos();
+      f.orders.extendPaymentDeadline.mockImplementationOnce(() => {
+        f.payment(old.id).status = PAY_STATUS.CANCELLED; // mô phỏng lần bấm kia commit trong lúc ta chờ khoá đơn
+        f.seedPayos({}, 1790000000000002, OTHER_LINK);
+        return Promise.resolve();
+      });
+
+      const r = await f.service.retryPayos(actor_of(USER), ORDER_CODE);
+
+      expect(r).toEqual({ paymentUrl: OTHER_LINK });
+      expect(f.createLink).not.toHaveBeenCalled();
+      expect(f.state.payments.size).toBe(2);
+      expect([...f.state.payments.values()].filter((x) => x.status === PAY_STATUS.PENDING)).toHaveLength(1);
+    });
+
+    it('payment chờ do lần bấm kia tạo CHƯA có link ⇒ tạo link cho đúng payment đó (vẫn một payment chờ), 200', async () => {
+      const f = buildFixture();
+      const old = f.seedPayos();
+      let waitingId = '';
+      f.orders.extendPaymentDeadline.mockImplementationOnce(() => {
+        f.payment(old.id).status = PAY_STATUS.CANCELLED;
+        waitingId = f.seedPayment({ methodCode: METHOD.PAYOS }).id;
+        return Promise.resolve();
+      });
+
+      const r = await f.service.retryPayos(actor_of(USER), ORDER_CODE);
+
+      expect(r.paymentUrl).toBe(LINK_URL);
+      expect(f.createLink).toHaveBeenCalledTimes(1);
+      expect(f.state.payments.size).toBe(2);
+      expect(f.txnsOf(waitingId, TX_TYPE.CREATE_URL)).toHaveLength(1);
+      expect([...f.state.payments.values()].filter((x) => x.status === PAY_STATUS.PENDING).map((x) => x.id)).toEqual([waitingId]);
+    });
+
+    it('lần bấm kia đã trả xong (payment mới paid) trước khi ta khoá được đơn ⇒ ALREADY_PAID, không tạo payment/link', async () => {
+      const f = buildFixture();
+      const old = f.seedPayos();
+      f.orders.extendPaymentDeadline.mockImplementationOnce(() => {
+        f.payment(old.id).status = PAY_STATUS.CANCELLED;
+        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT }, 1790000000000002);
+        return Promise.resolve();
+      });
+
+      expect(await thrown(f.service.retryPayos(actor_of(USER), ORDER_CODE))).toMatchObject({ errorCode: PAYMENT_ERR.ALREADY_PAID });
+      expect(f.createLink).not.toHaveBeenCalled();
+      expect(f.state.payments.size).toBe(2);
+    });
+
+    it('chốt cuối: tạo payment đụng chỉ mục "một payment sống/đơn" (P2002) ⇒ KHÔNG 409 COMMON_DUPLICATE — transaction hoàn tác sạch và trả link của payment đang chờ', async () => {
+      const f = buildFixture();
+      const stray = f.seedPayos({}, 1790000000000002); // payment chờ "lạc" (tạo bởi đường không khoá đơn) — hiện có từ trước
+      const last = f.seedPayos({}, 1790000000000003, OTHER_LINK); // payment cuối cùng, đã có link
+
+      const r = await f.service.retryPayos(actor_of(USER), ORDER_CODE);
+
+      expect(r).toEqual({ paymentUrl: OTHER_LINK });
+      expect(f.payment(last.id).status).toBe(PAY_STATUS.PENDING); // việc huỷ dở dang đã hoàn tác
+      expect(f.payment(stray.id).status).toBe(PAY_STATUS.PENDING);
+      expect(f.state.payments.size).toBe(2);
+      expect(f.createLink).not.toHaveBeenCalled();
+    });
+
+    it('lỗi KHÔNG phải trùng chỉ mục thì giữ nguyên (không nuốt)', async () => {
+      const f = buildFixture();
+      f.seedPayos();
+      f.orders.extendPaymentDeadline.mockRejectedValueOnce(new Error('DB down'));
+
+      expect(await thrown(f.service.retryPayos(actor_of(USER), ORDER_CODE))).toMatchObject({ message: 'DB down' });
     });
   });
 });
@@ -2867,11 +4014,47 @@ describe('AdminPaymentController — hoàn tiền: process + retry-finalize', ()
   const stub = {
     processRefund: jest.fn((_actor: AuthenticatedActor, _id: string, _body: object): Promise<unknown> => Promise.resolve(refundResponse)),
     retryFinalizeRefund: jest.fn((_actor: AuthenticatedActor, _id: string): Promise<unknown> => Promise.resolve(refundResponse)),
+    listRefunds: jest.fn((_page: number, _size: number, _filters: object): Promise<unknown> => Promise.resolve({ content: [], page: 1, size: 20, totalElements: 0 })),
   };
   const controller = new AdminPaymentController(stub as unknown as PaymentService);
   beforeEach(() => {
     stub.processRefund.mockClear();
     stub.retryFinalizeRefund.mockClear();
+    stub.listRefunds.mockClear();
+    stub.processRefund.mockResolvedValue(refundResponse);
+  });
+
+  it.each([
+    ['done', 'Đã hoàn tiền'],
+    ['processing', 'Đã gửi lệnh hoàn tiền sang PayOS — đang chờ ngân hàng xác nhận'], // PayOS "00" chỉ là đã nhận lệnh ≠ xong
+    ['failed', 'PayOS báo lệnh hoàn tiền thất bại — kiểm tra ghi chú, có thể chạy lại hoặc chuyển khoản tay'],
+  ])('POST admin/refunds/:id/process: refund %s ⇒ thông điệp phản ánh ĐÚNG trạng thái (không cứ "Đã hoàn tiền")', async (status, message) => {
+    stub.processRefund.mockResolvedValue({ id: REFUND_ID, status });
+    const res = await controller.process(actor, REFUND_ID, {});
+    expect(res).toMatchObject({ success: true, message, data: { id: REFUND_ID, status } });
+  });
+
+  describe('GET admin/refunds + validate query', () => {
+    const [ListQuery] = Reflect.getMetadata('design:paramtypes', AdminPaymentController.prototype, 'refunds') as Array<new () => { page: number; size: number }>;
+    const errorsFor = (query: Record<string, unknown>) => validate(plainToInstance(ListQuery, query));
+
+    it('chuyển status / shopId / needsManual xuống service; cần quyền payment.payment.read', async () => {
+      const shopId = '9b2e5c1a-7d3f-4e8a-b6c4-1a2b3c4d5e6f';
+      const query = plainToInstance(ListQuery, { status: 'requested', shopId, needsManual: 'true' });
+      await controller.refunds(query as never);
+      expect(stub.listRefunds).toHaveBeenCalledWith(1, 20, { status: 'requested', shopId, needsManual: true });
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handlerOf(AdminPaymentController, 'refunds')) as unknown).toEqual(['payment.payment.read']);
+    });
+
+    it('needsManual nhận "true"/"false" (query string) và từ chối giá trị lạ; status chỉ 4 trạng thái', async () => {
+      expect(await errorsFor({ needsManual: 'true' })).toHaveLength(0);
+      expect(await errorsFor({ needsManual: 'false' })).toHaveLength(0);
+      expect(await errorsFor({})).toHaveLength(0);
+      expect(await errorsFor({ needsManual: 'maybe' })).not.toHaveLength(0);
+      expect(await errorsFor({ status: 'processing' })).toHaveLength(0);
+      expect(await errorsFor({ status: 'done-ish' })).not.toHaveLength(0);
+      expect(plainToInstance(ListQuery, { needsManual: 'true' })).toMatchObject({ needsManual: true });
+    });
   });
 
   it('POST admin/refunds/:id/retry-finalize: chuyển actor + id xuống service, trả refund, 200', async () => {
@@ -2909,6 +4092,11 @@ describe('AdminPaymentController — hoàn tiền: process + retry-finalize', ()
       expect(await errorsFor({ providerRef: 'x'.repeat(120) })).toHaveLength(0);
       expect(await errorsFor({ providerRef: 'x'.repeat(121) })).not.toHaveLength(0);
       expect(await errorsFor({ note: 'x'.repeat(501) })).not.toHaveLength(0);
+    });
+
+    it('providerRef (PLAN-0022): ≥ 4 ký tự, chỉ chữ-số và . _ : / # -, bắt đầu bằng chữ/số', async () => {
+      for (const ok of ['FT26102600001', 'abcd', '2026/10/26-0001', 'MBVCB.1:2_3#4']) expect(await errorsFor({ providerRef: ok })).toHaveLength(0);
+      for (const bad of ['abc', 'FT 123', 'FT123?', '-FT123', 'Mã giao dịch']) expect(await errorsFor({ providerRef: bad })).not.toHaveLength(0);
     });
   });
 });
@@ -2950,5 +4138,1312 @@ describe('hợp đồng schema ↔ service — refunds.kind / gateway_attempted_
     const [refund] = [...f.state.refunds.values()];
     expect(refund.reason?.startsWith('Thanh toán trùng')).toBe(true);
     expect(refund.kind).toBe(REFUND_KIND.DUPLICATE_PAYMENT);
+  });
+});
+
+/* ================================================================ PLAN-0022 ================================================================ */
+
+describe('PLAN-0022 — hoàn tiền đúng trách nhiệm (BE-Payment)', () => {
+  const realFetch = globalThis.fetch;
+  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+  const ACCOUNT = { counterAccountBankId: '970436', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A' };
+  const CUSTOMER_COLUMNS = { payeeBankBin: '970415', payeeAccountNumber: '1122334455', payeeAccountName: 'TRAN THI BE', payeeSource: 'customer' };
+  const minutesAgo = (m: number): Date => new Date(Date.now() - m * 60_000);
+  const PAID_AT = new Date('2026-10-03T09:30:00.000Z');
+
+  beforeEach(() => {
+    const fetchStub = jest.fn((): Promise<Response> => Promise.reject(new Error('fetch chưa được stub — không được gọi mạng thật')));
+    globalThis.fetch = fetchStub;
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
+
+  /* payment PayOS đã trả 350.000 (có tài khoản đối ứng từ webhook) + yêu cầu hoàn 100.000 chờ xử lý. */
+  function setup(o: { fixture?: Fixture; payoutConfigured?: boolean; payment?: Partial<PaymentRow>; refund?: Partial<RefundRow> } = {}) {
+    const f = o.fixture ?? buildFixture({ payoutConfigured: o.payoutConfigured });
+    const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(ACCOUNT), version: 1, ...o.payment });
+    const refund = f.seedRefund(payment, o.refund);
+    return { f, payment, refund };
+  }
+  const titlesTo = (f: Fixture, userId: string): string[] => f.notifications.filter((n) => n.cmd.userId === userId).map((n) => n.cmd.title);
+
+  // ------------------------------------------------------------------ PayOS chốt THẬT
+  describe('PayOS "00" chỉ là đã NHẬN lệnh — refund chỉ done khi PayOS báo thành công thật', () => {
+    it('getPayout báo đang xử lý ⇒ refund VẪN processing (gatewayStatus processing): không ghi sổ, không báo order, không outbox, không giao dịch — qua nhiều lượt job', async () => {
+      const { f, payment, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+
+      const submitted = await f.service.processRefund(actor, refund.id, {});
+      for (let i = 0; i < 3; i += 1) expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 1, finalized: 0, failed: 0, pending: 1 });
+
+      expect(submitted).toMatchObject({ status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED });
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.PROCESSING, providerRef: null, needsManual: false, gatewayAlertedAt: null, version: 1 });
+      expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('0');
+      expect(f.orders.onRefunded).not.toHaveBeenCalled();
+      expect(f.orders.markReturnRefunded).not.toHaveBeenCalled();
+      expect(f.state.outbox).toHaveLength(0);
+      expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(0);
+      expect(f.notifications).toHaveLength(0);
+      expect(f.payout).toHaveBeenCalledTimes(1);
+    });
+
+    it('getPayout không tra được (unknown) ⇒ giữ nguyên submitted, không ghi sổ, không chi lại', async () => {
+      const { f, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'unknown', detail: 'Không gọi được cổng PayOS' });
+      await f.service.processRefund(actor, refund.id, {});
+
+      expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 1, finalized: 0, failed: 0, pending: 1 });
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED, providerRef: null });
+      expect(f.orders.onRefunded).not.toHaveBeenCalled();
+      expect(f.payout).toHaveBeenCalledTimes(1);
+    });
+
+    it('SUCCEEDED ⇒ done ĐÚNG MỘT LẦN: job chạy hai lượt liên tiếp hoặc hai worker chạy ĐỒNG THỜI đều không ghi sổ / báo order / outbox / thông báo shop hai lần', async () => {
+      const { f, payment, refund } = setup({ refund: { shopId: 'shop-1' } });
+      await f.service.processRefund(actor, refund.id, {});
+      f.syncTransactions(2); // hai worker cùng tới cửa ghi sổ
+
+      await Promise.all([f.service.reconcileGatewayRefunds(), f.service.reconcileGatewayRefunds()]);
+      expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 0, finalized: 0, failed: 0, pending: 0 });
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-123', gatewayStatus: GATEWAY_STATUS.SUCCEEDED, version: 2 });
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
+      expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(1);
+      expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+      expect(f.state.outbox.filter((e) => e.eventType === PAYMENT_EVENT.REFUNDED)).toHaveLength(1);
+      expect(titlesTo(f, 'shop-user-1')).toHaveLength(1);
+      expect(f.payout).toHaveBeenCalledTimes(1);
+    });
+
+    it('FAILED ⇒ refund failed (kế toán chạy lại được): giao dịch lỗi, KHÔNG ghi sổ, báo kế toán MỘT lần; job lượt sau không xử lý lại', async () => {
+      const { f, payment, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'failed', detail: 'state=FAILED' });
+      await f.service.processRefund(actor, refund.id, {});
+
+      expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 1, finalized: 0, failed: 1, pending: 0 });
+      expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 0, finalized: 0, failed: 0, pending: 0 });
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayStatus: GATEWAY_STATUS.FAILED, providerRef: null, note: 'PayOS: state=FAILED', processedBy: actor.userId, version: 2 });
+      expect(f.refund(refund.id).processedAt).toBeInstanceOf(Date);
+      expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toEqual([expect.objectContaining({ status: 'failed', rawResponse: { payoutId: 'TX-123', state: 'failed', detail: 'state=FAILED' } })]);
+      expect(f.payment(payment.id)).toMatchObject({ status: PAY_STATUS.PAID, version: 1 });
+      expect(f.orders.onRefunded).not.toHaveBeenCalled();
+      expect(f.state.outbox).toHaveLength(0);
+      expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([
+        ['acc-1', `Hoàn tiền đơn ${ORDER_CODE} thất bại`],
+        ['acc-2', `Hoàn tiền đơn ${ORDER_CODE} thất bại`],
+      ]);
+      expect(await f.service.getRefund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayStatus: GATEWAY_STATUS.FAILED, needsManual: false }); // chạy lại qua PayOS được
+    });
+
+    it('job tra ra FAILED của lệnh CŨ nhưng refund đã bị chiếm lại để gửi lệnh MỚI (worker khác đánh failed, kế toán bấm lại) ⇒ KHÔNG đánh failed nhầm lệnh mới', async () => {
+      const { f, payment, refund } = setup();
+      await f.service.processRefund(actor, refund.id, {});
+      f.getPayout.mockImplementationOnce(() => {
+        f.refund(refund.id).gatewaySubmittedAt = null; // lúc job đang chờ PayOS: refund được chiếm lại (xoá mốc gửi lệnh cũ)
+        return Promise.resolve({ state: 'failed' as const, detail: 'state=FAILED' });
+      });
+
+      await f.service.reconcileGatewayRefunds();
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: null });
+      expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(0);
+      expect(f.notifications).toHaveLength(0);
+    });
+
+    it('FAILED rồi kế toán chạy lại ⇒ lệnh MỚI (referenceId/idempotency-key "<id>-2", gatewayAttempt 2), lệnh cũ không bị gửi lại; xong ⇒ done với mã lệnh mới', async () => {
+      const { f, payment, refund } = setup();
+      f.payout.mockResolvedValueOnce({ ok: true, code: '00', message: 'ok', transactionId: 'TX-1', raw: {} }).mockResolvedValueOnce({ ok: true, code: '00', message: 'ok', transactionId: 'TX-2', raw: {} });
+      f.getPayout.mockResolvedValueOnce({ state: 'failed', detail: 'state=FAILED' }).mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
+      await f.service.processRefund(actor, refund.id, {});
+      await f.service.reconcileGatewayRefunds(); // lệnh 1 thất bại
+
+      const res = await processAndSettle(f, refund.id); // lệnh 2
+
+      expect(f.payout.mock.calls.map(([i]) => [i.referenceId, i.idempotencyKey])).toEqual([
+        [REFUND_ID, REFUND_ID],
+        [`${REFUND_ID}-2`, `${REFUND_ID}-2`],
+      ]);
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-2' });
+      expect(f.refund(refund.id)).toMatchObject({ gatewayAttempt: 2, gatewayPayoutId: 'TX-2' });
+      expect(f.getPayout.mock.calls.map((c) => c[0])).toEqual(['TX-1', 'TX-2']);
+      expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
+    });
+
+    it('FAILED rồi kế toán đã chuyển TAY và nhập providerRef ⇒ ghi sổ như hoàn thủ công, KHÔNG gửi lệnh PayOS mới', async () => {
+      const { f, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'failed', detail: 'state=FAILED' });
+      await f.service.processRefund(actor, refund.id, {});
+      await f.service.reconcileGatewayRefunds();
+
+      const res = await f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600001', note: 'Đã chuyển tay' });
+
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'FT26102600001', note: 'Đã chuyển tay' });
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('bấm "hoàn tiền" lúc PayOS đã nhận lệnh nhưng chưa xong ⇒ KHÔNG gửi lệnh lần hai (chỉ tra trạng thái); có providerRef mà còn trong hạn ⇒ 400 INVALID_STATE, không ghi gì', async () => {
+      const { f, payment, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+      await f.service.processRefund(actor, refund.id, {});
+
+      const again = await f.service.processRefund(actor, refund.id, {});
+      const blocked = await thrown(f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600002' }));
+
+      expect(again).toMatchObject({ status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.PROCESSING });
+      expect(blocked).toMatchObject({ errorCode: PAYMENT_ERR.INVALID_STATE });
+      expect((blocked as BusinessException).message).toContain('PayOS vẫn đang xử lý');
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.getPayout).toHaveBeenCalledTimes(2);
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: null });
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('0');
+    });
+
+    it('kế toán bấm lại khi PayOS đã SUCCEEDED ⇒ chốt ngay (không chờ job): done, audit ghi người bấm (via process), vẫn không gửi lệnh mới', async () => {
+      const { f, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+      await f.service.processRefund(actor, refund.id, {});
+      f.getPayout.mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
+
+      const res = await f.service.processRefund(actor_of('user-acc-2'), refund.id, { note: 'Kiểm tra lại' });
+
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-123', note: 'Kiểm tra lại' });
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_PROCESSED)).toMatchObject({ actorUserId: 'user-acc-2', afterSummary: { via: 'process', payoutId: 'TX-123' } });
+    });
+
+    describe('treo bất thường (quá REFUND_GATEWAY_STALL_MS = 30 phút)', () => {
+      it('treo > 30 phút ⇒ đánh dấu cần người xem (needsManual) + báo kế toán ĐÚNG MỘT LẦN dù job chạy nhiều lượt; vẫn không ghi sổ', async () => {
+        const { f, payment, refund } = setup();
+        f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+        await f.service.processRefund(actor, refund.id, {});
+        f.refund(refund.id).gatewaySubmittedAt = minutesAgo(31);
+
+        await f.service.reconcileGatewayRefunds();
+        await f.service.reconcileGatewayRefunds();
+        await f.service.reconcileGatewayRefunds();
+
+        expect(REFUND_GATEWAY_STALL_MS).toBe(30 * 60_000);
+        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, needsManual: true });
+        expect(f.refund(refund.id).gatewayAlertedAt).toBeInstanceOf(Date);
+        expect(await f.service.getRefund(refund.id)).toMatchObject({ needsManual: true, gatewayStatus: GATEWAY_STATUS.PROCESSING });
+        expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([
+          ['acc-1', `Lệnh hoàn tiền đơn ${ORDER_CODE} treo bất thường`],
+          ['acc-2', `Lệnh hoàn tiền đơn ${ORDER_CODE} treo bất thường`],
+        ]);
+        expect(f.state.audits.filter((a) => a.action === PAYMENT_AUDIT.REFUND_GATEWAY_STALLED)).toHaveLength(1);
+        expect(f.payment(payment.id).refundedAmount.toString()).toBe('0');
+        expect(f.orders.onRefunded).not.toHaveBeenCalled();
+      });
+
+      it('chưa tới 30 phút (29) ⇒ không báo, không đánh dấu', async () => {
+        const { f, refund } = setup();
+        f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+        await f.service.processRefund(actor, refund.id, {});
+        f.refund(refund.id).gatewaySubmittedAt = minutesAgo(29);
+
+        await f.service.reconcileGatewayRefunds();
+
+        expect(f.refund(refund.id)).toMatchObject({ needsManual: false, gatewayAlertedAt: null });
+        expect(f.notifications).toHaveLength(0);
+      });
+
+      it('quá 30 phút nhưng PayOS đã báo SUCCEEDED ⇒ done bình thường, không báo "treo"', async () => {
+        const { f, refund } = setup();
+        await f.service.processRefund(actor, refund.id, {});
+        f.refund(refund.id).gatewaySubmittedAt = minutesAgo(45);
+
+        await f.service.reconcileGatewayRefunds();
+
+        expect(f.refund(refund.id).status).toBe(REFUND_STATUS.DONE);
+        expect(f.notifications.filter((n) => n.cmd.title.includes('treo bất thường'))).toHaveLength(0);
+      });
+
+      it('kế toán đối chiếu trên PayOS rồi nhập providerRef khi đã treo ⇒ ghi sổ như hoàn tay (ghi chú, người bấm, needsManual tắt); PayOS không được hỏi/gửi lại thành lệnh mới', async () => {
+        const { f, payment, refund } = setup();
+        f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+        await f.service.processRefund(actor, refund.id, {});
+        f.refund(refund.id).gatewaySubmittedAt = minutesAgo(40);
+        await f.service.reconcileGatewayRefunds();
+
+        const res = await f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600003', note: 'Đối chiếu PayOS: đã chuyển' });
+
+        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'FT26102600003', note: 'Đối chiếu PayOS: đã chuyển', needsManual: false });
+        expect(f.refund(refund.id)).toMatchObject({ processedBy: actor.userId });
+        expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
+        expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+        expect(f.payout).toHaveBeenCalledTimes(1);
+        expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_PROCESSED)).toMatchObject({ afterSummary: { via: 'process', manualConfirm: true, providerRef: 'FT26102600003' } });
+      });
+    });
+
+    describe('job reconcileGatewayRefunds', () => {
+      it('chỉ xét refund processing ĐÃ được PayOS nhận lệnh: processing chưa gửi lệnh, requested, failed, done không bị tra', async () => {
+        const f = buildFixture();
+        const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, gatewayResponse: webhookData(ACCOUNT) });
+        const ids = ['33333333-0000-4000-8000-000000000001', '33333333-0000-4000-8000-000000000002', '33333333-0000-4000-8000-000000000003', '33333333-0000-4000-8000-000000000004'];
+        f.seedRefund(payment, { id: ids[0], status: REFUND_STATUS.PROCESSING });
+        f.seedRefund(payment, { id: ids[1], status: REFUND_STATUS.REQUESTED });
+        f.seedRefund(payment, { id: ids[2], status: REFUND_STATUS.FAILED, gatewayPayoutId: 'TX-F', gatewayStatus: GATEWAY_STATUS.FAILED });
+        f.seedRefund(payment, { id: ids[3], status: REFUND_STATUS.DONE, providerRef: 'x', gatewayPayoutId: 'TX-D', gatewaySubmittedAt: minutesAgo(5) });
+
+        expect(await f.service.reconcileGatewayRefunds()).toEqual({ checked: 0, finalized: 0, failed: 0, pending: 0 });
+        expect(f.getPayout).not.toHaveBeenCalled();
+      });
+
+      it('cũ nhất trước, tối đa `limit`; mỗi refund một try/catch (một refund lỗi không chặn refund sau)', async () => {
+        const f = buildFixture();
+        const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, gatewayResponse: webhookData(ACCOUNT) });
+        const mk = (n: number, id: string, minutes: number) => f.seedRefund(payment, { id, amount: D(10_000 * n), status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED, gatewayPayoutId: `TX-${n}`, gatewayAttempt: 1, gatewaySubmittedAt: minutesAgo(minutes), updatedAt: minutesAgo(minutes) });
+        const c = mk(3, '44444444-0000-4000-8000-00000000000c', 10);
+        const a = mk(1, '44444444-0000-4000-8000-00000000000a', 30);
+        const b = mk(2, '44444444-0000-4000-8000-00000000000b', 20);
+        f.getPayout.mockRejectedValueOnce(new Error('mạng chết')); // a lỗi bất ngờ
+
+        const out = await f.service.reconcileGatewayRefunds(2); // limit 2 ⇒ a (cũ nhất) và b; c để lượt sau
+
+        expect(out).toEqual({ checked: 2, finalized: 1, failed: 0, pending: 0 });
+        expect(f.getPayout.mock.calls.map((x) => x[0])).toEqual(['TX-1', 'TX-2']);
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        expect([a, b, c].map((r) => f.refund(r.id).status)).toEqual([REFUND_STATUS.PROCESSING, REFUND_STATUS.DONE, REFUND_STATUS.PROCESSING]);
+      });
+    });
+  });
+
+  // ------------------------------------------------------------------ tài khoản nhận hoàn
+  describe('tài khoản nhận hoàn (payee)', () => {
+    const REQ = { orderCode: ORDER_CODE, shopId: null as string | null, amount: 100_000n, reason: 'Đổi trả', returnRequestId: null as string | null, actorUserId: 'staff-1' };
+    const request = (f: Fixture, o: { payee?: RefundPayee | null; shopId?: string | null; returnRequestId?: string | null } = {}) => f.db.$transaction((tx) => f.service.requestRefund({ ...REQ, ...o }, tx as unknown as Tx));
+    const cod = (f: Fixture) => f.seedPayment({ methodCode: METHOD.COD, status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1 });
+
+    describe('requestRefund', () => {
+      it('đơn COD KHÔNG có payee ⇒ KHÔNG chặn luồng của order: vẫn tạo refund (payee_source none, needsManual, method manual_transfer) và báo kế toán liên hệ khách xin tài khoản', async () => {
+        const f = buildFixture();
+        const p = cod(f);
+
+        const { refundId } = await request(f, { shopId: 'shop-1', returnRequestId: 'rr-1' });
+
+        expect(refundId).not.toBeNull();
+        expect(f.refund(must(refundId, 'refundId'))).toMatchObject({
+          paymentId: p.id,
+          method: 'manual_transfer',
+          status: REFUND_STATUS.REQUESTED,
+          payeeBankBin: null,
+          payeeAccountNumber: null,
+          payeeAccountName: null,
+          payeeSource: PAYEE_SOURCE.NONE,
+          needsManual: true,
+          returnRequestId: 'rr-1',
+        });
+        expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([
+          ['acc-1', `Khoản hoàn đơn ${ORDER_CODE} cần chuyển khoản tay`],
+          ['acc-2', `Khoản hoàn đơn ${ORDER_CODE} cần chuyển khoản tay`],
+        ]);
+        expect(f.notifications[0].cmd.content).toContain('chưa có tài khoản nhận hoàn');
+        expect(f.notifications[0].cmd.content).toContain('Liên hệ khách (SĐT trong đơn)');
+        expect(f.notifications[0].cmd.content).toContain('chuyển khoản tay');
+        expect(f.notifications[0].cmd.payload).toMatchObject({ refundId, reason: 'no_payee' });
+        expect(f.notifications[0].tx).toBeDefined(); // cùng transaction với việc tạo refund
+        expect(await f.service.getRefund(must(refundId, 'refundId'))).toMatchObject({ method: 'manual_transfer', payee: null, payeeSource: 'none', needsManual: true });
+        // payee null tường minh cũng vậy
+        expect((await request(f, { payee: null, returnRequestId: 'rr-2' })).refundId).not.toBeNull();
+      });
+
+      it('đơn COD không payee: kế toán chuyển tay + nhập mã giao dịch ⇒ done; không nhập mã ⇒ 400 (không có đường tự chi); chưa có tài khoản để xem ⇒ 404', async () => {
+        const f = buildFixture();
+        const p = cod(f);
+        const { refundId } = await request(f, { shopId: 'shop-1' });
+        const id = must(refundId, 'refundId');
+
+        expect(await thrown(f.service.processRefund(actor, id, {}))).toMatchObject({ errorCode: 'COMMON_VALIDATION_ERROR' });
+        expect(f.refund(id).status).toBe(REFUND_STATUS.REQUESTED); // nhả chiếm
+        expect(await thrown(f.service.revealPayee(actor, id))).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_PAYEE_NOT_FOUND });
+        const res = await f.service.processRefund(actor, id, { providerRef: 'FT26102600030', note: 'Đã liên hệ khách, chuyển tay' });
+
+        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'FT26102600030', needsManual: false });
+        expect(f.payout).not.toHaveBeenCalled();
+        expect(f.payment(p.id).refundedAmount.toString()).toBe('100000');
+        expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+      });
+
+      it('đơn COD CÓ payee ⇒ lưu chuẩn hoá (tên bỏ dấu + in hoa), nguồn customer, method gateway, KHÔNG cần chuyển tay; số TK đầy đủ không vào audit', async () => {
+        const f = buildFixture();
+        const p = cod(f);
+
+        const { refundId } = await request(f, { payee: PAYEE, shopId: 'shop-1', returnRequestId: 'rr-1' });
+
+        expect(f.refund(must(refundId, 'refundId'))).toMatchObject({
+          paymentId: p.id,
+          method: 'gateway',
+          status: REFUND_STATUS.REQUESTED,
+          shopId: 'shop-1',
+          returnRequestId: 'rr-1',
+          payeeBankBin: '970415',
+          payeeAccountNumber: '1122334455',
+          payeeAccountName: 'TRAN THI BE',
+          payeeSource: PAYEE_SOURCE.CUSTOMER,
+          needsManual: false,
+        });
+        const audit = f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_REQUESTED);
+        expect(audit).toMatchObject({ afterSummary: { needsManual: false, payee: { source: 'customer', bankBin: '970415', accountNumberMasked: '****4455' } } });
+        expect(JSON.stringify(f.state.audits)).not.toContain('1122334455');
+        // AUD-20: đơn COD KHÔNG bao giờ tự chi ⇒ kế toán phải được báo ngay lúc tạo yêu cầu (nếu không khoản này nằm im vì ai cũng tưởng job tự chi).
+        expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([
+          ['acc-1', `Khoản hoàn mới cần xử lý — đơn ${ORDER_CODE}`],
+          ['acc-2', `Khoản hoàn mới cần xử lý — đơn ${ORDER_CODE}`],
+        ]);
+        expect(f.notifications[0].cmd.content).toContain('Đơn COD không tự chi hoàn tiền');
+      });
+
+      it('số tài khoản có khoảng trắng/gạch được làm sạch trước khi lưu', async () => {
+        const f = buildFixture();
+        cod(f);
+        const { refundId } = await request(f, { payee: { ...PAYEE, accountNumber: '1122 3344-55' } });
+        expect(f.refund(must(refundId, 'refundId')).payeeAccountNumber).toBe('1122334455');
+      });
+
+      it.each<[string, RefundPayee]>([
+        ['BIN 5 chữ số', { ...PAYEE, bankBin: '97041' }],
+        ['BIN có chữ', { ...PAYEE, bankBin: '97a415' }],
+        ['số tài khoản quá ngắn (5)', { ...PAYEE, accountNumber: '12345' }],
+        ['số tài khoản quá dài (20)', { ...PAYEE, accountNumber: '1'.repeat(20) }],
+        ['số tài khoản có chữ', { ...PAYEE, accountNumber: '12345abc90' }],
+        ['tên chủ tài khoản rỗng', { ...PAYEE, accountName: '   ' }],
+        ['tên có ký tự lạ', { ...PAYEE, accountName: 'NGUYEN@VAN' }],
+      ])('payee không hợp lệ (%s) ⇒ 400 PAYMENT_REFUND_PAYEE_INVALID, không tạo refund (kể cả đơn PayOS)', async (_label, payee) => {
+        const f = buildFixture();
+        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1 });
+
+        const err = await thrown(request(f, { payee }));
+
+        expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_PAYEE_INVALID, httpStatus: HttpStatus.BAD_REQUEST });
+        expect(f.state.refunds.size).toBe(0);
+      });
+
+      it('PayOS thiếu tài khoản đã trả VÀ khách không khai ⇒ needsManual + báo KẾ TOÁN (cùng transaction với việc tạo refund)', async () => {
+        const f = buildFixture();
+        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, gatewayResponse: null, version: 1 });
+
+        const { refundId } = await request(f);
+
+        expect(f.refund(must(refundId, 'refundId')).needsManual).toBe(true);
+        expect(f.users.staffUserIdsWithPermission).toHaveBeenCalledWith('payment.refund.process');
+        expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title])).toEqual([
+          ['acc-1', `Khoản hoàn đơn ${ORDER_CODE} cần chuyển khoản tay`],
+          ['acc-2', `Khoản hoàn đơn ${ORDER_CODE} cần chuyển khoản tay`],
+        ]);
+        expect(f.notifications[0].cmd).toMatchObject({ type: 'payment', link: '/payment/refunds', payload: { refundId, orderCode: ORDER_CODE, reason: 'no_payee' } });
+        expect(f.notifications[0].tx).toBeDefined();
+      });
+
+      it('PayOS có tài khoản đã trả ⇒ KHÔNG cần chuyển tay, không báo kế toán lúc tạo', async () => {
+        const f = buildFixture();
+        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, gatewayResponse: webhookData(ACCOUNT), version: 1 });
+        const { refundId } = await request(f);
+        expect(f.refund(must(refundId, 'refundId')).needsManual).toBe(false);
+        expect(f.notifications).toHaveLength(0);
+      });
+
+      it('PayOS có tài khoản nhưng CHƯA cấu hình khoá payout ⇒ báo kế toán (chuyển tay), response needsManual = true dù cột phi chuẩn hoá = false', async () => {
+        const f = buildFixture({ payoutConfigured: false });
+        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, gatewayResponse: webhookData(ACCOUNT), version: 1 });
+
+        const { refundId } = await request(f);
+
+        expect(f.refund(must(refundId, 'refundId')).needsManual).toBe(false);
+        expect(f.notifications[0].cmd.payload).toMatchObject({ reason: 'payout_not_configured' });
+        expect(await f.service.getRefund(must(refundId, 'refundId'))).toMatchObject({ needsManual: true });
+      });
+
+      it('payment lịch sử (vnpay) ⇒ method manual_transfer + needsManual dù có payee', async () => {
+        const f = buildFixture();
+        f.seedPayment({ methodCode: 'vnpay', status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1 });
+        const { refundId } = await request(f, { payee: PAYEE });
+        expect(f.refund(must(refundId, 'refundId'))).toMatchObject({ method: 'manual_transfer', needsManual: true });
+        expect(f.notifications[0].cmd.payload).toMatchObject({ reason: 'no_gateway' });
+      });
+
+      it('tra cứu danh sách kế toán lỗi ⇒ vẫn tạo refund (nuốt + cảnh báo log), không thông báo', async () => {
+        const f = buildFixture();
+        f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, gatewayResponse: null, version: 1 });
+        f.users.staffUserIdsWithPermission.mockRejectedValue(new Error('identity down'));
+
+        const { refundId } = await request(f);
+
+        expect(refundId).not.toBeNull();
+        expect(f.notifications).toHaveLength(0);
+        expect(warnSpy).toHaveBeenCalled();
+      });
+
+      it('đơn COD CHƯA thu tiền (payment pending) ⇒ refundId null và KHÔNG đòi payee (chưa có gì để hoàn)', async () => {
+        const f = buildFixture();
+        f.seedPayment({ methodCode: METHOD.COD, status: PAY_STATUS.PENDING });
+        expect(await request(f)).toEqual({ refundId: null });
+      });
+    });
+
+    describe('thứ tự ưu tiên khi chi: tài khoản ĐÃ TRẢ tiền → tài khoản khách khai → chuyển tay', () => {
+      it('có cả hai ⇒ chi về tài khoản đã trả tiền; response payeeSource = payer, số TK che 4 số cuối; cột payee_source ghi nguồn đã dùng', async () => {
+        const { f, refund } = setup({ refund: CUSTOMER_COLUMNS });
+
+        const submitted = await f.service.processRefund(actor, refund.id, {});
+
+        expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ toBin: '970436', toAccountNumber: '0011223344' }));
+        expect(submitted.payeeSource).toBe('payer');
+        expect(submitted.payee).toEqual({ bankBin: '970436', accountNumberMasked: '****3344', accountName: 'NGUYEN VAN A' });
+        expect(f.refund(refund.id).payeeSource).toBe(PAYEE_SOURCE.PAYER);
+        expect(f.refund(refund.id).payeeAccountNumber).toBe('1122334455'); // lời khai của khách vẫn giữ làm dự phòng
+        expect(JSON.stringify(submitted)).not.toContain('0011223344');
+        expect(JSON.stringify(submitted)).not.toContain('1122334455');
+      });
+
+      it('payment PayOS không có tài khoản đối ứng (return-query thắng webhook) + khách có khai ⇒ chi về tài khoản KHÁCH KHAI', async () => {
+        const { f, refund } = setup({ payment: { gatewayResponse: null }, refund: CUSTOMER_COLUMNS });
+
+        const submitted = await f.service.processRefund(actor, refund.id, {});
+
+        expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ toBin: '970415', toAccountNumber: '1122334455', amount: 100_000n }));
+        expect(submitted).toMatchObject({ payeeSource: 'customer', payee: { bankBin: '970415', accountNumberMasked: '****4455', accountName: 'TRAN THI BE' } });
+        expect(f.refund(refund.id).payeeSource).toBe(PAYEE_SOURCE.CUSTOMER);
+      });
+
+      it('đơn COD + payee khách khai + đã cấu hình payout ⇒ chi tự động qua PayOS rồi (khi PayOS báo xong) ghi sổ + trừ ví COD của shop', async () => {
+        const f = buildFixture();
+        const payment = f.seedPayment({ methodCode: METHOD.COD, status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1 });
+        const refund = f.seedRefund(payment, { ...CUSTOMER_COLUMNS, shopId: 'shop-1', method: 'gateway', needsManual: false });
+
+        const res = await processAndSettle(f, refund.id);
+
+        expect(f.payout).toHaveBeenCalledWith(expect.objectContaining({ toBin: '970415', toAccountNumber: '1122334455', referenceId: refund.id }));
+        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-123', payeeSource: 'customer' });
+        expect(f.wallet.applyCodRefund).toHaveBeenCalledTimes(1);
+        expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+      });
+
+      it('không có tài khoản nào ⇒ 400 PAYMENT_REFUND_MANUAL_REQUIRED (nhả chiếm), response needsManual = true; nhập providerRef ⇒ done như hoàn tay', async () => {
+        const { f, refund } = setup({ payment: { gatewayResponse: null } });
+
+        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
+
+        expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_MANUAL_REQUIRED, httpStatus: HttpStatus.BAD_REQUEST });
+        expect((err as BusinessException).message).toContain('số tài khoản');
+        expect(f.payout).not.toHaveBeenCalled();
+        expect(await f.service.getRefund(refund.id)).toMatchObject({ status: REFUND_STATUS.REQUESTED, needsManual: true, payee: null, payeeSource: 'none' });
+        expect(await f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600004' })).toMatchObject({ status: REFUND_STATUS.DONE, needsManual: false });
+      });
+
+      it('chưa cấu hình payout dù có tài khoản khách khai ⇒ MANUAL_REQUIRED nêu "payout chưa cấu hình"; response needsManual = true', async () => {
+        const { f, refund } = setup({ payoutConfigured: false, payment: { gatewayResponse: null }, refund: CUSTOMER_COLUMNS });
+
+        const err = await thrown(f.service.processRefund(actor, refund.id, {}));
+
+        expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_MANUAL_REQUIRED });
+        expect((err as BusinessException).message).toContain('payout chưa cấu hình');
+        expect(f.payout).not.toHaveBeenCalled();
+        expect(await f.service.getRefund(refund.id)).toMatchObject({ needsManual: true, payeeSource: 'customer' });
+      });
+    });
+
+    it('response + danh sách KHÔNG BAO GIỜ lộ số tài khoản đầy đủ; có returnRequestId, payee, payeeSource, gatewayStatus, needsManual', async () => {
+      const { f, refund } = setup({ refund: { ...CUSTOMER_COLUMNS, returnRequestId: 'rr-9', shopId: 'shop-1' } });
+
+      const one = await f.service.getRefund(refund.id);
+      const page = await f.service.listRefunds(1, 20, {});
+
+      expect(one).toMatchObject({ id: refund.id, returnRequestId: 'rr-9', status: REFUND_STATUS.REQUESTED, gatewayStatus: null, needsManual: false, payeeSource: 'payer', payee: { bankBin: '970436', accountNumberMasked: '****3344' } });
+      for (const body of [JSON.stringify(one), JSON.stringify(page)]) {
+        expect(body).not.toContain('0011223344');
+        expect(body).not.toContain('1122334455');
+      }
+      expect(page.content[0].payee?.accountNumberMasked).toBe('****3344');
+    });
+  });
+
+  // ------------------------------------------------------------------ providerRef duy nhất
+  describe('mã giao dịch hoàn tay (providerRef) duy nhất', () => {
+    const manualSetup = () => {
+      const f = buildFixture();
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, gatewayResponse: null, version: 1 });
+      f.seedRefund(payment, { id: REFUND_ID, amount: D(100_000) });
+      f.seedRefund(payment, { id: REFUND_ID_2, amount: D(50_000) });
+      return { f, payment };
+    };
+
+    it('mã đã dùng cho khoản hoàn khác ⇒ 409 REFUND_PROVIDER_REF_DUPLICATE, refund nhả về requested, không ghi sổ', async () => {
+      const { f, payment } = manualSetup();
+      await f.service.processRefund(actor, REFUND_ID, { providerRef: 'FT26102600010' });
+
+      const err = await thrown(f.service.processRefund(actor, REFUND_ID_2, { providerRef: 'FT26102600010' }));
+
+      expect(err).toBeInstanceOf(BusinessException);
+      expect(err).toMatchObject({ errorCode: 'REFUND_PROVIDER_REF_DUPLICATE', httpStatus: HttpStatus.CONFLICT });
+      expect(f.refund(REFUND_ID_2)).toMatchObject({ status: REFUND_STATUS.REQUESTED, providerRef: null });
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000'); // chỉ khoản đầu
+      expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('chạy đua: hai người nhập cùng mã, kiểm trước bị lọt ⇒ unique index một phần (P2002) cũng ra 409 REFUND_PROVIDER_REF_DUPLICATE (không phải lỗi 500), nhả chiếm, ghi sổ hoàn tác', async () => {
+      const { f, payment } = manualSetup();
+      await f.service.processRefund(actor, REFUND_ID, { providerRef: 'FT26102600011' });
+      jest.spyOn(f.db.refund, 'findFirst').mockResolvedValueOnce(null); // pre-check không thấy (người kia vừa ghi)
+
+      const err = await thrown(f.service.processRefund(actor, REFUND_ID_2, { providerRef: 'FT26102600011' }));
+
+      expect(err).toMatchObject({ errorCode: 'REFUND_PROVIDER_REF_DUPLICATE', httpStatus: HttpStatus.CONFLICT });
+      expect(f.refund(REFUND_ID_2)).toMatchObject({ status: REFUND_STATUS.REQUESTED, providerRef: null });
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
+      expect(f.txnsOf(payment.id, TX_TYPE.REFUND)).toHaveLength(1);
+    });
+
+    it('mã được cắt khoảng trắng đầu/cuối trước khi lưu', async () => {
+      const { f } = manualSetup();
+      const res = await f.service.processRefund(actor, REFUND_ID, { providerRef: '  FT26102600012  ' });
+      expect(res.providerRef).toBe('FT26102600012');
+    });
+
+    it.each(['abc', 'FT 2610 0001', 'FT26102600013?', '-FT26102600013', 'payos-refund:TX-1', 'PAYOS-REFUND:TX-1', 'x'.repeat(121)])('providerRef không hợp lệ (%s) ⇒ 400 COMMON_VALIDATION_ERROR, không chiếm refund', async (providerRef) => {
+      const { f } = manualSetup();
+
+      const err = await thrown(f.service.processRefund(actor, REFUND_ID, { providerRef }));
+
+      expect(err).toBeInstanceOf(BusinessException);
+      expect(err).toMatchObject({ errorCode: 'COMMON_VALIDATION_ERROR', httpStatus: HttpStatus.BAD_REQUEST });
+      expect(f.calls).not.toContain('refund.updateMany');
+      expect(f.refund(REFUND_ID).status).toBe(REFUND_STATUS.REQUESTED);
+    });
+
+    it('mã lệnh chi PayOS (payos-refund:<id>) cũng duy nhất: hai refund không thể cùng chốt một lệnh chi', async () => {
+      const f = buildFixture();
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, gatewayResponse: webhookData(ACCOUNT) });
+      f.seedRefund(payment, { id: REFUND_ID, status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-DUP' });
+      f.seedRefund(payment, { id: REFUND_ID_2, status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED, gatewayPayoutId: 'TX-DUP', gatewayAttempt: 1, gatewaySubmittedAt: minutesAgo(2) });
+      f.getPayout.mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
+
+      await f.service.reconcileGatewayRefunds(); // lỗi unique bị job nuốt + log, refund 2 không bị ghi sổ
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(f.refund(REFUND_ID_2)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: null });
+      expect(f.orders.onRefunded).not.toHaveBeenCalled();
+    });
+  });
+
+  // ------------------------------------------------------------------ refundSummaries + danh sách
+  describe('refundSummaries', () => {
+    const seed = () => {
+      const f = buildFixture();
+      const a = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, orderCode: 'DH-A' }, 1790000000000001);
+      const b = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, orderCode: 'DH-B' }, 1790000000000002);
+      const c = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, orderCode: 'DH-C' }, 1790000000000003);
+      return { f, a, b, c };
+    };
+    const rid = (n: number): string => `55555555-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+    it('MỘT query cho cả danh sách; mỗi đơn lấy khoản MỚI NHẤT; bỏ khoản trả trùng (không thuộc đơn); trạng thái lạ bị bỏ qua; đơn không có hoàn ⇒ không có trong Map; mã đơn trùng được gộp', async () => {
+      const { f, a, b, c } = seed();
+      f.seedRefund(a, { id: rid(1), orderCode: 'DH-A', amount: D(50_000), status: REFUND_STATUS.DONE }); // cũ
+      f.seedRefund(a, { id: rid(2), orderCode: 'DH-A', amount: D(70_000), status: REFUND_STATUS.REQUESTED }); // mới nhất của DH-A
+      f.seedRefund(a, { id: rid(3), orderCode: 'DH-A', amount: D(999_000), status: REFUND_STATUS.REQUESTED, kind: REFUND_KIND.DUPLICATE_PAYMENT }); // mới hơn nhưng là khoản trùng
+      f.seedRefund(b, { id: rid(4), orderCode: 'DH-B', amount: D(10_000), status: REFUND_STATUS.FAILED });
+      f.seedRefund(c, { id: rid(5), orderCode: 'DH-C', amount: D(5_000), status: 'weird' });
+      f.calls.length = 0;
+
+      const map = await f.service.refundSummaries(['DH-A', 'DH-A', 'DH-B', 'DH-C', 'DH-Z', '']);
+
+      expect(f.calls.filter((x) => x.startsWith('refund.'))).toEqual(['refund.findMany']);
+      expect(Object.fromEntries(map)).toEqual({
+        'DH-A': { status: 'requested', amount: 70_000n },
+        'DH-B': { status: 'failed', amount: 10_000n },
+      });
+      expect(map.size).toBe(2);
+      expect(typeof map.get('DH-A')?.amount).toBe('bigint');
+    });
+
+    it('danh sách rỗng ⇒ Map rỗng, KHÔNG chạm DB', async () => {
+      const { f } = seed();
+      f.calls.length = 0;
+      expect((await f.service.refundSummaries([])).size).toBe(0);
+      expect((await f.service.refundSummaries([''])).size).toBe(0);
+      expect(f.calls).toEqual([]);
+    });
+  });
+
+  describe('listRefunds — lọc needsManual / status', () => {
+    const rid = (n: number): string => `66666666-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const seed = (payoutConfigured: boolean) => {
+      const f = buildFixture({ payoutConfigured });
+      const withPayer = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, gatewayResponse: webhookData(ACCOUNT), orderCode: 'DH-1' }, 1790000000000001);
+      const noPayer = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, gatewayResponse: null, orderCode: 'DH-2' }, 1790000000000002);
+      f.seedRefund(withPayer, { id: rid(1), orderCode: 'DH-1' }); // requested, tự chi được
+      f.seedRefund(noPayer, { id: rid(2), orderCode: 'DH-2', needsManual: true }); // requested, thiếu tài khoản
+      f.seedRefund(noPayer, { id: rid(3), orderCode: 'DH-2', status: REFUND_STATUS.DONE, providerRef: 'FT1', needsManual: true }); // đã xong: cờ cũ không còn ý nghĩa
+      f.seedRefund(withPayer, { id: rid(4), orderCode: 'DH-1', status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.PROCESSING, gatewayPayoutId: 'TX-4', gatewaySubmittedAt: minutesAgo(40), gatewayAlertedAt: minutesAgo(5), needsManual: true }); // PayOS treo
+      f.seedRefund(withPayer, { id: rid(5), orderCode: 'DH-1', status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED, gatewayPayoutId: 'TX-5', gatewaySubmittedAt: minutesAgo(2) }); // PayOS đang xử lý bình thường
+      return f;
+    };
+
+    it('needsManual=true (đã cấu hình payout) ⇒ chỉ khoản CHƯA xong và cần tay: thiếu tài khoản / PayOS treo; response needsManual khớp bộ lọc', async () => {
+      const f = seed(true);
+
+      const page = await f.service.listRefunds(1, 20, { needsManual: true });
+
+      expect(page.content.map((r) => r.id).sort()).toEqual([rid(2), rid(4)].sort());
+      expect(page.content.every((r) => r.needsManual)).toBe(true);
+      expect(page.totalElements).toBe(2);
+      const all = await f.service.listRefunds(1, 20);
+      expect(Object.fromEntries(all.content.map((r) => [r.id, r.needsManual]))).toEqual({ [rid(1)]: false, [rid(2)]: true, [rid(3)]: false, [rid(4)]: true, [rid(5)]: false });
+    });
+
+    it('needsManual=true khi CHƯA cấu hình payout ⇒ mọi khoản đang chờ chi (requested/failed) cộng khoản PayOS treo', async () => {
+      const f = seed(false);
+      const page = await f.service.listRefunds(1, 20, { needsManual: true });
+      expect(page.content.map((r) => r.id).sort()).toEqual([rid(1), rid(2), rid(4)].sort());
+    });
+
+    it('kết hợp status + phân trang server (skip/take) + sắp mới nhất trước; needsManual=false không lọc', async () => {
+      const f = seed(true);
+      const first = await f.service.listRefunds(1, 2, { status: REFUND_STATUS.PROCESSING });
+      expect(first.content.map((r) => r.id)).toEqual([rid(5), rid(4)]);
+      expect(first.totalElements).toBe(2);
+      const page2 = await f.service.listRefunds(2, 2, {});
+      expect(page2.content).toHaveLength(2);
+      expect(page2.totalElements).toBe(5);
+      expect((await f.service.listRefunds(1, 20, { needsManual: false })).totalElements).toBe(5);
+    });
+  });
+
+  // ------------------------------------------------------------------ thông báo
+  describe('thông báo hoàn tiền', () => {
+    it('hoàn theo đơn xong ⇒ báo THÀNH VIÊN SHOP (một lần, cùng transaction ghi sổ); khách do order.onRefunded lo nên payment KHÔNG báo trùng', async () => {
+      const { f, refund } = setup({ refund: { shopId: 'shop-1', returnRequestId: 'rr-1' } });
+
+      await processAndSettle(f, refund.id);
+
+      expect(f.shops.activeMemberUserIds).toHaveBeenCalledWith('shop-1');
+      expect(f.notifications.map((n) => [n.cmd.userId, n.cmd.title, n.cmd.link])).toEqual([['shop-user-1', `Đã hoàn tiền cho khách — đơn ${ORDER_CODE}`, `/vendor/orders/${ORDER_CODE}`]]);
+      expect(f.notifications[0].cmd.content).toContain('(đổi trả)');
+      expect(f.notifications[0].tx).toBeDefined();
+      expect(titlesTo(f, USER)).toHaveLength(0);
+    });
+
+    it('refund không gắn shop ⇒ không tra thành viên shop, không thông báo', async () => {
+      const { f, refund } = setup();
+      await processAndSettle(f, refund.id);
+      expect(f.shops.activeMemberUserIds).not.toHaveBeenCalled();
+      expect(f.notifications).toHaveLength(0);
+    });
+
+    it('tra cứu thành viên shop lỗi ⇒ việc ghi sổ KHÔNG bị ảnh hưởng (nuốt + cảnh báo)', async () => {
+      const { f, refund } = setup({ refund: { shopId: 'shop-1' } });
+      f.shops.activeMemberUserIds.mockRejectedValue(new Error('shop down'));
+
+      const res = await processAndSettle(f, refund.id);
+
+      expect(res.status).toBe(REFUND_STATUS.DONE);
+      expect(f.notifications).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('tra cứu kế toán lỗi lúc hoàn thất bại ⇒ vẫn đánh failed đúng, không ném lỗi', async () => {
+      const { f, refund } = setup();
+      f.getPayout.mockResolvedValue({ state: 'failed', detail: 'state=REJECTED' });
+      f.users.staffUserIdsWithPermission.mockRejectedValue(new Error('identity down'));
+      await f.service.processRefund(actor, refund.id, {});
+
+      await f.service.reconcileGatewayRefunds();
+
+      expect(f.refund(refund.id).status).toBe(REFUND_STATUS.FAILED);
+      expect(f.notifications).toHaveLength(0);
+    });
+  });
+});
+
+/* ================================================================ hợp đồng schema ↔ migration PLAN-0022 ================================================================ */
+
+describe('hợp đồng schema ↔ migration 20261026100100_return_roles_payment', () => {
+  const root = join(__dirname, '../../../../prisma');
+  const migration = readFileSync(join(root, 'migrations', '20261026100100_return_roles_payment', 'migration.sql'), 'utf8');
+  const schema = readFileSync(join(root, 'schema', 'payment.prisma'), 'utf8');
+
+  it.each([
+    ['payee_bank_bin', 'payeeBankBin'],
+    ['payee_account_number', 'payeeAccountNumber'],
+    ['payee_account_name', 'payeeAccountName'],
+    ['payee_source', 'payeeSource'],
+    ['gateway_status', 'gatewayStatus'],
+    ['gateway_payout_id', 'gatewayPayoutId'],
+    ['gateway_attempt', 'gatewayAttempt'],
+    ['gateway_submitted_at', 'gatewaySubmittedAt'],
+    ['gateway_alerted_at', 'gatewayAlertedAt'],
+    ['needs_manual', 'needsManual'],
+  ])('cột refunds.%s có trong migration (NULL/DEFAULT — an toàn deploy) và schema Prisma (%s)', (column, field) => {
+    expect(migration).toMatch(new RegExp(`ALTER TABLE "payment"\\."refunds" ADD COLUMN "${column}" [A-Z0-9()]+( NOT NULL DEFAULT [a-z0-9]+)?;`));
+    expect(schema).toContain(`@map("${column}")`);
+    expect(schema).toMatch(new RegExp(`\\b${field}\\s`));
+  });
+
+  it('cột mới chỉ NULL hoặc có DEFAULT (không NOT NULL trần)', () => {
+    const adds = [...migration.matchAll(/ADD COLUMN "[a-z_]+" ([^;]+);/g)].map((m) => m[1]);
+    expect(adds.length).toBe(11);
+    for (const a of adds) if (/NOT NULL/.test(a)) expect(a).toMatch(/DEFAULT/);
+  });
+
+  it('unique index MỘT PHẦN trên refunds.provider_ref (WHERE provider_ref IS NOT NULL), và dữ liệu trùng cũ được gỡ TRƯỚC khi tạo index', () => {
+    const create = migration.indexOf('CREATE UNIQUE INDEX "uq_refunds_provider_ref" ON "payment"."refunds" ("provider_ref") WHERE "provider_ref" IS NOT NULL');
+    const dedupe = migration.indexOf('ROW_NUMBER() OVER (PARTITION BY "provider_ref"');
+    expect(create).toBeGreaterThan(-1);
+    expect(dedupe).toBeGreaterThan(-1);
+    expect(dedupe).toBeLessThan(create);
+    expect(migration).toContain("LEFT(r.\"provider_ref\", 85) || '#' || REPLACE(r.\"id\"::text, '-', '')"); // ≤ 118 ký tự, vừa VARCHAR(120)
+  });
+
+  it('shop_payout_lines.source_order_code (VARCHAR(30), NULL) + backfill đúng công thức khoá dòng hoàn tiền RF-<26 hex> của ShopPayoutService', () => {
+    expect(migration).toMatch(/ALTER TABLE "payment"\."shop_payout_lines" ADD COLUMN "source_order_code" VARCHAR\(30\);/);
+    expect(schema).toMatch(/sourceOrderCode\s+String\?\s+@map\("source_order_code"\)\s+@db\.VarChar\(30\)/);
+    expect(migration).toContain(`'RF-' || SUBSTRING(REPLACE(r."id"::text, '-', '') FROM 1 FOR 26)`);
+  });
+});
+
+/* ================================================================ xem số tài khoản nhận hoàn (kế toán chuyển tay) ================================================================ */
+
+describe('GET admin/refunds/:id/payee — số tài khoản ĐẦY ĐỦ cho kế toán chuyển tay (PLAN-0022)', () => {
+  const realFetch = globalThis.fetch;
+  let logSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+  const PAYER = { counterAccountBankId: '970436', counterAccountBankName: 'Vietcombank', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A' };
+  const CUSTOMER = { payeeBankBin: '970415', payeeAccountNumber: '1122334455', payeeAccountName: 'TRAN THI BE', payeeSource: 'customer' };
+  const FULL_NUMBERS = ['0011223344', '1122334455'];
+
+  beforeEach(() => {
+    const fetchStub = jest.fn((): Promise<Response> => Promise.reject(new Error('fetch chưa được stub — không được gọi mạng thật')));
+    globalThis.fetch = fetchStub;
+    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
+
+  function setup(o: { payment?: Partial<PaymentRow>; refund?: Partial<RefundRow> } = {}) {
+    const f = buildFixture();
+    const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: new Date('2026-10-03T09:30:00.000Z'), transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(PAYER), version: 1, ...o.payment });
+    const refund = f.seedRefund(payment, o.refund);
+    return { f, payment, refund };
+  }
+  const reveals = (f: Fixture) => f.state.audits.filter((a) => a.action === PAYMENT_AUDIT.REFUND_PAYEE_VIEWED);
+  const noFullNumber = (value: unknown) => {
+    const body = JSON.stringify(value);
+    for (const n of FULL_NUMBERS) expect(body).not.toContain(n);
+  };
+
+  it('tài khoản ĐÃ TRẢ tiền (payer): trả số đầy đủ + tên ngân hàng + tên chủ TK + source=payer, kể cả khi khách cũng có khai (payer ưu tiên)', async () => {
+    const { f, refund } = setup({ refund: CUSTOMER });
+
+    const res = await f.service.revealPayee(actor, refund.id);
+
+    expect(res).toEqual({ bankBin: '970436', bankName: 'Vietcombank', accountNumber: '0011223344', accountName: 'NGUYEN VAN A', source: 'payer' });
+  });
+
+  it('tài khoản khách khai (customer): số đầy đủ, bankName null (tra theo BIN), source=customer — cả với payment PayOS thiếu tài khoản đối ứng lẫn đơn COD', async () => {
+    const payos = setup({ payment: { gatewayResponse: null }, refund: CUSTOMER });
+    expect(await payos.f.service.revealPayee(actor, payos.refund.id)).toEqual({ bankBin: '970415', bankName: null, accountNumber: '1122334455', accountName: 'TRAN THI BE', source: 'customer' });
+
+    const f = buildFixture();
+    const cod = f.seedPayment({ methodCode: METHOD.COD, status: PAY_STATUS.PAID, paidAt: new Date(), version: 1, gatewayResponse: { counterAccountNumber: '9999999999', counterAccountBankId: '970436' } }); // COD không có "tài khoản đã trả"
+    const refund = f.seedRefund(cod, { ...CUSTOMER, method: 'gateway' });
+    expect(await f.service.revealPayee(actor, refund.id)).toMatchObject({ accountNumber: '1122334455', source: 'customer' });
+  });
+
+  it.each([REFUND_STATUS.REQUESTED, REFUND_STATUS.PROCESSING, REFUND_STATUS.FAILED])('refund %s (còn mở) ⇒ xem được', async (status) => {
+    const { f, refund } = setup({ refund: { status } });
+    expect(await f.service.revealPayee(actor, refund.id)).toMatchObject({ accountNumber: '0011223344' });
+  });
+
+  it('refund đã done ⇒ 409 PAYMENT_INVALID_STATE, KHÔNG lộ số, KHÔNG ghi audit xem', async () => {
+    const { f, refund } = setup({ refund: { status: REFUND_STATUS.DONE, providerRef: 'FT26102600099' } });
+
+    const err = await thrown(f.service.revealPayee(actor, refund.id));
+
+    expect(err).toBeInstanceOf(BusinessException);
+    expect(err).toMatchObject({ errorCode: PAYMENT_ERR.INVALID_STATE, httpStatus: HttpStatus.CONFLICT });
+    noFullNumber((err as BusinessException).message);
+    expect(reveals(f)).toHaveLength(0);
+  });
+
+  it('refund chưa có tài khoản nhận nào (PayOS thiếu tài khoản đối ứng + khách không khai) ⇒ 404 PAYMENT_REFUND_PAYEE_NOT_FOUND, không audit', async () => {
+    const { f, refund } = setup({ payment: { gatewayResponse: null } });
+
+    const err = await thrown(f.service.revealPayee(actor, refund.id));
+
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(err).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_PAYEE_NOT_FOUND, httpStatus: HttpStatus.NOT_FOUND });
+    expect(reveals(f)).toHaveLength(0);
+  });
+
+  it('refund không tồn tại ⇒ 404 PAYMENT_REFUND_NOT_FOUND', async () => {
+    const f = buildFixture();
+    expect(await thrown(f.service.revealPayee(actor, REFUND_ID))).toMatchObject({ errorCode: PAYMENT_ERR.REFUND_NOT_FOUND, httpStatus: HttpStatus.NOT_FOUND });
+  });
+
+  it('MỖI lần xem ghi một audit REFUND_PAYEE_VIEWED (ai · refundId · orderCode · nguồn); audit và log KHÔNG chứa số tài khoản', async () => {
+    const { f, refund } = setup({ refund: CUSTOMER });
+
+    await f.service.revealPayee(actor, refund.id);
+    await f.service.revealPayee(actor_of('user-acc-2'), refund.id);
+
+    expect(reveals(f)).toHaveLength(2);
+    expect(reveals(f)[0]).toMatchObject({ actorUserId: actor.userId, action: PAYMENT_AUDIT.REFUND_PAYEE_VIEWED, entityType: 'refund', entityId: refund.id, entityCode: ORDER_CODE, afterSummary: { source: 'payer', status: 'requested' } });
+    expect(reveals(f)[1]).toMatchObject({ actorUserId: 'user-acc-2' });
+    noFullNumber(f.state.audits);
+    noFullNumber([logSpy.mock.calls, warnSpy.mock.calls, errorSpy.mock.calls]);
+    expect(logSpy).toHaveBeenCalledWith(expect.objectContaining({ refundId: refund.id, orderCode: ORDER_CODE, actorUserId: actor.userId }), 'Kế toán xem tài khoản nhận hoàn');
+  });
+
+  it('ĐÓNG-KHI-LỖI: ghi audit lỗi ⇒ ném lỗi, KHÔNG trả số tài khoản', async () => {
+    const { f, refund } = setup();
+    jest.spyOn(f.db, '$transaction').mockRejectedValueOnce(new Error('db chết'));
+
+    const err = await thrown(f.service.revealPayee(actor, refund.id));
+
+    expect((err as Error).message).toBe('db chết');
+    expect(reveals(f)).toHaveLength(0);
+  });
+
+  it('không làm đổi refund (chỉ đọc + audit): status, version, providerRef giữ nguyên', async () => {
+    const { f, refund } = setup({ refund: { version: 3 } });
+    await f.service.revealPayee(actor, refund.id);
+    expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.REQUESTED, version: 3, providerRef: null });
+  });
+
+  describe('controller', () => {
+    const payee = { bankBin: '970436', bankName: 'Vietcombank', accountNumber: '0011223344', accountName: 'NGUYEN VAN A', source: 'payer' };
+    const stub = { revealPayee: jest.fn((_actor: AuthenticatedActor, _id: string): Promise<unknown> => Promise.resolve(payee)) };
+    const controller = new AdminPaymentController(stub as unknown as PaymentService);
+    const handler = () => handlerOf(AdminPaymentController, 'payee');
+
+    it('chuyển actor + id xuống service, bọc ApiResponse', async () => {
+      const res = await controller.payee(actor, REFUND_ID);
+      expect(stub.revealPayee).toHaveBeenCalledWith(actor, REFUND_ID);
+      expect(res).toMatchObject({ success: true, data: payee, error: null });
+    });
+
+    it('GET refunds/:id/payee, đòi quyền payment.refund.process (cùng quyền chi tiền), KHÔNG công khai, Cache-Control: no-store, giới hạn tần suất theo người dùng', () => {
+      expect(Reflect.getMetadata(METHOD_METADATA, handler()) as unknown).toBe(RequestMethod.GET);
+      expect(Reflect.getMetadata(PATH_METADATA, handler()) as unknown).toBe('refunds/:id/payee');
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler()) as unknown).toEqual(['payment.refund.process']);
+      expect(Reflect.getMetadata(IS_PUBLIC_KEY, handler()) as unknown).toBeUndefined();
+      expect(Reflect.getMetadata(HEADERS_METADATA, handler()) as unknown).toEqual([{ name: 'Cache-Control', value: 'no-store' }]);
+      expect(Reflect.getMetadata(RATE_LIMIT_KEY, handler()) as unknown).toMatchObject({ name: 'refund-payee-reveal', by: 'user' });
+    });
+
+    it('hai route danh sách/chi tiết hoàn tiền (payment.payment.read) KHÔNG bao giờ trả số đầy đủ — chỉ route payee mới có quyền chi tiền', () => {
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handlerOf(AdminPaymentController, 'refunds')) as unknown).toEqual(['payment.payment.read']);
+    });
+  });
+});
+
+/* ================================================================ PLAN-0022 — sửa theo review độc lập ================================================================ */
+
+describe('PLAN-0022 (review) — PayOS từ chối ngay, reason dài, xoay vòng job, chỉ mục', () => {
+  const realFetch = globalThis.fetch;
+  let errorSpy: jest.SpyInstance;
+  const ACCOUNT = { counterAccountBankId: '970436', counterAccountNumber: '0011223344', counterAccountName: 'NGUYEN VAN A' };
+  const CUSTOMER = { payeeBankBin: '970415', payeeAccountNumber: '1122334455', payeeAccountName: 'TRAN THI BE', payeeSource: 'customer' };
+  const minutesAgo = (m: number): Date => new Date(Date.now() - m * 60_000);
+  const PAID_AT = new Date('2026-10-03T09:30:00.000Z');
+  type PayoutResult = { ok: boolean; code: string; message: string; transactionId?: string; raw: unknown };
+  const REJECT_231: PayoutResult = { ok: false, code: '231', message: 'Tài khoản nhận không hợp lệ', raw: { code: '231', desc: 'Tài khoản nhận không hợp lệ' } };
+
+  beforeEach(() => {
+    const fetchStub = jest.fn((): Promise<Response> => Promise.reject(new Error('fetch chưa được stub — không được gọi mạng thật')));
+    globalThis.fetch = fetchStub;
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
+
+  function setup(o: { payment?: Partial<PaymentRow>; refund?: Partial<RefundRow> } = {}) {
+    const f = buildFixture();
+    const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, transactionCode: String(PAYOS_CODE), gatewayResponse: webhookData(ACCOUNT), version: 1, ...o.payment });
+    const refund = f.seedRefund(payment, o.refund);
+    return { f, payment, refund };
+  }
+  const refs = (f: Fixture) => f.payout.mock.calls.map(([i]) => [i.referenceId, i.idempotencyKey]);
+
+  // ------------------------------------------------------------------ #1 PayOS từ chối ngay
+  describe('PayOS từ chối NGAY lúc gửi lệnh chi', () => {
+    it('từ chối CHẮC CHẮN (mã nghiệp vụ) ⇒ failed + gatewayStatus failed + ghi lần đã dùng/tài khoản bị từ chối; kế toán nhập providerRef ⇒ ghi sổ TAY, KHÔNG gọi PayOS lại, không chi trùng', async () => {
+      const { f, payment, refund } = setup();
+      f.payout.mockResolvedValueOnce(REJECT_231);
+
+      const err = await thrown(f.service.processRefund(actor, refund.id, {}));
+
+      expect(err).toMatchObject({ errorCode: 'PAYMENT_REFUND_FAILED', httpStatus: HttpStatus.BAD_GATEWAY });
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayStatus: GATEWAY_STATUS.FAILED, gatewayAttempt: 1, payeeSource: PAYEE_SOURCE.PAYER, gatewayAttemptedAt: null, gatewayPayoutId: null, gatewaySubmittedAt: null });
+      expect(await f.service.getRefund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayStatus: 'failed', needsReconcile: false, needsManual: false });
+
+      const res = await f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600020', note: 'Chuyển tay sau khi PayOS từ chối' });
+
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'FT26102600020', note: 'Chuyển tay sau khi PayOS từ chối' });
+      expect(f.payout).toHaveBeenCalledTimes(1); // KHÔNG gửi PayOS lại
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
+      expect(f.txnsOf(payment.id, TX_TYPE.REFUND).map((t) => t.status)).toEqual(['failed', 'ok']);
+      expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_PROCESSED)).toMatchObject({ afterSummary: { providerRef: 'FT26102600020', via: 'process' } });
+    });
+
+    it.each<[string, PayoutResult]>([
+      ['HTTP 401 chữ ký sai (body không phải JSON)', { ok: false, code: '401', message: 'HTTP 401', raw: {} }],
+      ['HTTP 429', { ok: false, code: '429', message: 'HTTP 429', raw: {} }],
+      ['thiếu số dư (mã nghiệp vụ)', { ok: false, code: '231', message: 'Số dư không đủ', raw: { code: '231', desc: 'Số dư không đủ' } }],
+    ])('%s ⇒ từ chối chắc chắn: failed + gatewayStatus failed, KHÔNG needsReconcile', async (_label, result) => {
+      const { f, refund } = setup();
+      f.payout.mockResolvedValueOnce(result);
+
+      await thrown(f.service.processRefund(actor, refund.id, {}));
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayStatus: GATEWAY_STATUS.FAILED, gatewayAttemptedAt: null });
+      expect((await f.service.getRefund(refund.id)).needsReconcile).toBe(false);
+    });
+
+    it('từ chối chắc chắn rồi chạy lại KHÔNG providerRef ⇒ lệnh MỚI (referenceId/idempotency-key "<id>-2"); xong ⇒ done', async () => {
+      const { f, refund } = setup();
+      f.payout.mockResolvedValueOnce(REJECT_231).mockResolvedValueOnce({ ok: true, code: '00', message: 'ok', transactionId: 'TX-2', raw: {} });
+      await thrown(f.service.processRefund(actor, refund.id, {}));
+
+      const res = await processAndSettle(f, refund.id);
+
+      expect(refs(f)).toEqual([
+        [REFUND_ID, REFUND_ID],
+        [`${REFUND_ID}-2`, `${REFUND_ID}-2`],
+      ]);
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'payos-refund:TX-2' });
+      expect(f.refund(refund.id)).toMatchObject({ gatewayAttempt: 2 });
+    });
+
+    it.each<[string, PayoutResult]>([
+      ['mất kết nối / timeout (raw null, mã 99)', { ok: false, code: '99', message: 'Không gọi được cổng PayOS', raw: null }],
+      ['HTTP 500', { ok: false, code: '500', message: 'HTTP 500', raw: {} }],
+      ['HTTP 503', { ok: false, code: '503', message: 'HTTP 503', raw: {} }],
+      ['mã 20 (lỗi nội bộ phía PayOS)', { ok: false, code: '20', message: 'Internal error', raw: { code: '20', desc: 'Internal error' } }],
+    ])('KHÔNG RÕ kết quả — %s ⇒ failed + needsReconcile (đã gọi cổng), KHÔNG gatewayStatus failed; báo kế toán đối chiếu', async (_label, result) => {
+      const { f, refund } = setup();
+      f.payout.mockResolvedValueOnce(result);
+
+      await thrown(f.service.processRefund(actor, refund.id, {}));
+
+      expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, gatewayStatus: null, gatewayAttempt: 0 });
+      expect(f.refund(refund.id).gatewayAttemptedAt).toBeInstanceOf(Date);
+      expect(await f.service.getRefund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, needsReconcile: true, gatewayStatus: null });
+      expect(f.notifications[0].cmd.content).toContain('Chưa rõ PayOS đã nhận lệnh hay chưa');
+      expect(f.notifications[0].cmd.payload).toMatchObject({ needsReconcile: true });
+    });
+
+    it('không rõ kết quả: chạy lại không providerRef ⇒ CÙNG khoá (PayOS trả đúng lệnh cũ, không chi đôi); PayOS nhận ⇒ xoá dấu "cần đối chiếu"', async () => {
+      const { f, refund } = setup();
+      f.payout.mockResolvedValueOnce({ ok: false, code: '99', message: 'timeout', raw: null });
+      await thrown(f.service.processRefund(actor, refund.id, {}));
+
+      const res = await processAndSettle(f, refund.id);
+
+      expect(refs(f)).toEqual([
+        [REFUND_ID, REFUND_ID],
+        [REFUND_ID, REFUND_ID],
+      ]);
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, needsReconcile: false });
+      expect(f.refund(refund.id).gatewayAttemptedAt).toBeNull();
+      expect(f.orders.onRefunded).toHaveBeenCalledTimes(1);
+    });
+
+    it('không rõ kết quả mà kế toán đã ĐỐI CHIẾU và nhập providerRef ⇒ ghi sổ tay, KHÔNG gửi PayOS lại (tránh chi trùng tay + PayOS)', async () => {
+      const { f, payment, refund } = setup();
+      f.payout.mockResolvedValueOnce({ ok: false, code: '99', message: 'timeout', raw: null });
+      await thrown(f.service.processRefund(actor, refund.id, {}));
+
+      // AUD-14: hệ thống không tra được PayOS (fetch bị chặn trong test) ⇒ kế toán phải xác nhận rõ lệnh CHƯA chạy.
+      const res = await f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600021', note: 'Đối chiếu PayOS: đã chuyển', confirmGatewayNotExecuted: true });
+
+      expect(res).toMatchObject({ status: REFUND_STATUS.DONE, providerRef: 'FT26102600021' });
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.payment(payment.id).refundedAmount.toString()).toBe('100000');
+    });
+
+    it('hoàn lần đầu (chưa từng gọi cổng) mà có providerRef và đủ điều kiện tự chi ⇒ vẫn gọi PayOS, providerRef bị bỏ qua (hành vi cũ giữ nguyên)', async () => {
+      const { f, refund } = setup();
+      await f.service.processRefund(actor, refund.id, { providerRef: 'FT26102600022' });
+      expect(f.payout).toHaveBeenCalledTimes(1);
+      expect(f.refund(refund.id).providerRef).toBeNull();
+    });
+
+    describe('đổi tài khoản khi bị từ chối (tài khoản đã trả ⇄ tài khoản khách khai)', () => {
+      it('PayOS từ chối tài khoản ĐÃ TRẢ tiền mà khách có khai ⇒ lần chạy lại thử tài khoản KHÁCH KHAI (lệnh mới); response + tài khoản kế toán xem cũng chuyển sang tài khoản đó', async () => {
+        const { f, refund } = setup({ refund: CUSTOMER });
+        f.payout.mockResolvedValueOnce(REJECT_231);
+        await thrown(f.service.processRefund(actor, refund.id, {}));
+
+        expect(f.payout).toHaveBeenLastCalledWith(expect.objectContaining({ toBin: '970436', toAccountNumber: '0011223344' }));
+        expect(await f.service.getRefund(refund.id)).toMatchObject({ payeeSource: 'customer', payee: { bankBin: '970415', accountNumberMasked: '****4455' } });
+        expect(await f.service.revealPayee(actor, refund.id)).toMatchObject({ source: 'customer', accountNumber: '1122334455' }); // kế toán chuyển tay đúng tài khoản dự phòng
+
+        const res = await processAndSettle(f, refund.id);
+
+        expect(f.payout).toHaveBeenLastCalledWith(expect.objectContaining({ toBin: '970415', toAccountNumber: '1122334455', referenceId: `${REFUND_ID}-2`, idempotencyKey: `${REFUND_ID}-2` }));
+        expect(res).toMatchObject({ status: REFUND_STATUS.DONE, payeeSource: 'customer' });
+        expect(f.refund(refund.id).payeeSource).toBe(PAYEE_SOURCE.CUSTOMER);
+      });
+
+      it('tài khoản khách khai cũng bị từ chối ⇒ lần sau quay lại tài khoản đã trả tiền', async () => {
+        const { f, refund } = setup({ refund: CUSTOMER });
+        f.payout.mockResolvedValue(REJECT_231);
+        await thrown(f.service.processRefund(actor, refund.id, {})); // payer
+        await thrown(f.service.processRefund(actor, refund.id, {})); // customer
+        await thrown(f.service.processRefund(actor, refund.id, {})); // lại payer
+
+        expect(f.payout.mock.calls.map(([i]) => [i.toAccountNumber, i.referenceId])).toEqual([
+          ['0011223344', REFUND_ID],
+          ['1122334455', `${REFUND_ID}-2`],
+          ['0011223344', `${REFUND_ID}-3`],
+        ]);
+      });
+
+      it('khách KHÔNG khai tài khoản ⇒ chạy lại vẫn dùng tài khoản đã trả tiền (lỗi có thể do nguyên nhân khác, vd thiếu số dư)', async () => {
+        const { f, refund } = setup();
+        f.payout.mockResolvedValue(REJECT_231);
+        await thrown(f.service.processRefund(actor, refund.id, {}));
+        await thrown(f.service.processRefund(actor, refund.id, {}));
+        expect(f.payout.mock.calls.map(([i]) => i.toAccountNumber)).toEqual(['0011223344', '0011223344']);
+        expect(refs(f)).toEqual([
+          [REFUND_ID, REFUND_ID],
+          [`${REFUND_ID}-2`, `${REFUND_ID}-2`],
+        ]);
+      });
+
+      it('PayOS đã NHẬN lệnh rồi báo FAILED khi tra lại ⇒ lần chạy lại cũng thử tài khoản còn lại', async () => {
+        const { f, refund } = setup({ refund: CUSTOMER });
+        f.getPayout.mockResolvedValueOnce({ state: 'failed', detail: 'state=FAILED' }).mockResolvedValue({ state: 'succeeded', detail: 'SUCCEEDED' });
+        await f.service.processRefund(actor, refund.id, {});
+        await f.service.reconcileGatewayRefunds();
+        expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.FAILED, payeeSource: PAYEE_SOURCE.PAYER });
+
+        await processAndSettle(f, refund.id);
+
+        expect(f.payout.mock.calls.map(([i]) => i.toAccountNumber)).toEqual(['0011223344', '1122334455']);
+      });
+    });
+  });
+
+  // ------------------------------------------------------------------ #3 reason ≤ 255
+  describe('refunds.reason VARCHAR(255)', () => {
+    const request = (f: Fixture, reason: string) => f.db.$transaction((tx) => f.service.requestRefund({ orderCode: ORDER_CODE, shopId: null, amount: 100_000n, reason, returnRequestId: null, actorUserId: 'staff-1' }, tx as unknown as Tx));
+    const seed = () => {
+      const f = buildFixture();
+      f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, gatewayResponse: webhookData(ACCOUNT), version: 1 });
+      return f;
+    };
+    const chars = (v: string | null): number => Array.from(v ?? '').length;
+
+    it('reason (tiền tố ghép) dài ⇒ cắt còn đúng 255 ký tự, kết thúc bằng "…"; audit cũng ghi bản đã cắt', async () => {
+      const f = seed();
+      const { refundId } = await request(f, `Đổi trả: ${'rất dài '.repeat(100)}`);
+      const stored = f.refund(must(refundId, 'refundId')).reason;
+      expect(chars(stored)).toBe(255);
+      expect(stored?.endsWith('…')).toBe(true);
+      expect(stored?.startsWith('Đổi trả: rất dài')).toBe(true);
+      expect(f.state.audits.find((a) => a.action === PAYMENT_AUDIT.REFUND_REQUESTED)).toMatchObject({ afterSummary: { reason: stored } });
+    });
+
+    it.each([0, 1, 100, 254, 255])('reason %i ký tự ⇒ giữ nguyên (không thêm "…")', async (n) => {
+      const f = seed();
+      const reason = 'ạ'.repeat(n);
+      const { refundId } = await request(f, reason);
+      expect(f.refund(must(refundId, 'refundId')).reason).toBe(reason);
+    });
+
+    it('256 ký tự ⇒ cắt còn 255 (254 ký tự + "…")', async () => {
+      const f = seed();
+      const { refundId } = await request(f, 'b'.repeat(256));
+      expect(f.refund(must(refundId, 'refundId')).reason).toBe(`${'b'.repeat(254)}…`);
+    });
+
+    it('cắt theo ký tự (code point), không cắt đôi cặp surrogate của emoji ở ranh giới', async () => {
+      const f = seed();
+      const { refundId } = await request(f, `${'a'.repeat(253)}😀😀😀`); // 256 ký tự (code point)
+      const stored = must(f.refund(must(refundId, 'refundId')).reason, 'reason');
+      expect(chars(stored)).toBe(255);
+      expect(stored).toBe(`${'a'.repeat(253)}😀…`); // 253 + 1 emoji + "…" = 255
+      expect(Buffer.from(stored, 'utf8').toString('utf8')).toBe(stored); // không có surrogate lẻ
+    });
+  });
+
+  // ------------------------------------------------------------------ #5 job đối soát xoay vòng
+  describe('reconcileGatewayRefunds — xoay vòng công bằng (không bỏ đói lệnh mới)', () => {
+    const rid = (n: number): string => `77777777-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const stuckRows = (f: Fixture, n: number) => {
+      const payment = f.seedPayos({ status: PAY_STATUS.PAID, paidAt: PAID_AT, version: 1, gatewayResponse: webhookData(ACCOUNT) });
+      return Array.from({ length: n }, (_, i) =>
+        f.seedRefund(payment, { id: rid(i + 1), amount: D(1_000), status: REFUND_STATUS.PROCESSING, gatewayStatus: GATEWAY_STATUS.SUBMITTED, gatewayPayoutId: `TX-${i + 1}`, gatewayAttempt: 1, gatewaySubmittedAt: minutesAgo(100 - i), updatedAt: minutesAgo(100 - i) }),
+      );
+    };
+    const polled = (f: Fixture): string[] => f.getPayout.mock.calls.map((c) => c[0]);
+    /* updated_at là mili-giây: nghỉ vài ms giữa các lượt để thứ tự "cũ nhất trước" không phụ thuộc may rủi hai lần ghi cùng một mili-giây. */
+    const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 3));
+
+    it('lệnh chưa chốt được đánh dấu "vừa tra" (updated_at) ⇒ lượt sau tra lệnh CHƯA được tra trước; version không đổi', async () => {
+      const f = buildFixture();
+      stuckRows(f, 3);
+      f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+
+      await f.service.reconcileGatewayRefunds(2); // TX-1, TX-2
+      await pause();
+      await f.service.reconcileGatewayRefunds(2); // TX-3 (chưa được tra) rồi TX-1 (tra sớm nhất)
+      await pause();
+      await f.service.reconcileGatewayRefunds(2); // TX-2, rồi TX-3 hoặc TX-1
+
+      expect(polled(f)).toHaveLength(6);
+      expect(polled(f).slice(0, 4)).toEqual(['TX-1', 'TX-2', 'TX-3', 'TX-1']); // chưa tra thì tra trước; rồi mới vòng lại lệnh tra sớm nhất
+      expect(new Set(polled(f).slice(2, 5)).size).toBe(3); // không lệnh nào được tra lần hai trước khi tất cả được tra
+      expect(f.refund(rid(1)).version).toBe(0);
+    });
+
+    it('nhiều lệnh treo hơn `limit` + lệnh MỚI gửi sau ⇒ mọi lệnh được tra trong ceil(N/limit) lượt (không ai đói)', async () => {
+      const f = buildFixture();
+      stuckRows(f, 4);
+      f.getPayout.mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+      const payment = [...f.state.payments.values()][0];
+      // lệnh mới đi qua đường thật: chiếm → PayOS nhận (updated_at = bây giờ, mới nhất)
+      const fresh = f.seedRefund(payment, { id: rid(9), amount: D(1_000) });
+      await f.service.processRefund(actor, fresh.id, {});
+
+      for (let i = 0; i < 3; i += 1) {
+        await pause();
+        await f.service.reconcileGatewayRefunds(2); // 5 lệnh, 2 lệnh/lượt ⇒ ≤ 3 lượt
+      }
+
+      expect(new Set(polled(f))).toEqual(new Set(['TX-1', 'TX-2', 'TX-3', 'TX-4', 'TX-123']));
+    });
+
+    it('lệnh được chốt thành công / thất bại không bị tra lại ở các lượt sau', async () => {
+      const f = buildFixture();
+      stuckRows(f, 2);
+      f.getPayout.mockResolvedValueOnce({ state: 'succeeded', detail: 'SUCCEEDED' }).mockResolvedValue({ state: 'processing', detail: 'PROCESSING' });
+
+      await f.service.reconcileGatewayRefunds(2);
+      f.getPayout.mockClear();
+      await f.service.reconcileGatewayRefunds(2);
+
+      expect(polled(f)).toEqual(['TX-2']);
+      expect(f.refund(rid(1)).status).toBe(REFUND_STATUS.DONE);
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ------------------------------------------------------------------ #4 chỉ mục
+  describe('migration 20261026100300_refund_indexes', () => {
+    const root = join(__dirname, '../../../../prisma');
+    const migration = readFileSync(join(root, 'migrations', '20261026100300_refund_indexes', 'migration.sql'), 'utf8');
+    const schema = readFileSync(join(root, 'schema', 'payment.prisma'), 'utf8');
+    const refundModel = schema.slice(schema.indexOf('model Refund {'), schema.indexOf('model ShopPayout {'));
+
+    it.each([
+      ['refunds_order_code_idx', 'order_code', 'orderCode'],
+      ['refunds_payment_id_idx', 'payment_id', 'paymentId'],
+      ['refunds_return_request_id_idx', 'return_request_id', 'returnRequestId'],
+    ])('index %s trên payment.refunds(%s): IF NOT EXISTS, tên theo quy ước Prisma, có @@index([%s]) tương ứng', (name, column, field) => {
+      expect(migration).toContain(`CREATE INDEX IF NOT EXISTS "${name}" ON "payment"."refunds" ("${column}");`);
+      expect(refundModel).toContain(`@@index([${field}])`);
+      expect(refundModel).toContain(`${field} `);
+      expect(refundModel).toContain(`@map("${column}")`);
+    });
+
+    it('migration payment ĐÃ ÁP (100100) không bị sửa chỉ mục; migration mới đứng SAU nó và chỉ gồm CREATE INDEX', () => {
+      expect('20261026100300_refund_indexes' > '20261026100100_return_roles_payment').toBe(true);
+      const statements = migration
+        .split('\n')
+        .filter((l) => !l.startsWith('--') && l.trim() !== '')
+        .map((l) => l.trim());
+      expect(statements).toHaveLength(3);
+      for (const st of statements) expect(st).toMatch(/^CREATE INDEX IF NOT EXISTS "refunds_[a-z_]+_idx" ON "payment"\."refunds" \("[a-z_]+"\);$/);
+    });
+  });
+});
+
+describe('PLAN-0043 — refund hãng giả không đi tiền thật', () => {
+  it('refund mới bị chặn trước chi tiền và nhả claim về requested', async () => {
+    const f = buildFixture({ payoutConfigured: true });
+    const payment = f.seedPayos({ status: PAY_STATUS.PAID, receivedAmount: D(AMOUNT) });
+    const refund = f.seedRefund(payment);
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    await expect(f.service.processRefund(actor, refund.id, {})).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+    expect(f.payout).not.toHaveBeenCalled();
+    expect(f.refund(refund.id).status).toBe(REFUND_STATUS.REQUESTED);
+  });
+  it('job/đối soát lệnh refund fake đã submitted không tra endpoint thật', async () => {
+    const f = buildFixture({ payoutConfigured: true });
+    const payment = f.seedPayos({ status: PAY_STATUS.PAID, receivedAmount: D(AMOUNT) });
+    const refund = f.seedRefund(payment, { status: REFUND_STATUS.PROCESSING, gatewaySubmittedAt: new Date(), gatewayPayoutId: 'MOCK-OLD' });
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    await expect(f.service.processRefund(actor, refund.id, {})).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+    expect(f.getPayout).not.toHaveBeenCalled();
+    expect(f.payout).not.toHaveBeenCalled();
+  });
+  it('ghi sổ nốt không biến chứng từ fake thành refund thật sau đổi môi trường', async () => {
+    const f = buildFixture({ payoutConfigured: true });
+    const payment = f.seedPayos({ status: PAY_STATUS.PAID, receivedAmount: D(AMOUNT) });
+    const refund = f.seedRefund(payment, { status: REFUND_STATUS.PROCESSING, providerRef: 'MOCK-REF' });
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    await expect(f.service.retryFinalizeRefund(actor, refund.id)).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+    expect(f.orders.onRefunded).not.toHaveBeenCalled();
+  });
+});
+describe('PLAN-0043 — đơn fake không nhận link thu tiền thật', () => {
+  it('checkout sau commit giữ payment pending và lỗi rõ ràng, không gọi PayOS', async () => {
+    const f = buildFixture();
+    const payment = f.seedPayos();
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    const result = await f.service.createCheckoutLinks([payment.orderCode]);
+    const response = result.get(payment.orderCode);
+    expect(response && 'error' in response ? response.error : '').toContain('giả lập');
+    expect(f.createLink).not.toHaveBeenCalled();
+    expect(f.payment(payment.id).status).toBe(PAY_STATUS.PENDING);
+  });
+  it('retry fake bị chặn trước kéo dài hạn hoặc tạo link, không trả link cũ', async () => {
+    const f = buildFixture();
+    const payment = f.seedPayos();
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    await expect(f.service.retryPayos({ ...actor, userId: payment.userId }, payment.orderCode)).rejects.toMatchObject({ errorCode: 'PAYMENT_SIMULATED_REAL_TRANSFER_BLOCKED' });
+    expect(f.createLink).not.toHaveBeenCalled();
+    expect(f.orders.extendPaymentDeadline).not.toHaveBeenCalled();
+  });
+  it('PayOS mock loopback vẫn tạo được link cho đơn fake', async () => {
+    const f = buildFixture();
+    const payment = f.seedPayment();
+    f.env.EF_PAYOS_API_URL = 'http://127.0.0.1:4035';
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    const result = await f.service.createCheckoutLinks([payment.orderCode]);
+    expect(result.get(payment.orderCode)).toMatchObject({ paymentUrl: LINK_URL });
+    expect(f.createLink).toHaveBeenCalledTimes(1);
+  });
+});
+describe('PLAN-0043 — ẩn link thật cũ của nguồn giả lập', () => {
+  it('chi tiết đơn không phát lại checkoutUrl đã lưu khi chuyển khỏi mock', async () => {
+    const f = buildFixture(); const payment = f.seedPayos();
+    f.orders.simulatedOrderCodes.mockResolvedValue(new Set([payment.orderCode]));
+    await expect(f.service.extrasForOrder(payment.orderCode)).resolves.toMatchObject({ paymentUrl: null, linkRetryable: false });
   });
 });
