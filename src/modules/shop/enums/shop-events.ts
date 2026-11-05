@@ -6,6 +6,8 @@ export const SHOP_EVENT = {
   SUSPENDED: 'SHOP_SUSPENDED',
   REJECTED: 'SHOP_REJECTED',
   BANK_CHANGED: 'SHOP_BANK_CHANGED',
+  /* Quản lý sàn xác minh TK ngân hàng (PLAN-0040 5.2) — payload {shopId, code, name, bankAccountLast4, verifiedByUserId, verifiedAt, holdHours}; thành viên shop được báo trong app. */
+  BANK_VERIFIED: 'SHOP_BANK_VERIFIED',
   /* Thành viên tự rời gian hàng — payload {shopId, memberId, roleCode}; chưa có listener. */
   MEMBER_LEFT: 'SHOP_MEMBER_LEFT',
   /* Chủ shop vừa thêm một nhân viên (tài khoản mới) vào shop — payload {shopId, memberId, roleId}; chưa có listener. */

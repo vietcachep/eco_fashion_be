@@ -170,6 +170,10 @@ model LoginHistory {
 
 /// Sổ địa chỉ giao hàng (VN). Một địa chỉ mặc định/user (partial unique trong migration). Đơn CHÉP snapshot, không FK.
 model Address {
+  addressSystem String @default("legacy_3level") @map("address_system") @db.VarChar(30)
+  ghnProvinceId Int? @map("ghn_province_id")
+  ghnDistrictId Int? @map("ghn_district_id")
+  ghnWardCode String? @map("ghn_ward_code") @db.VarChar(20)
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String   @map("user_id") @db.Uuid
   recipientName String   @map("recipient_name") @db.VarChar(120)

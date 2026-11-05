@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor, RequirePermission } from '@common/security/decorators';
 import { SHOP_STATUS } from '../../foundation/shop.constants';
 import { AdminShopResponse, AdminShopSummaryResponse } from '../dto/shop.responses';
-import { RejectShopRequest, ShopListQuery, SuspendShopRequest, UpdateCommissionRequest } from '../request/shop.requests';
+import { RejectShopRequest, ShopListQuery, SuspendShopRequest, UpdateCommissionRequest, VerifyShopBankRequest } from '../request/shop.requests';
 import { ShopService } from '../service/shop.service';
 
 /*
@@ -57,6 +57,15 @@ export class AdminShopController {
   @ApiOkResponse({ type: AdminShopSummaryResponse })
   async reject(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Body() body: RejectShopRequest): Promise<ApiResponse<AdminShopSummaryResponse>> {
     return ApiResponse.ok(await this.shops.changeStatus(actor, id, SHOP_STATUS.REJECTED, body.reason), 'Đã từ chối gian hàng');
+  }
+
+  @Post(':id/bank/verify')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.shop.approve')
+  @ApiOperation({ summary: 'Xác minh tài khoản ngân hàng đang chờ (tên chủ TK lệch tên chủ shop) — từ lúc này mới đếm số giờ giữ chi trả sau đổi TK' })
+  @ApiOkResponse({ type: AdminShopResponse })
+  async verifyBank(@CurrentActor() actor: AuthenticatedActor, @Param('id', ParseUUIDPipe) id: string, @Body() body: VerifyShopBankRequest): Promise<ApiResponse<AdminShopResponse>> {
+    return ApiResponse.ok(await this.shops.verifyBank(actor, id, body.bankAccountNumber), 'Đã xác minh tài khoản ngân hàng');
   }
 
   @Patch(':id/commission')

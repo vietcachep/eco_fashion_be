@@ -5,6 +5,7 @@ import type { Prisma } from '../../../../generated/prisma/client';
 
 export const SHOP_SELECT = {
   id: true,
+  shippingCarrierEnabled:true, shippingPickup:true, shippingReturn:true,
   code: true,
   slug: true,
   name: true,
@@ -16,6 +17,8 @@ export const SHOP_SELECT = {
   bankCode: true,
   bankAccountNumber: true,
   bankAccountName: true,
+  bankStatus: true,
+  bankVerifiedAt: true,
   ratingAvg: true,
   totalProducts: true,
   ownerUserId: true,

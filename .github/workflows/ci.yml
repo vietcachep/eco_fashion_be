@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nút "Run workflow" ở tab Actions: chạy kiểm tra tay trên nhánh bất kỳ mà không cần push thêm commit.
+  workflow_dispatch:
 
 # Push mới huỷ lượt chạy cũ của cùng nhánh/PR — không tốn phút runner cho commit đã bị thay thế.
 concurrency:

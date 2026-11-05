@@ -122,6 +122,7 @@ export class ReportingService {
     const today = ReportingService.vnDay(new Date());
     const monthStart = `${today.slice(0, 7)}-01`;
     const since7 = ReportingService.vnDay(new Date(Date.now() - 6 * 86_400_000));
+    // `returns_requested` đếm yêu cầu đổi trả CHỜ SÀN PHÂN XỬ (escalated) — PLAN-0022: shop tự duyệt các yêu cầu `requested`, nên hàng đợi của nhân viên sàn là các ca bị khiếu nại / shop quá hạn.
     const [rows, pendingRows, statusRows, methodRows, top] = await Promise.all([
       this.prisma.dailySales.findMany({ where: { day: { gte: since7 < monthStart ? since7 : monthStart, lte: today } }, orderBy: { day: 'asc' } }),
       this.prisma.$queryRaw<Array<Record<string, bigint>>>`
@@ -130,7 +131,7 @@ export class ReportingService {
           (SELECT count(*) FROM "order"."orders" WHERE is_deleted = false AND status = 'pending' AND payment_method_code <> 'cod' AND payment_status <> 'paid') AS awaiting_payment,
           (SELECT count(*) FROM "order"."orders" WHERE is_deleted = false AND status IN ('confirmed', 'packing')) AS packing,
           (SELECT count(*) FROM "order"."orders" WHERE is_deleted = false AND status = 'shipping') AS shipping,
-          (SELECT count(*) FROM "order"."return_requests" WHERE status = 'requested') AS returns_requested,
+          (SELECT count(*) FROM "order"."return_requests" WHERE status = 'escalated') AS returns_requested,
           (SELECT count(*) FROM "payment"."refunds" WHERE status = 'requested') AS refunds_requested,
           (SELECT count(*) FROM "system"."contact_messages" WHERE status = 'new' AND shop_id IS NULL) AS contacts_new,
           (SELECT count(*) FROM "ai"."support_requests" WHERE status = 'open') AS support_open,

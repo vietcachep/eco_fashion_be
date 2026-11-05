@@ -3,6 +3,7 @@ import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Cron, Interval } from '@nestjs/schedule';
 import { ENV } from '@config/config.module';
 import type { Env } from '@config/env';
+import { escapeHtml } from '@common/mail/escape-html';
 import { MailService } from '@common/mail/mail.service';
 import { OutboxEventMessage } from '@common/outbox/outbox';
 import { OutboxRelay } from '@common/outbox/outbox-relay';
@@ -71,7 +72,7 @@ export class IdentityEventListeners {
     await this.mail.enqueue({
       to: email,
       subject: `Chào mừng bạn đến với ${this.env.EF_APP_NAME}`,
-      html: `<p>Xin chào <b>${fullName}</b>,</p><p>Tài khoản của bạn tại ${this.env.EF_APP_NAME} đã sẵn sàng. Chúc bạn mua sắm vui vẻ!</p>`,
+      html: `<p>Xin chào <b>${escapeHtml(fullName)}</b>,</p><p>Tài khoản của bạn tại ${escapeHtml(this.env.EF_APP_NAME)} đã sẵn sàng. Chúc bạn mua sắm vui vẻ!</p>`,
     });
     this.logger.log({ userId: msg.aggregateId }, 'Đã xếp hàng mail chào mừng');
   }
@@ -84,7 +85,7 @@ export class IdentityEventListeners {
     await this.mail.enqueue({
       to: email,
       subject: `${this.env.EF_APP_NAME} — Tài khoản của bạn đã bị khoá`,
-      html: `<p>Tài khoản của bạn đã bị khoá${reason ? ` với lý do: <b>${reason}</b>` : ''}. Vui lòng liên hệ cửa hàng nếu cần hỗ trợ.</p>`,
+      html: `<p>Tài khoản của bạn đã bị khoá${reason ? ` với lý do: <b>${escapeHtml(reason)}</b>` : ''}. Vui lòng liên hệ cửa hàng nếu cần hỗ trợ.</p>`,
     });
   }
 }

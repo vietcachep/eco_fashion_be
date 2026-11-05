@@ -1,6 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+import { ShopShippingAddressRequest } from '../request/shop.requests';
+
 export class ShopResponse {
+  @ApiPropertyOptional() shippingCarrierEnabled?: boolean;
+  @ApiPropertyOptional({type:ShopShippingAddressRequest,nullable:true}) shippingPickup?: ShopShippingAddressRequest | null;
+  @ApiPropertyOptional({type:ShopShippingAddressRequest,nullable:true}) shippingReturn?: ShopShippingAddressRequest | null;
   @ApiProperty() id: string;
   @ApiProperty({ example: 'SHOP-000123' }) code: string;
   @ApiProperty({ example: 'fitly-boutique' }) slug: string;
@@ -17,6 +22,9 @@ export class ShopResponse {
   @ApiPropertyOptional({ nullable: true, example: '970436', description: 'Mã BIN ngân hàng' }) bankCode: string | null;
   @ApiPropertyOptional({ nullable: true, example: 'NGUYEN VAN A', description: 'Tên chủ tài khoản' }) bankAccountName: string | null;
   @ApiPropertyOptional({ nullable: true, example: '••••6789', description: 'Số tài khoản (che giấu, chỉ 4 chữ số cuối)' }) bankAccountNumberMasked: string | null;
+  @ApiProperty({ enum: ['verified', 'pending_verification'], example: 'verified', description: 'Xác minh TK ngân hàng: `pending_verification` = tên chủ TK lệch tên chủ shop — kỳ chi trả bị giữ (held) cho tới khi quản lý sàn xác minh' }) bankStatus: string;
+  @ApiPropertyOptional({ nullable: true, description: 'Lúc quản lý sàn xác minh TK (null = chưa xác minh tay). Từ mốc này mới đếm số giờ giữ chi trả sau đổi TK' }) bankVerifiedAt: string | null;
+  @ApiProperty({ example: 72, description: 'Số giờ sàn tạm giữ chi trả sau khi đổi TK ngân hàng (setting `payout.bank_change_hold_hours`) — FE hiển thị đúng con số này, không ghi cứng' }) bankChangeHoldHours: number;
   @ApiProperty() createdAt: string;
   @ApiProperty() updatedAt: string;
 }

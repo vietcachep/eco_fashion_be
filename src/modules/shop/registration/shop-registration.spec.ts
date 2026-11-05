@@ -41,6 +41,9 @@ const staff: AuthenticatedActor = { userId: 'staff-1', email: 'staff@fitly.vn', 
 
 function shopRow(overrides: Partial<ShopRow> = {}): ShopRow {
   return {
+    shippingCarrierEnabled: false,
+    shippingPickup: null,
+    shippingReturn: null,
     id: 'shop-new',
     code: 'SHOP-000019',
     slug: 'xuong-may-moc',
@@ -53,6 +56,8 @@ function shopRow(overrides: Partial<ShopRow> = {}): ShopRow {
     bankCode: null,
     bankAccountNumber: null,
     bankAccountName: null,
+    bankStatus: 'verified',
+    bankVerifiedAt: null,
     ratingAvg: null,
     totalProducts: 0,
     ownerUserId: applicant.userId,
@@ -140,6 +145,8 @@ function build() {
   };
   const catalog = { findCategoryById: jest.fn<Promise<CategoryBrief | null>, [string]>() };
   const moduleRef = { get: jest.fn(() => catalog) };
+  // ShopService lấy SystemQueryApi lười qua ModuleRef (số giờ giữ chi trả sau đổi TK) — giả riêng, trả 72 như mặc định.
+  const systemRef = { get: jest.fn(() => ({ settingNumber: () => Promise.resolve(72) })) };
   const auditWrite = jest.fn<Promise<void>, Parameters<ShopAuditLogService['write']>>();
   const publish = jest.fn<Promise<void>, Parameters<ShopOutboxService['publish']>>();
 
@@ -177,7 +184,7 @@ function build() {
     identity as unknown as IdentityQueryApi,
     moduleRef as unknown as ModuleRef,
   );
-  const shopService = new ShopService(prisma, shops as unknown as ShopRepository, { write: auditWrite } as unknown as ShopAuditLogService, { publish } as unknown as ShopOutboxService, identity as unknown as IdentityQueryApi, registrationService);
+  const shopService = new ShopService(prisma, shops as unknown as ShopRepository, { write: auditWrite } as unknown as ShopAuditLogService, { publish } as unknown as ShopOutboxService, identity as unknown as IdentityQueryApi, registrationService, systemRef as unknown as ModuleRef);
   return { registrationService, shopService, regs, shops, members, identity, catalog, moduleRef, auditWrite, publish };
 }
 

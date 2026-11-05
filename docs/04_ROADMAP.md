@@ -30,6 +30,34 @@ cửa hàng quần áo, rồi Phase 5 (PLAN-0014…0017) pivot thành sàn đa g
 | PLAN-0016 | catalog + product | Ngành hàng có bộ thuộc tính riêng (`attributeMode` legacy_fashion \| dynamic, ≤ 2 trục biến thể), thuộc tính động, mẫu thuộc tính theo ngành lá, khoá đổi mode khi ngành đã có sản phẩm | BE ✅; FE còn việc (xem plan) |
 | PLAN-0017 | tất cả | Hoàn thiện sàn: vendor tự vận hành (đơn · kho · ảnh · voucher · báo cáo · ví · đối soát · đánh giá), PayOS + đối soát (ví COD sau đó bị PLAN-0018 gỡ), trang gian hàng công khai, AI tìm bằng ảnh, hardening (cách ly chéo shop, chống mua chéo, DTO vendor), seed dày (18 shop · 12 ngành gốc đa ngành hàng + nhóm thời trang · 48 ngành lá · 343 sản phẩm mới · ~930 ảnh minh hoạ · đơn/đánh giá/voucher/đối soát mẫu) | In progress — BE xong, FE/QA/review còn lại; giới hạn đã biết ở plan §12 |
 | PLAN-0018 | payment · order · shop · identity · seed · FE | Sàn thu MỌI khoản tiền (PayOS + COD) → tự động trừ hoa hồng + chi trả shop (cron 02:00, `payout.auto_enabled`); bỏ VNPay, chuyển khoản tay, ví quỹ COD, `Shop.codEnabled`, 4 mã quyền ví (83 → 79); khoá PayOS thu/chi do chủ dự án cung cấp sau | In progress (2026-10-15) |
+| PLAN-0019 | shop · identity · FE | Người bán tự đăng ký gian hàng, sàn duyệt hồ sơ | ✅ |
+| PLAN-0020 | payment · order · shop | Ví đặt cọc COD (shop cầm tiền mặt, sàn trừ hoa hồng vào ví) | ✅ |
+| PLAN-0021 | identity · product · order · shop · system · payment | Tách việc sàn / chủ shop: bỏ route ghi sản phẩm/kho/đơn/đánh giá của sàn, chủ shop tự phân quyền nhân viên, siết quyền sàn (ví cọc: kế toán duyệt, admin chỉnh; hoa hồng chỉ admin), liên hệ khách gửi shop/sàn, danh bạ shop, lọc theo shop ở màn sàn, bỏ vai Kho, CSKH | ✅ code + test, chờ deploy |
+| PLAN-0022 | order · payment · identity · FE | Đổi trả & hoàn tiền đúng vai (shop duyệt/nhận, CSKH phân xử, kế toán chi, SLA tự chuyển bước) | ✅ code + test, chờ deploy |
+
+## Phase 6 — Luồng mua bán end-to-end chạy với tiền thật (bản demo) — PLAN-0023
+
+Điều phối: `docs/plans/PLAN-0023-order-lifecycle-go-live.md` · luật: `docs/10_ORDER_LIFECYCLE.md` · kịch bản: `docs/11_SCENARIO_CATALOGUE.md` · runbook: `docs/12_OPERATIONS_RUNBOOK.md` · **báo cáo audit E2E 2026-10-27: `docs/13_E2E_TEST_REPORT.md`** (sau đợt sửa P0: 290 ✔ · 18 ✘ · 33 ℹ trên 341 mã; 3 lỗi P0 AUD-01 deadlock webhook↔huỷ, AUD-02 mã kỳ chi trùng, AUD-03 đổi TK không cần mật khẩu **đã sửa và kiểm chứng trên Postgres thật** — docs/13 §11; còn P1 chặn tiền thật: AUD-04/05/06, AUD-10).
+
+| Plan | WP | Nội dung | Ưu tiên | Đợt | Trạng thái |
+|---|---|---|---|---|---|
+| PLAN-0024 | 00 | Môi trường cô lập + smoke theo mã kịch bản | P0 | 0 | ⏳ |
+| PLAN-0025 | 01 | Thanh toán vào an toàn (PayOS) | P0 | 1 | 🔧 một phần (hỏi PayOS trước khi huỷ đơn quá hạn); còn lại ⏳ |
+| PLAN-0026 | 02 | Chi trả shop an toàn | P0 | 1 | 🔧 BE phần lớn (unknown/duyệt/giữ/đối chiếu/UNIQUE providerRef; còn đổi TK, giữ tay, lịch tuần, FE) |
+| PLAN-0027 | 03 | Xử lý đơn có hạn chót & lối thoát | P0 | 1 | ⏳ |
+| PLAN-0028 | 04 | Thông báo & email đủ người | P0 | 1 | ⏳ |
+| PLAN-0029 | 05 | Công cụ vận hành & quan sát | P0 | 1 | ⏳ |
+| PLAN-0030 | 06 | Hoa hồng & ví cọc COD đúng | P0 | 2 | 🔧 BE một phần (công thức hoa hồng/ví, ngưỡng, `transferRef`; còn bù trừ, nợ, rút cọc, sao kê) |
+| PLAN-0031 | 07 | Giao hàng có bằng chứng & chống gian lận | P0 | 2 | ⏳ |
+| PLAN-0032 | 08 | Checkout chặt & rủi ro COD khách | P1 | 2 | ⏳ |
+| PLAN-0033 | 09 | Đổi trả đợt 2 | P1 | 3 | ⏳ |
+| PLAN-0034 | 10 | Đối chiếu tiền hằng ngày & báo cáo kế toán | P0 | 3 | ⏳ |
+| PLAN-0035 | 11 | Thuế, hoá đơn & pháp lý | — | — | Ngoài phạm vi (dự án demo) |
+| PLAN-0036 | 12 | Dữ liệu cá nhân & lưu trữ | — | — | Ngoài phạm vi (dự án demo) |
+| PLAN-0037 | 13 | Test end-to-end bằng tiền thật (thu – chi) + UAT theo vai | P0 | 4 | ⏳ |
+| PLAN-0038 | 14 | Một QR cho cả nhóm đơn | P2 | 5 | Draft |
+| PLAN-0039 | 15 | Tích hợp hãng vận chuyển | P2 | 5 | Draft |
+| **PLAN-0040** | — | **Plan bàn giao một phiên: hoàn tất phần còn lại sau audit E2E** (thu tiền vào · chi trả · xử lý đơn · thông báo · AUD-03 còn lại · API sync + FE · triển khai) | P0 | 1–4 | Ready |
 
 Sau mỗi plan: seed idempotent (kèm ảnh nếu module có ảnh) + docker compose dựng được trên máy trống + docs/DBML cập nhật.
 

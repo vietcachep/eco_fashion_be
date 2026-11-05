@@ -13,7 +13,7 @@ import { ListUsersQuery } from './user/request/user.requests';
  */
 describe('identity — catalog quyền', () => {
   it('mã quyền dạng module.resource.action, không trùng, module hợp lệ', () => {
-    const modules = new Set(['identity', 'catalog', 'product', 'order', 'payment', 'promotion', 'review', 'system', 'reporting', 'ai', 'supplier', 'shop']);
+    const modules = new Set(['identity', 'catalog', 'product', 'order', 'payment', 'promotion', 'review', 'system', 'reporting', 'ai', 'supplier', 'shop', 'shipping']);
     const seen = new Set<string>();
     for (const d of PERMISSION_CATALOG) {
       expect(d.code).toMatch(/^[a-z]+(\.[a-z_]+){2,3}$/);

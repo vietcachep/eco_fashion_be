@@ -5,6 +5,7 @@ import { BannerService } from './banner/service/banner.service';
 import { ContentService } from './content/service/content.service';
 import { HealthController } from './health/controller/health.controller';
 import { HealthService } from './health/service/health.service';
+import { WorkerHeartbeatService } from './health/service/worker-heartbeat.service';
 import { NotificationService } from './notification/service/notification.service';
 import { ProvinceService } from './province/service/province.service';
 import { SystemQueryApi } from './queryapi/system.queryapi';
@@ -23,6 +24,7 @@ import { ShopContactsController } from './content/controller/shop-contacts.contr
   controllers: [HealthController, SystemPublicController, NotificationController, AdminSystemController, UploadController, ShopContactsController],
   providers: [
     HealthService,
+    WorkerHeartbeatService, // PLAN-0040 tầng 4 (AUD-12a): API đọc, WorkerHeartbeatJob (SystemWorkerModule) ghi
     SystemAuditLogService,
     SettingService,
     ProvinceService,
@@ -32,6 +34,6 @@ import { ShopContactsController } from './content/controller/shop-contacts.contr
     SystemQueryApi,
     { provide: NOTIFICATION_GATEWAY, useExisting: NotificationService },
   ],
-  exports: [SystemQueryApi, NOTIFICATION_GATEWAY, NotificationService],
+  exports: [SystemQueryApi, NOTIFICATION_GATEWAY, NotificationService, WorkerHeartbeatService],
 })
 export class SystemModule {}

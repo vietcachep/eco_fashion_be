@@ -1,6 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AddressResponse {
+  @ApiPropertyOptional() addressSystem?: string;
+  @ApiPropertyOptional({ type: Number, nullable: true }) ghnProvinceId?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) ghnDistrictId?: number | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) ghnWardCode?: string | null;
   @ApiProperty() id: string;
   @ApiProperty({ example: 'Nguyễn Văn An' }) recipientName: string;
   @ApiProperty({ example: '0901234567' }) phone: string;

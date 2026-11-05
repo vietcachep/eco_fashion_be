@@ -26,6 +26,7 @@ import { RequestTraceContext } from '../request/request-trace.context';
               'req.headers.authorization',
               'req.headers.cookie',
               '*.password',
+              '*.currentPassword', // xác thực lại mật khẩu khi đổi TK ngân hàng shop (AUD-03)
               '*.refreshToken',
               '*.accessToken',
               '*.otp',

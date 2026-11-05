@@ -5,6 +5,7 @@ import type { Prisma } from '../../../../generated/prisma/client';
 
 export const ADDRESS_SELECT = {
   id: true,
+  addressSystem:true, ghnProvinceId:true, ghnDistrictId:true, ghnWardCode:true,
   userId: true,
   recipientName: true,
   phone: true,

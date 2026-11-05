@@ -6,6 +6,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { ENV } from '@config/config.module';
 import type { Env } from '@config/env';
 import { BusinessException, ConflictException, ForbiddenException, ServiceUnavailableException, UnauthorizedException } from '@common/exception/business.exception';
+import { escapeHtml } from '@common/mail/escape-html';
 import { MailService } from '@common/mail/mail.service';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { REDIS } from '@common/redis/redis.module';
@@ -122,7 +123,7 @@ export class AuthService {
     await this.mail.enqueue({
       to: email,
       subject: `${this.env.EF_APP_NAME} — Mã xác nhận đăng ký tài khoản`,
-      html: `<p>Chào mừng bạn đến với <b>${this.env.EF_APP_NAME}</b>!</p><p>Mã xác nhận OTP đăng ký của bạn là: <b style="font-size:24px;letter-spacing:4px;color:#000;">${otp}</b></p><p>Mã có hiệu lực trong vòng 10 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>`,
+      html: `<p>Chào mừng bạn đến với <b>${escapeHtml(this.env.EF_APP_NAME)}</b>!</p><p>Mã xác nhận OTP đăng ký của bạn là: <b style="font-size:24px;letter-spacing:4px;color:#000;">${otp}</b></p><p>Mã có hiệu lực trong vòng 10 phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.</p>`,
     });
     this.logger.log({ email }, 'Đã gửi OTP đăng ký tài khoản');
   }

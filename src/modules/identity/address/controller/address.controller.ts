@@ -43,6 +43,7 @@ export class AddressController {
         wardName: body.wardName ?? null,
         street: body.street.trim(),
         note: body.note ?? null,
+        addressSystem: body.addressSystem, ghnProvinceId: body.ghnProvinceId, ghnDistrictId: body.ghnDistrictId, ghnWardCode: body.ghnWardCode,
       },
       body.isDefault === true,
     );

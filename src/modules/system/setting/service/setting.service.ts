@@ -67,6 +67,10 @@ export class SettingService {
     if (!def) throw new NotFoundException(SYSTEM_ERR.SETTING_NOT_FOUND, `Không có tham số '${key}'`);
     if (typeof value !== typeof def.value) throw new BusinessException('COMMON_VALIDATION_ERROR', `Tham số '${key}' phải là ${typeof def.value}`);
     if (typeof value === 'number' && (!Number.isFinite(value) || value < 0)) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Giá trị phải là số không âm');
+    // Khoảng cho phép theo khoá (vd hạn chót đổi trả ≥ 1): giá trị 0/quá lớn sẽ tạo ngày sai hoặc chuyển bước ngay.
+    if (typeof value === 'number' && ((def.min !== undefined && value < def.min) || (def.max !== undefined && value > def.max))) {
+      throw new BusinessException('COMMON_VALIDATION_ERROR', `Tham số '${key}' phải từ ${def.min ?? 0} đến ${def.max ?? 'không giới hạn'}`);
+    }
     const before = await this.get(key);
     const json = JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
     const saved = await this.prisma.$transaction(async (tx) => {

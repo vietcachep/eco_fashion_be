@@ -845,7 +845,11 @@ async function writeGroup(prisma: PrismaClient, g: GroupPlan, w: WriteCtx): Prom
       const l0 = c.lines[0];
       const processed = ret.processedAt !== null;
       returns.push({
-        id: returnId, orderId, orderCode: c.code, userId, status: ret.state, reason: ret.reason, detail: ret.detail, rejectReason: ret.rejectReason,
+        // PLAN-0022: kiểu cũ "approved" của seed = đã nhập kho + đã yêu cầu hoàn tiền ⇒ "received" (hàng đã về shop, chờ payment báo xong).
+        id: returnId, orderId, orderCode: c.code, userId, shopId: c.shop.id, status: ret.state === 'approved' ? 'received' : ret.state, reasonCode: 'size_issue', reason: ret.reason, detail: ret.detail, rejectReason: ret.rejectReason,
+        rejectedBy: ret.state === 'rejected' ? (c.shop.id === FITLY_OFFICIAL_SHOP_ID ? 'platform' : 'shop') : null,
+        receivedAt: ret.state === 'approved' || ret.state === 'refunded' ? dtOrNull(ret.processedAt) : null, receivedCondition: ret.state === 'approved' || ret.state === 'refunded' ? 'ok' : null,
+        shopRespondDueAt: ret.state === 'requested' ? new Date(dt(ret.requestedAt).getTime() + 72 * 3_600_000) : null,
         refundAmount: c.refundAmount.toString(), evidence: [{ type: 'image', url: l0.imageUrl ?? '', name: 'anh-san-pham.jpg' }] as Prisma.InputJsonValue,
         processedBy: processed ? retActor : null, processedAt: dtOrNull(ret.processedAt), refundedAt: dtOrNull(ret.refundedAt), createdAt: dt(ret.requestedAt), updatedAt: dt(ret.refundedAt ?? ret.processedAt ?? ret.requestedAt),
       });

@@ -38,12 +38,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let code = 'COMMON_INTERNAL_ERROR';
     let message = 'Lỗi hệ thống, vui lòng thử lại sau';
     let details: Record<string, string> = {};
+    let data: unknown = null;
 
     if (exception instanceof BusinessException) {
       status = exception.httpStatus;
       code = exception.errorCode;
       message = exception.message;
       details = exception.details;
+      data = exception.data;
     } else if (exception instanceof BadRequestException) {
       status = HttpStatus.BAD_REQUEST;
       code = 'COMMON_VALIDATION_ERROR';
@@ -84,7 +86,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.logger.warn({ requestId, path, code, status }, message);
     }
 
-    res.status(status).json(ApiResponse.failed(message, ApiError.of(code, path, details), requestId));
+    res.status(status).json(ApiResponse.failed<unknown>(message, ApiError.of(code, path, details), requestId, data));
   }
 
   private codeOfStatus(status: number): string {

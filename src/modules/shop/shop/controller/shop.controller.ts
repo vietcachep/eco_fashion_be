@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swa
 import { ApiResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor } from '@common/security/decorators';
+import { RateLimit } from '@common/security/rate-limit.guard';
 import { AllowAnyShopStatus, CurrentShop, RequireShopPermission, ShopContext } from '../../security/shop-permission.decorator';
 import { ShopContextGuard } from '../../security/shop-context.guard';
 import { ShopResponse, ShopSessionResponse } from '../dto/shop.responses';
@@ -40,6 +41,7 @@ export class ShopController {
 
   @Patch('me')
   @RequireShopPermission('shop.profile.update')
+  @RateLimit({ name: 'shop-profile-update', limit: 10, windowSeconds: 600, by: 'user' }) // đổi TK ngân hàng đòi mật khẩu ⇒ chặn dò mật khẩu bằng token bị chiếm
   @ApiOperation({ summary: 'Sửa hồ sơ gian hàng của tôi (không đổi được mã/slug/trạng thái/hoa hồng — sàn quản)' })
   @ApiOkResponse({ type: ShopResponse })
   async updateMe(@CurrentActor() actor: AuthenticatedActor, @CurrentShop() shop: ShopContext, @Body() body: UpdateShopProfileRequest): Promise<ApiResponse<ShopResponse>> {

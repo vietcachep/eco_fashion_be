@@ -60,11 +60,12 @@ export class ApiResponse<T> {
     return r;
   }
 
-  static failed<T = never>(message: string, error: ApiError, requestId?: string): ApiResponse<T> {
+  /* `data` chỉ dành cho vài lỗi cần trả kèm dữ liệu có cấu trúc (xem BusinessException.data); mặc định null như mọi lỗi khác. */
+  static failed<T = never>(message: string, error: ApiError, requestId?: string, data?: T): ApiResponse<T> {
     const r = new ApiResponse<T>();
     r.success = false;
     r.message = message;
-    r.data = null;
+    r.data = data ?? null;
     r.error = error;
     r.requestId = requestId ?? RequestTraceContext.currentRequestId();
     r.timestamp = new Date().toISOString();

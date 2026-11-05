@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsIn, Min, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import { PHONE_VN } from '../../auth/request/auth.requests';
 
 /*
@@ -7,6 +7,11 @@ import { PHONE_VN } from '../../auth/request/auth.requests';
  * để địa chỉ cũ không đổi khi danh mục đổi tên.
  */
 export class CreateAddressRequest {
+  @ApiPropertyOptional({ enum: ['legacy_3level'] }) @IsOptional() @IsIn(['legacy_3level']) addressSystem?: 'legacy_3level';
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @IsInt() @Min(1) ghnProvinceId?: number;
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @IsInt() @Min(1) ghnDistrictId?: number;
+  @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @Length(1, 20) ghnWardCode?: string;
+
   @ApiProperty({ example: 'Nguyễn Văn An' })
   @IsString()
   @Length(2, 120)
@@ -57,6 +62,11 @@ export class CreateAddressRequest {
 }
 
 export class UpdateAddressRequest {
+  @ApiPropertyOptional({ enum: ['legacy_3level'] }) @IsOptional() @IsIn(['legacy_3level']) addressSystem?: 'legacy_3level';
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @IsInt() @Min(1) ghnProvinceId?: number;
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @IsInt() @Min(1) ghnDistrictId?: number;
+  @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @Length(1, 20) ghnWardCode?: string;
+
   @ApiPropertyOptional() @IsOptional() @IsString() @Length(2, 120) recipientName?: string;
   @ApiPropertyOptional() @IsOptional() @Matches(PHONE_VN, { message: 'Số điện thoại Việt Nam không hợp lệ' }) phone?: string;
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsString() @Length(1, 10) provinceCode?: string | null;

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CacheService } from '@common/cache/cache.service';
 import { BusinessException, ForbiddenException, NotFoundException } from '@common/exception/business.exception';
+import { escapeHtml, escapeHtmlMultiline } from '@common/mail/escape-html';
 import { MailService } from '@common/mail/mail.service';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { RequestTraceContext } from '@common/request/request-trace.context';
@@ -166,7 +167,7 @@ export class ContentService {
       await this.audit.write(tx, actor, { action: SYSTEM_AUDIT.CONTACT_HANDLED, entityType: 'contact_message', entityId: id, entityCode: c.email, after: { replyLength: reply.length, shopId: c.shopId } });
       return r;
     });
-    await this.mail.enqueue({ to: c.email, subject: `${brand} — Phản hồi liên hệ của bạn`, html: `<p>Xin chào ${c.name},</p><p>${reply.replace(/\n/g, '<br>')}</p><p>— ${brand}</p>` });
+    await this.mail.enqueue({ to: c.email, subject: `${brand} — Phản hồi liên hệ của bạn`, html: `<p>Xin chào ${escapeHtml(c.name)},</p><p>${escapeHtmlMultiline(reply)}</p><p>— ${escapeHtml(brand)}</p>` }); // escape: tên khách / phản hồi của nhân viên / tên shop đều là chuỗi người dùng nhập (AUD-11c)
     return ContentService.toContact(after, c.shopId ? brand : undefined);
   }
 

@@ -28,6 +28,13 @@ export const SHOP_ERR = {
   LAST_OWNER: 'SHOP_LAST_OWNER',
   /* Tài khoản ngân hàng gửi thiếu trường: lần đầu khai phải đủ 3 trường; đổi số tài khoản/BIN phải gửi lại tên chủ TK. */
   BANK_FIELD_INCOMPLETE: 'SHOP_BANK_FIELD_INCOMPLETE',
+  /* AUD-03: đổi tài khoản ngân hàng nhận tiền PHẢI nhập lại mật khẩu của người đang thao tác (thiếu hoặc sai ⇒ 400; KHÔNG dùng 401/403 vì FE hiểu là hết phiên/thiếu quyền). */
+  BANK_PASSWORD_REQUIRED: 'SHOP_BANK_PASSWORD_REQUIRED',
+  BANK_PASSWORD_INVALID: 'SHOP_BANK_PASSWORD_INVALID',
+  /* PLAN-0040 5.2 — quản lý sàn xác minh TK: 409 khi TK không còn ở trạng thái chờ xác minh (đã xác minh / vừa được chủ shop đổi sang TK khớp tên). */
+  BANK_NOT_PENDING: 'SHOP_BANK_NOT_PENDING',
+  /* 409 khi quản lý xác minh đúng TK họ đang xem nhưng chủ shop vừa đổi sang TK khác (chống xác minh nhầm TK mới đổi). */
+  BANK_CHANGED_SINCE: 'SHOP_BANK_CHANGED_SINCE',
   /* PLAN-0019 — người bán tự đăng ký gian hàng (POST /shop/registrations). */
   /* 409: người nộp đã có một shop đang chờ duyệt. */
   REGISTRATION_PENDING: 'SHOP_REGISTRATION_PENDING',
@@ -53,6 +60,8 @@ export const SHOP_AUDIT = {
   COMMISSION_UPDATED: 'SHOP_COMMISSION_UPDATED',
   PROFILE_UPDATED: 'SHOP_PROFILE_UPDATED',
   BANK_UPDATED: 'SHOP_BANK_UPDATED',
+  /* PLAN-0040 5.2 — quản lý sàn xác minh TK ngân hàng (tên chủ TK lệch tên chủ shop). */
+  BANK_VERIFIED: 'SHOP_BANK_VERIFIED',
   /* Chủ shop tạo tài khoản + thêm nhân viên vào shop (POST /shop/members). Dòng audit cũ của luồng lời mời (SHOP_INVITATION_*) vẫn còn trong DB. */
   MEMBER_ADDED: 'SHOP_MEMBER_ADDED',
   MEMBER_UPDATED: 'SHOP_MEMBER_UPDATED',
@@ -70,6 +79,15 @@ export const SHOP_STATUS = { PENDING: 'pending', APPROVED: 'approved', SUSPENDED
 export type ShopStatus = (typeof SHOP_STATUS)[keyof typeof SHOP_STATUS];
 
 export const SHOP_MEMBER_STATUS = { ACTIVE: 'active', REMOVED: 'removed' } as const;
+
+/*
+ * Trạng thái xác minh tài khoản ngân hàng nhận tiền (PLAN-0040 5.2): `verified` = tên chủ TK khớp tên chủ shop (so sau khi bỏ dấu/IN HOA/gộp khoảng trắng) hoặc quản lý sàn đã xác minh;
+ * `pending_verification` = tên lệch ⇒ kỳ chi của shop `held` cho tới khi quản lý xác minh (`POST /admin/shops/:id/bank/verify`). Khớp cột CHECK `chk_shops_bank_status`.
+ */
+export const SHOP_BANK_STATUS = { VERIFIED: 'verified', PENDING: 'pending_verification' } as const;
+
+/* Số giờ giữ chi trả sau đổi TK khi KHÔNG đọc được setting `payout.bank_change_hold_hours` — PHẢI khớp mặc định ở system/foundation/system.constants.ts (72); khai lặp vì shop không import system.constants. */
+export const DEFAULT_BANK_CHANGE_HOLD_HOURS = 72;
 
 /*
  * Trần số thành viên ĐANG HOẠT ĐỘNG của MỘT gian hàng. Chủ shop tự tạo tài khoản nhân viên nên cần chặn việc "đẻ" tài khoản hàng loạt
@@ -101,6 +119,7 @@ export const SHOP_ASSIGNABLE_PERMISSIONS: readonly string[] = [
   'shop.product.manage',
   'shop.order.read',
   'shop.order.update',
+  'shop.order.cancel', // PLAN-0027
   'shop.inventory.read',
   'shop.inventory.manage',
   'shop.promotion.read',
@@ -110,6 +129,9 @@ export const SHOP_ASSIGNABLE_PERMISSIONS: readonly string[] = [
   'shop.review.reply',
   'shop.contact.read',
   'shop.contact.reply',
+  // PLAN-0022 — đổi trả: shop là bên duyệt / từ chối / xác nhận nhận lại hàng; chủ shop giao từng người.
+  'shop.return.read',
+  'shop.return.process',
 ];
 
 /* Quyền hiệu lực của một thành viên: chủ = đủ quyền của vai; nhân viên = quyền riêng chủ đã đặt (lọc trong phạm vi được giao), chưa đặt thì preset của vai. */

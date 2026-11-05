@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import type { ModuleRef } from '@nestjs/core';
 import { NotFoundException } from '@common/exception/business.exception';
 import type { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma } from '@common/prisma/types';
@@ -20,6 +21,9 @@ const actor: AuthenticatedActor = { userId: 'staff-1', email: 'staff@fitly.vn', 
 
 function shopRow(id: string, ownerUserId: string, overrides: Partial<ShopRow> = {}): ShopRow {
   return {
+    shippingCarrierEnabled: false,
+    shippingPickup: null,
+    shippingReturn: null,
     id,
     code: `SHOP-${id}`,
     slug: `shop-${id}`,
@@ -32,6 +36,8 @@ function shopRow(id: string, ownerUserId: string, overrides: Partial<ShopRow> = 
     bankCode: '970436',
     bankAccountNumber: '123456789012',
     bankAccountName: 'NGUYEN VAN A',
+    bankStatus: 'verified',
+    bankVerifiedAt: null,
     ratingAvg: null,
     totalProducts: 0,
     ownerUserId,
@@ -69,7 +75,9 @@ function build(opts: { shops: ShopRow[]; users: UserBrief[] }) {
 
   // Shop seed/admin tạo không có hồ sơ đăng ký (PLAN-0019): prepareStatusChange trả null ⇒ changeStatus giữ hành vi cũ.
   const registrations = { prepareStatusChange: () => Promise.resolve(null), recordDecision: () => Promise.resolve() };
-  const service = new ShopService(prisma as unknown as PrismaService, repo as unknown as ShopRepository, audit as unknown as ShopAuditLogService, outbox as unknown as ShopOutboxService, identity as unknown as IdentityQueryApi, registrations as unknown as ShopRegistrationService);
+  // SystemQueryApi lấy lười qua ModuleRef (số giờ giữ chi trả sau đổi TK) — giả trả 72 như mặc định.
+  const moduleRef = { get: () => ({ settingNumber: () => Promise.resolve(72) }) };
+  const service = new ShopService(prisma as unknown as PrismaService, repo as unknown as ShopRepository, audit as unknown as ShopAuditLogService, outbox as unknown as ShopOutboxService, identity as unknown as IdentityQueryApi, registrations as unknown as ShopRegistrationService, moduleRef as unknown as ModuleRef);
   return { service, repo, identity };
 }
 

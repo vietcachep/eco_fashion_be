@@ -184,6 +184,11 @@ Sau khi đổi API chạy `npm run api:sync` ở hai repo FE (Orval sinh lại t
 | PLAN-0016 | Sàn đa ngành hàng: `attributeMode`, thuộc tính động, mẫu thuộc tính theo ngành, biến thể ≤ 2 trục | BE ✅; FE còn việc (xem plan) |
 | PLAN-0017 | Hoàn thiện sàn: vendor tự vận hành, PayOS/đối soát, trang gian hàng, AI tìm bằng ảnh, hardening, seed dày (18 shop · ~48 ngành lá · ~930 ảnh minh hoạ) | In progress — BE xong; FE/QA/review + "Việc còn lại / giới hạn đã biết" ở plan §12 |
 | PLAN-0018 | Sàn thu MỌI khoản tiền (PayOS + COD), tự động trừ hoa hồng + chi trả shop (cron); bỏ VNPay, chuyển khoản tay, ví quỹ COD, `Shop.codEnabled`; 79 mã quyền | In progress |
+| PLAN-0041 | Nạp cọc COD qua PayOS (ví đặt cọc của gian hàng) | In progress — xem plan §14 |
 
 Việc còn dang dở và giới hạn đã biết của đợt marketplace nằm ở `docs/plans/PLAN-0017-marketplace-completion.md` §12 (vd: chữ ký `x-signature` của PayOS "Lệnh chi" chưa xác nhận với tài liệu —
 thử sandbox/khoá thật một kỳ nhỏ trước khi bật chi tự động hàng loạt).
+
+## PLAN-0043 — vận chuyển GHN (đang kiểm E2E)
+
+Đã thêm schema/module shipping, báo phí theo shop và snapshot tuyến, tạo vận đơn/nhãn, inbox+worker, FakeCarrier DB, remittance COD và màn khách/vendor/sàn. Đơn cũ tự giao giữ nguyên luật. Migration 20261105090000_shipping_ghn đã kiểm trên DB cô lập (drift=0). Kết quả cuối ghi docs/13; chưa nghiệm thu staging GHN/tiền thật khi chưa có credential.

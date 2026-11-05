@@ -109,6 +109,11 @@ Table identity.login_histories {
 }
 
 Table identity.addresses {
+  // PLAN-0043 — snapshot vận chuyển, không FK xuyên module
+  address_system varchar(30)
+  ghn_province_id int
+  ghn_district_id int
+  ghn_ward_code varchar(20)
   id uuid [pk]
   user_id uuid
   recipient_name varchar(120)
@@ -189,6 +194,10 @@ Ref: identity.addresses.user_id > identity.users.id
 // được migration 20260929084707 tạo sẵn để backfill dữ liệu cũ; owner_user_id của nó là UUID giữ chỗ cùng giá trị, không phải user thật.
 
 Table shop.shops {
+  // PLAN-0043 — snapshot vận chuyển, không FK xuyên module
+  shipping_carrier_enabled boolean [default: false]
+  shipping_pickup jsonb
+  shipping_return jsonb
   id uuid [pk, default: `gen_random_uuid()`]
   code varchar(20) [unique, not null]
   slug varchar(160) [unique, not null]
@@ -451,6 +460,11 @@ Table product.products {
 }
 
 Table product.product_variants {
+  // PLAN-0043 — snapshot vận chuyển, không FK xuyên module
+  weight_gram int
+  length_cm int
+  width_cm int
+  height_cm int
   id uuid [pk]
   product_id uuid
   shop_id uuid [not null, note: 'PLAN-0014 bước 5: đồng bộ products.shop_id (backfill qua JOIN)']
@@ -859,6 +873,13 @@ Table order.order_group_sequences {
 }
 
 Table order.orders {
+  // PLAN-0043 — snapshot vận chuyển, không FK xuyên module
+  fulfilment_mode varchar(20) [default: 'self']
+  collection_mode varchar(30)
+  shipping_provider varchar(20)
+  shipping_environment varchar(30)
+  shipping_quote_id uuid
+  shipping_snapshot jsonb
   id uuid [pk, default: `gen_random_uuid()`]
   code varchar(30) [unique, not null]
   user_id uuid [not null]
@@ -1052,6 +1073,13 @@ Table payment.payment_methods {
 }
 
 Table payment.payments {
+  // PLAN-0043 — snapshot vận chuyển, không FK xuyên module
+  collection_mode varchar(30)
+  cod_collected_at timestamptz
+  cod_remitted_at timestamptz
+  cod_remitted_by uuid
+  cod_remittance_ref varchar(100) [unique]
+  cod_remitted_amount numeric(14,0)
   id uuid [pk, default: `gen_random_uuid()`]
   order_id uuid [not null, note: 'id đơn CON (order.orders.id, không FK xuyên schema) — payment gắn từng đơn con, KHÔNG gắn order_groups; mỗi đơn con thanh toán/hoàn tiền riêng']
   order_code varchar(30) [not null]
@@ -1497,3 +1525,116 @@ Table ai.processed_events {
 
 Ref: ai.document_chunks.document_id > ai.documents.id
 Ref: ai.chat_messages.session_id > ai.chat_sessions.id
+
+
+// ===================================================== shipping (PLAN-0043)
+Table shipping.shipping_quotes {
+  id uuid [pk]
+  version int [not null]
+  created_at timestamptz [not null]
+  created_by uuid
+  updated_at timestamptz [not null]
+  updated_by uuid
+  is_deleted boolean [not null]
+  user_id uuid [not null]
+  shop_id uuid [not null]
+  provider varchar(20) [not null]
+  environment varchar(30) [not null]
+  fingerprint varchar(64) [not null]
+  snapshot jsonb [not null]
+  shipping_fee numeric(14,0) [not null]
+  fee_source varchar(20) [not null]
+  expires_at timestamptz [not null]
+}
+
+Table shipping.shipments {
+  id uuid [pk]
+  version int [not null]
+  created_at timestamptz [not null]
+  created_by uuid
+  updated_at timestamptz [not null]
+  updated_by uuid
+  is_deleted boolean [not null]
+  order_id uuid [not null]
+  order_code varchar(30) [not null]
+  shop_id uuid [not null]
+  attempt_no int [not null]
+  provider varchar(20) [not null]
+  environment varchar(30) [not null]
+  account_scope varchar(50) [not null]
+  client_order_code varchar(50) [not null]
+  carrier_order_code varchar(60)
+  active boolean [not null]
+  create_status varchar(20) [not null]
+  cancel_status varchar(20) [not null]
+  status varchar(30)
+  raw_status varchar(50)
+  snapshot jsonb [not null]
+  quoted_fee numeric(14,0) [not null]
+  actual_fee numeric(14,0)
+  cod_amount numeric(14,0) [not null]
+  expected_delivery_at timestamptz
+  picked_up_at timestamptz
+  delivered_at timestamptz
+  last_event_at timestamptz
+  delivery_attempts int [not null]
+  tracking_url varchar(500)
+  lease_token uuid
+  lease_until timestamptz
+  retry_at timestamptz
+  last_error varchar(1000)
+  indexes {
+    (order_id, attempt_no) [unique]
+    (provider, environment, account_scope, client_order_code) [unique]
+    (provider, environment, account_scope, carrier_order_code) [unique]
+  }
+  Note: 'Partial unique order_id WHERE active=true; SQL migration là nguồn sự thật cho CHECK/partial index.'
+}
+
+Table shipping.shipment_events {
+  id uuid [pk]
+  version int [not null]
+  created_at timestamptz [not null]
+  created_by uuid
+  updated_at timestamptz [not null]
+  updated_by uuid
+  is_deleted boolean [not null]
+  dedup_key varchar(64) [not null, unique]
+  shipment_id uuid
+  provider varchar(20) [not null]
+  environment varchar(30) [not null]
+  carrier_order_code varchar(60)
+  client_order_code varchar(50)
+  raw_status varchar(50) [not null]
+  event_time timestamptz [not null]
+  payload jsonb [not null]
+  source varchar(20) [not null]
+  status varchar(20) [not null]
+  retry_at timestamptz
+  retry_count int [not null]
+  last_error varchar(1000)
+  processed_at timestamptz
+  lease_token uuid
+  lease_until timestamptz
+}
+
+Table shipping.fake_carrier_states {
+  id uuid [pk]
+  version int [not null]
+  created_at timestamptz [not null]
+  created_by uuid
+  updated_at timestamptz [not null]
+  updated_by uuid
+  is_deleted boolean [not null]
+  client_order_code varchar(50) [not null, unique]
+  carrier_order_code varchar(60) [not null, unique]
+  raw_status varchar(50) [not null]
+  revision int [not null]
+  delivery_attempts int [not null]
+  fee numeric(14,0) [not null]
+  cod_amount numeric(14,0) [not null]
+  event_time timestamptz [not null]
+  snapshot jsonb [not null]
+}
+
+Ref: shipping.shipment_events.shipment_id > shipping.shipments.id

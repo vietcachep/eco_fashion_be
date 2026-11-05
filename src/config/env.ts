@@ -26,6 +26,8 @@ export const envSchema = z.object({
   EF_API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
   /* URL web bán hàng — PayOS redirect về, link trong email */
   EF_WEB_URL: z.string().url().default('http://localhost:3000'),
+  /* URL web quản trị — PayOS redirect chủ shop về sau khi nạp cọc (PLAN-0041). Thiếu/sai ở production ⇒ tính năng nạp trả 503, app vẫn chạy. */
+  EF_ADMIN_URL: z.string().url().default('http://localhost:3001'),
   EF_API_PREFIX: z.string().default('api/v1'),
   EF_SWAGGER_ENABLED: boolean,
   EF_CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001,http://localhost:3100'),

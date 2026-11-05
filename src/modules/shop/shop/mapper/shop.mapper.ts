@@ -1,4 +1,4 @@
-import { SHOP_STATUS_LABEL } from '../../foundation/shop.constants';
+import { DEFAULT_BANK_CHANGE_HOLD_HOURS, SHOP_STATUS_LABEL } from '../../foundation/shop.constants';
 import type { ShopRow } from '../repository/shop.repository';
 import { ShopResponse, AdminShopResponse, AdminShopSummaryResponse } from '../dto/shop.responses';
 
@@ -16,10 +16,14 @@ function maskBankAccountNumber(accountNumber: string | null | undefined): string
   return masked;
 }
 
-/* Response vendor / web bán hàng: whitelist riêng, KHÔNG có tên/email chủ shop. */
-export function toShopResponse(s: ShopRow): ShopResponse {
+/*
+ * Response vendor / web bán hàng: whitelist riêng, KHÔNG có tên/email chủ shop.
+ * `bankChangeHoldHours` = setting `payout.bank_change_hold_hours` do service đọc MỘT lần cho cả response/trang (mapper thuần, không tự gọi system) — FE hiển thị đúng con số thật.
+ */
+export function toShopResponse(s: ShopRow, bankChangeHoldHours: number = DEFAULT_BANK_CHANGE_HOLD_HOURS): ShopResponse {
   return {
     id: s.id,
+    shippingCarrierEnabled: s.shippingCarrierEnabled, shippingPickup: s.shippingPickup as unknown as import('../request/shop.requests').ShopShippingAddressRequest | null, shippingReturn: s.shippingReturn as unknown as import('../request/shop.requests').ShopShippingAddressRequest | null,
     code: s.code,
     slug: s.slug,
     name: s.name,
@@ -32,6 +36,9 @@ export function toShopResponse(s: ShopRow): ShopResponse {
     bankCode: s.bankCode ?? null,
     bankAccountName: s.bankAccountName ?? null,
     bankAccountNumberMasked: maskBankAccountNumber(s.bankAccountNumber),
+    bankStatus: s.bankStatus,
+    bankVerifiedAt: s.bankVerifiedAt?.toISOString() ?? null,
+    bankChangeHoldHours,
     ratingAvg: s.ratingAvg?.toString() ?? null,
     totalProducts: s.totalProducts,
     ownerUserId: s.ownerUserId,
@@ -41,18 +48,18 @@ export function toShopResponse(s: ShopRow): ShopResponse {
 }
 
 /* Response cho nhân viên sàn ở danh sách + thao tác: thêm chủ shop, số tài khoản vẫn che. */
-export function toAdminShopSummaryResponse(s: ShopRow, owner?: ShopOwnerBrief | null): AdminShopSummaryResponse {
+export function toAdminShopSummaryResponse(s: ShopRow, owner?: ShopOwnerBrief | null, bankChangeHoldHours?: number): AdminShopSummaryResponse {
   return {
-    ...toShopResponse(s),
+    ...toShopResponse(s, bankChangeHoldHours),
     ownerName: owner?.fullName ?? null,
     ownerEmail: owner?.email ?? null,
   };
 }
 
 /* Response chi tiết cho admin — trả full số tài khoản */
-export function toAdminShopResponse(s: ShopRow, owner?: ShopOwnerBrief | null): AdminShopResponse {
+export function toAdminShopResponse(s: ShopRow, owner?: ShopOwnerBrief | null, bankChangeHoldHours?: number): AdminShopResponse {
   return {
-    ...toAdminShopSummaryResponse(s, owner),
+    ...toAdminShopSummaryResponse(s, owner, bankChangeHoldHours),
     bankAccountNumber: s.bankAccountNumber ?? null,
   };
 }

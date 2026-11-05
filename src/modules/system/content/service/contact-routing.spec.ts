@@ -70,4 +70,14 @@ describe('liên hệ khách: gửi sàn / gửi shop', () => {
     const platform = build({ shopId: null });
     await expect(platform.service.replyContact(actor, 'c1', 'Thử trả lời tin gửi sàn', SHOP)).rejects.toMatchObject({ errorCode: SYSTEM_ERR.CONTACT_NOT_FOUND });
   });
+
+  it('[NTF-04] email phản hồi liên hệ: tên khách + nội dung trả lời được escape, xuống dòng → <br> duy nhất', async () => {
+    const { service, mail } = build({ shopId: null, name: '<script>alert(1)</script>' } as never);
+    await service.replyContact(actor, 'c1', 'Chào anh\n<img src=x onerror="alert(1)">&bạn');
+    const html = (mail.enqueue.mock.calls as unknown as Array<[{ html: string }]>)[0][0].html;
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).toContain('Chào anh<br>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;bạn');
+  });
 });

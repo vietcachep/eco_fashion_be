@@ -23,6 +23,7 @@ const STEPS: SeedStep[] = [
   { name: 'system', describe: 'tham số vận hành, 63 tỉnh/thành + phí ship, banner, FAQ, trang chính sách, tin nhắn liên hệ', load: () => import('./system.seed') },
   { name: 'catalog', describe: '7 ngành hàng thời trang + 4 bộ sưu tập (kèm ảnh) + thuộc tính màu/size/chất liệu', load: () => import('./catalog.seed') },
   { name: 'marketplace', describe: '12 ngành hàng gốc ngoài thời trang (~48 ngành lá) + thuộc tính động + 18 gian hàng (chủ/nhân viên) + ~340 sản phẩm có biến thể/ảnh + tồn kho (PLAN-0016/0017)', load: () => import('./marketplace.seed') },
+  { name: 'shipping', describe: 'điểm lấy demo khi chọn hãng fake; không tạo dữ liệu vận đơn/tiền', load: () => import('./shipping.seed') },
   { name: 'payment', describe: '2 phương thức thanh toán (cod · payos — payos tự tắt khi chưa có khoá)', load: () => import('./payment.seed') },
   { name: 'promotion', describe: '5 mã khuyến mãi sàn đủ loại (freeship, %, số tiền, theo ngành, hết hạn)', load: () => import('./promotion.seed') },
   { name: 'promotion-marketplace', describe: 'mã giảm giá sàn theo ngành + mã riêng của từng gian hàng (voucher shop)', load: () => import('./promotion-marketplace.seed') },

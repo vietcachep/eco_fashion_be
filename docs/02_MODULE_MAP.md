@@ -185,6 +185,11 @@ payment                               schema payment · PaymentModule import Sho
 │                    (chia theo tỉ lệ luỹ kế), nợ mang sang. net>0 ⇒ chi PayOS tự động (nếu có khoá chi + TK ngân hàng shop, trừ 24 giờ giữ chi trả sau khi shop đổi TK) hoặc `pending` cho kế toán `mark-paid`;
 │                    net=0 ⇒ `settled`; net<0 ⇒ `carried` (không chi, nợ sang kỳ sau). UNIQUE(shopId, kỳ) + UNIQUE(orderCode, kind) ⇒ chạy lại không trùng; gọi PayOS NGOÀI transaction; gọi PayOS thành công ⇒ kỳ ở `processing` (CHƯA có webhook payout nên không tự thành `paid` — kế toán đối chiếu rồi `mark-paid`; `processing` treo > 10 phút được `retry`)
 │                    /admin/payouts[/:id[/retry|mark-paid]] · /admin/payouts/run · /admin/payouts/payos-balance · /shop/payouts[/:id] — **cron tự động** (ShopPayoutCron trong worker, 02:00 Asia/Ho_Chi_Minh, kỳ `[ngày sau kỳ gần nhất, hết hôm qua]`; chỉ chạy khi setting `payout.auto_enabled`=true và PayOS chi đã cấu hình; kỳ rỗng bỏ qua); chạy tay `/admin/payouts/run` vẫn giữ để chạy bù
+├── shop-wallet/     (PLAN-0041, thuộc PaymentModule) ShopWalletTopupService (tạo/đọc/huỷ khoản nạp PayOS) · ShopWalletTopupSettleService (`settleWebhookIfTopup` cho webhook mã dải 5e15; `reconcileOne` dò/đóng; `creditPayosTopup` = ghi có DUY NHẤT cho tiền nạp, qua `ShopWalletService.post` sau `lockWallet`) · WalletTopupJobs (`shop-wallet-topup.job.ts`: dò mỗi 2 phút + quét đuôi 72 giờ) · ShopWalletService (ví cọc COD, PLAN-0020)
+│                    model `ShopCodTopup` / `ShopCodTopupReceipt` (schema payment); route `/shop/wallet/topups*` (vendor, `shopId` lấy từ ngữ cảnh phiên) · `/admin/wallet-topups*` (sàn, xem-only, `supplier.wallet.read`)
+│                    Thứ tự khoá toàn cục **ĐƠN → PAYMENT → KHOẢN NẠP (`shop_cod_topups`) → VÍ (`shop_cod_wallets`)**: luồng nạp chỉ lấy `KHOẢN NẠP → VÍ`, không đụng đơn/payment; không gọi PayOS trong transaction; thông báo gửi sau commit qua NOTIFICATION_GATEWAY (không qua outbox).
+│                    Định tuyến webhook `POST /payments/payos/webhook`: đơn hàng (`findPayosPayment`) thử TRƯỚC → khoản nạp (`settleWebhookIfTopup`) sau → mã lạ ⇒ 200 bỏ qua; chữ ký sai ⇒ 401 (không đổi).
+│                    Bất biến tiền (PLAN-0041 §10, tóm tắt): ví chỉ TĂNG từ luồng nạp, đúng số thực nhận (thừa/trùng/muộn đều ghi có, không hoàn); idempotent theo `ref_key` UNIQUE; Σ ghi có ví = Σ `received_amount` của các khoản nạp.
 ├── queryapi/        PaymentQueryApi (extrasForOrder, activeMethods, paidSummaryBetween)
 ├── payment-worker.module.ts   relay outbox payment · PaymentEventListeners (không còn listener ví COD; hoàn tiền đơn COD đã đối soát ⇒ dòng REFUND ở kỳ sau qua đối soát)
 │                    · cron chi trả shop tự động (xem shop-payout)
@@ -320,7 +325,7 @@ Listener ghi tiền/thông báo dùng `suppressErrors:false` (lỗi ném lên re
 | `ORDER_CREATED` | order (mỗi ĐƠN CON; payload có orderGroupCode, shopId) | order (mail khách) · system (báo thành viên shop) |
 | `ORDER_PAID` | order | order (mail) · system (báo shop — đơn online) |
 | `ORDER_STATUS_CHANGED` · `ORDER_DELIVERED` · `ORDER_CANCELLED` | order | order (mail khách) · (payment: không còn listener ví COD) |
-| `RETURN_REQUESTED` · `RETURN_PROCESSED` | order | chưa có listener |
+| `RETURN_REQUESTED` · `RETURN_STATUS_CHANGED` (PLAN-0022) | order | chưa có listener |
 | `PAYMENT_PAID` | payment | chưa có listener (đơn được báo qua OrderPaymentGateway.onPaid trong cùng transaction) |
 | `PAYMENT_REFUNDED` | payment (payload: refundId, orderCode, amount, methodCode, shopId) | chưa có listener (hoàn tiền vào đối soát qua dòng REFUND) |
 | `PAYOUT_CREATED` · `PAYOUT_PROCESSING` · `PAYOUT_PAID` · `PAYOUT_FAILED` | payment (đối soát) | chưa có listener |
@@ -348,10 +353,14 @@ Relay: `order` + `payment` ở OrderWorkerModule (payment còn được relay th
 | product | catalog · shop (queryapi + security) | Inventory · ProductStats | PRODUCT_PUBLISHED · PRODUCT_UPDATED · PRODUCT_HIDDEN · PRODUCT_STOCK_LOW |
 | cart | product · shop · system | Cart | — |
 | promotion | cart · shop (queryapi + security) | Promotion | — |
-| order | product · cart · promotion · identity · system · payment (queryapi) · shop (queryapi + security) | OrderPayment · OrderActions | ORDER_CREATED · ORDER_STATUS_CHANGED · ORDER_CANCELLED · ORDER_PAID · ORDER_DELIVERED · RETURN_REQUESTED · RETURN_PROCESSED |
+| order | product · cart · promotion · identity · system · payment (queryapi) · shop (queryapi + security) | OrderPayment · OrderActions | ORDER_CREATED · ORDER_STATUS_CHANGED · ORDER_CANCELLED · ORDER_PAID · ORDER_DELIVERED · RETURN_REQUESTED · RETURN_STATUS_CHANGED |
 | payment (PaymentModule) | shop (queryapi + security + enums) · system · (order qua ORDER_PAYMENT_GATEWAY — lười, không import OrderModule) | Payment | PAYMENT_PAID · PAYMENT_REFUNDED |
 | payment (PaymentSettlementModule) | order (queryapi) · shop · system · PaymentModule | — | PAYOUT_CREATED · PAYOUT_PROCESSING · PAYOUT_PAID · PAYOUT_FAILED |
 | review | product · order · shop (queryapi + security) | — | REVIEW_CREATED |
 | system | identity (UserDirectory) · shop · order · product (listener thông báo shop) | Notification | — |
 | reporting | shop (security) — SELECT chỉ đọc xuyên schema | — | — |
 | ai | product · catalog · order · review · system · cart · promotion · payment · reporting · identity (UserDirectory) · Notification · CartGateway.addItem · OrderActionsGateway | — | — (tiêu thụ product/review) |
+
+## shipping — PLAN-0043 (đang kiểm tích hợp)
+
+Schema shipping sở hữu ShippingQuote, Shipment (nhiều attempt/đơn, một active), ShipmentEvent inbox và FakeCarrierState. Query API chỉ đọc, Application API cho quote/ship/cancel/reconcile; OrderShippingGateway ở common do order cài cho callback cùng transaction. ShippingModule không import OrderModule. Worker ShippingWorkerModule phục hồi inbox/unknown và dò trạng thái. Phân quyền shipping.simulator.use (admin demo), payment.cod.confirm (kế toán/admin).

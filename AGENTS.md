@@ -397,3 +397,7 @@ Thứ tự phụ thuộc: common → identity → shop → catalog → product �
 Agent chỉ `git commit` local. `git push`, merge, tạo/xoá/chuyển nhánh cần chủ dự án quyết định — trừ khi
 chủ dự án đã yêu cầu rõ trong cùng yêu cầu ("commit và push lên main"). Commit message tiếng Việt, kết thúc
 bằng dòng `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+
+## PLAN-0043 — tuyến vận chuyển hãng
+
+Module shipping sở hữu quote/attempt/inbox/fake carrier DB. Carrier COD không cần cọc; delivered chỉ ghi hãng thu, remittance xác nhận mới paid/được xét chi. Self/đơn cũ giữ ví cọc. OrderShippingGateway do order cài, shipping không import OrderModule. Khoá ĐƠN→SHIPMENT→PAYMENT→VÍ; HTTP ngoài tx. ShippingQueryApi chỉ đọc, ApplicationApi cho command. Mã shipping.simulator.use chỉ admin demo, payment.cod.confirm chỉ admin/kế toán. Fake bị chặn production; không chi tiền thật từ dữ liệu kiểm thử.

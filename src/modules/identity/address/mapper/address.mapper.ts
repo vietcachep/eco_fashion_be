@@ -4,6 +4,7 @@ import type { AddressRow } from '../repository/address.repository';
 export function toAddressResponse(a: AddressRow): AddressResponse {
   return {
     id: a.id,
+    addressSystem: a.addressSystem, ghnProvinceId: a.ghnProvinceId, ghnDistrictId: a.ghnDistrictId, ghnWardCode: a.ghnWardCode,
     recipientName: a.recipientName,
     phone: a.phone,
     provinceCode: a.provinceCode,

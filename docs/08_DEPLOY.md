@@ -46,6 +46,7 @@ Kiểm tra: `curl -s https://<SITE_ADDRESS>/api/v1/health` → `"status":"UP"`.
 - Biến `NEXT_PUBLIC_*` được nhúng lúc **build** — đổi xong phải **Redeploy**.
 - Hàm serverless của Vercel giới hạn ~4,5 MB mỗi request: nếu quản trị viên upload ảnh lớn qua proxy bị lỗi, đặt thêm `NEXT_PUBLIC_API_URL=https://<SITE_ADDRESS>` cho web quản trị (gọi thẳng API) và thêm origin quản trị vào `EF_CORS_ORIGINS`.
 - Quay lại `deploy/.env.production`: `EF_CORS_ORIGINS` = origin của hai web (https, không dấu `/` cuối, cách nhau dấu phẩy), `EF_STOREFRONT_URL`/`EF_WEB_URL` = web bán hàng. Sửa xong chạy lại `./deploy.sh`.
+- `EF_ADMIN_URL` (cùng `deploy/.env.production`, cạnh `EF_WEB_URL`; nạp cọc qua PayOS, PLAN-0041) = URL công khai của web quản trị, `https://`, không dấu `/` cuối. PayOS trả chủ shop về `/vendor/wallet/payos-return` sau khi nạp. Thiếu hoặc còn `http://` ở production ⇒ chỉ tính năng nạp qua PayOS trả 503 `WALLET_TOPUP_UNAVAILABLE`; app vẫn chạy.
 
 ## 4. Cho MỌI NGƯỜI đăng ký được (phía Google)
 

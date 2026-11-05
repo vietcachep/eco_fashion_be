@@ -63,6 +63,12 @@ export class UserRepository {
     return u?.passwordHash ?? null;
   }
 
+  /* Tài khoản đã gắn đăng nhập Google (có `google_sub`)? — chỉ trả cờ, không lộ `sub`. */
+  async hasGoogleSub(userId: string, tx?: Tx | null): Promise<boolean> {
+    const n = await this.db(tx).user.count({ where: { id: userId, isDeleted: false, googleSub: { not: null } } });
+    return n > 0;
+  }
+
   async findAuthById(userId: string, tx?: Tx | null): Promise<UserAuthRow | null> {
     const u = await this.db(tx).user.findUnique({
       where: { id: userId },

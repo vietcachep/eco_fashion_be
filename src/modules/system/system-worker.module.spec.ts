@@ -392,6 +392,27 @@ describe('ShopNotificationListeners', () => {
       expect(sentCommands(notifyMany)[0].content).toContain('••••9012');
     });
 
+    it('[STL-11d] TK chờ sàn xác minh (tên lệch tên chủ shop) ⇒ nội dung nói rõ chi trả bị giữ tới khi sàn xác minh', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1']);
+
+      await listeners.onShopBankChanged(bankChangedEvent({ ...payload, bankPendingVerification: true, holdHours: 72 }));
+
+      const content = sentCommands(notifyMany)[0].content ?? '';
+      expect(content).toContain('không khớp tên chủ gian hàng');
+      expect(content).toContain('sàn xác minh');
+      expect(content).toContain('liên hệ sàn'); // vẫn giữ lời nhắc "không phải bạn"
+    });
+
+    it('[STL-11i] TK tên khớp ⇒ nêu đúng số giờ tạm giữ chi trả theo setting (72, không phải 24 ghi cứng)', async () => {
+      activeMemberUserIds.mockResolvedValue(['user-1']);
+
+      await listeners.onShopBankChanged(bankChangedEvent({ ...payload, bankPendingVerification: false, holdHours: 72 }));
+
+      const content = sentCommands(notifyMany)[0].content ?? '';
+      expect(content).toContain('72 giờ');
+      expect(content).not.toContain('24 giờ');
+    });
+
     it('idempotent: người đã nhận không nhận lại', async () => {
       activeMemberUserIds.mockResolvedValue(['user-1', 'user-2']);
       notificationFindMany.mockResolvedValue([{ userId: 'user-2' }]);
@@ -445,7 +466,7 @@ describe('ShopNotificationListeners', () => {
       const [cmd] = sentCommands(notifyMany);
       expect(cmd.title).toContain('thất bại');
       expect(cmd.content).toContain('E1: ');
-      expect(cmd.content.length).toBeLessThan(300);
+      expect((cmd.content ?? '').length).toBeLessThan(300);
     });
 
     it('idempotent: người đã nhận không nhận lại', async () => {

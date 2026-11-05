@@ -9,6 +9,11 @@ import { toAddressResponse } from '../mapper/address.mapper';
 import { AddressRepository } from '../repository/address.repository';
 
 export interface AddressInput {
+  addressSystem?: 'legacy_3level';
+  ghnProvinceId?: number | null;
+  ghnDistrictId?: number | null;
+  ghnWardCode?: string | null;
+
   recipientName: string;
   phone: string;
   provinceCode: string | null;

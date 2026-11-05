@@ -43,12 +43,15 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('product', 'inventory.read', 'Xem tồn kho'),
   { ...p('product', 'inventory.receive', 'Lập phiếu nhập kho'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   { ...p('product', 'inventory.adjust', 'Điều chỉnh / kiểm kê tồn kho'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
+  p('payment', 'cod.confirm', 'Xác nhận tiền COD hãng đã nộp về sàn'),
+  p('shipping', 'simulator.use', 'Giả lập vận chuyển trong môi trường demo'),
   // order
   p('order', 'order.read', 'Xem đơn hàng'),
   { ...p('order', 'order.status.update', 'Xác nhận / đóng gói / giao / hoàn tất đơn'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   p('order', 'order.cancel', 'Huỷ đơn thay khách'),
-  p('order', 'return.read', 'Xem yêu cầu đổi trả'),
-  p('order', 'return.process', 'Duyệt / từ chối / hoàn tất đổi trả'),
+  p('order', 'return.read', 'Xem yêu cầu đổi trả của mọi gian hàng'),
+  // PLAN-0022: duyệt / từ chối / xác nhận nhận hàng là việc của SHOP (shop.return.*) — sàn CHỈ phân xử yêu cầu đã chuyển lên (khiếu nại, shop quá hạn, hàng không khớp)
+  p('order', 'return.process', 'Phân xử yêu cầu đổi trả đã chuyển lên sàn (hoàn tiền / từ chối lần cuối)'),
   // payment
   p('payment', 'payment.read', 'Xem giao dịch thanh toán'),
   p('payment', 'transfer.confirm', 'Xác nhận chuyển khoản (LỊCH SỬ — PLAN-0018 đã bỏ chuyển khoản tay, không còn endpoint dùng mã này)'),
@@ -103,7 +106,9 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('shop', 'staff.remove', 'Gỡ nhân viên khỏi gian hàng của mình'),
   // PLAN-0017 — vendor tự vận hành gian hàng: đơn · kho · khuyến mãi · báo cáo · ví · đối soát (chỉ dữ liệu CỦA shop mình)
   p('shop', 'order.read', 'Xem đơn hàng của gian hàng mình'),
-  p('shop', 'order.update', 'Xác nhận / đóng gói / giao / huỷ đơn của gian hàng mình'),
+  p('shop', 'order.update', 'Xác nhận / đóng gói / giao đơn của gian hàng mình (gồm gia hạn hạn giao)'),
+  // PLAN-0027 — huỷ đơn là việc có hậu quả (tiền, điểm vi phạm): chủ shop mặc định có, nhân viên chỉ khi chủ giao (SHOP_ASSIGNABLE_PERMISSIONS)
+  p('shop', 'order.cancel', 'Huỷ đơn của gian hàng mình, chấp nhận / từ chối yêu cầu huỷ của khách'),
   p('shop', 'inventory.read', 'Xem tồn kho sản phẩm của gian hàng mình'),
   p('shop', 'inventory.manage', 'Nhập kho / điều chỉnh tồn sản phẩm của gian hàng mình'),
   p('shop', 'promotion.read', 'Xem mã giảm giá của gian hàng mình'),
@@ -112,9 +117,14 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('shop', 'contact.read', 'Xem tin nhắn khách gửi gian hàng mình (hỏi sản phẩm / đơn)'),
   p('shop', 'contact.reply', 'Trả lời tin nhắn khách gửi gian hàng mình'),
   p('shop', 'payout.read', 'Xem các kỳ đối soát / chi trả của gian hàng mình'),
+  // PLAN-0022 — đổi trả: shop là bên DUYỆT / từ chối / xác nhận đã nhận lại hàng; sàn chỉ phân xử khi khiếu nại hoặc shop quá hạn
+  p('shop', 'return.read', 'Xem yêu cầu đổi trả của gian hàng mình'),
+  p('shop', 'return.process', 'Duyệt / từ chối / xác nhận đã nhận lại hàng đổi trả và báo giao không thành công của gian hàng mình'),
   // PLAN-0017/0018 — nhân viên SÀN xem + chạy đối soát chi trả cho MỌI gian hàng (khác mã với shop.payout.*); PLAN-0018 bỏ ví quỹ COD nên không còn mã wallet
   p('supplier', 'payout.read', 'Xem các kỳ đối soát / chi trả của mọi gian hàng'),
   p('supplier', 'payout.process', 'Chạy kỳ đối soát và chi trả cho gian hàng'),
+  // PLAN-0026 — duyệt kỳ chi trả vượt hạn mức tự chi (kế toán + admin)
+  p('supplier', 'payout.approve', 'Duyệt kỳ chi trả vượt hạn mức tự chi trước khi gửi PayOS'),
   // PLAN-0020 — ví đặt cọc COD: shop xem ví + nộp cọc; sàn xem mọi ví, duyệt/từ chối khoản nộp và chỉnh ví
   p('shop', 'wallet.read', 'Xem ví đặt cọc COD và lịch sử của gian hàng mình'),
   p('shop', 'wallet.deposit_request', 'Gửi yêu cầu nộp tiền đặt cọc COD của gian hàng mình'),
@@ -178,7 +188,9 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
     name: 'Quản lý cửa hàng',
     description: 'Ngành hàng, sản phẩm, tồn kho, đơn, khuyến mãi, đánh giá, báo cáo, duyệt gian hàng',
     codes: [
-      ...codesOfModules('catalog', 'product', 'order', 'promotion', 'review', 'reporting'),
+      ...codesOfModules('catalog', 'product', 'promotion', 'review', 'reporting'),
+      // Đơn + đổi trả: quản lý XEM và huỷ đơn khi tranh chấp; phân xử đổi trả (order.return.process) là việc của admin + CSKH (PLAN-0022).
+      ...codesOfModules('order').filter((c) => c !== 'order.return.process'),
       ...codes(
         'identity.user.read',
         'payment.payment.read',
@@ -224,7 +236,7 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
   accountant: {
     name: 'Kế toán',
     description: 'Thanh toán, hoàn tiền, đối soát chi trả shop, ví đặt cọc COD, doanh thu',
-    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.payout.read', 'supplier.payout.process', 'supplier.wallet.read', 'supplier.wallet.approve'),
+    codes: codes('order.order.read', 'order.return.read', 'payment.payment.read', 'payment.cod.confirm', 'payment.transfer.confirm', 'payment.refund.create', 'payment.refund.process', 'reporting.dashboard.read', 'reporting.revenue.read', 'ai.usage.read', 'supplier.payout.read', 'supplier.payout.process', 'supplier.payout.approve', 'supplier.wallet.read', 'supplier.wallet.approve'),
     scope: 'platform',
   },
   marketing: {
@@ -245,7 +257,7 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
   shop_staff: {
     name: 'Nhân viên gian hàng',
     description: 'Vận hành hằng ngày: xem hồ sơ/nhân viên, xem + sửa sản phẩm, xử lý đơn, xem kho, trả lời đánh giá — không đụng nhân sự, khuyến mãi, ví, đối soát',
-    codes: codes('shop.profile.read', 'shop.staff.read', 'shop.product.read', 'shop.product.manage', 'shop.order.read', 'shop.order.update', 'shop.inventory.read', 'shop.review.read', 'shop.review.reply'),
+    codes: codes('shop.profile.read', 'shop.staff.read', 'shop.product.read', 'shop.product.manage', 'shop.order.read', 'shop.order.update', 'shop.inventory.read', 'shop.review.read', 'shop.review.reply', 'shop.return.read'),
     scope: 'shop',
   },
 };

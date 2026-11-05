@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AddressRepository } from '../address/repository/address.repository';
+import { AuthService } from '../auth/service/auth.service';
 import { PermissionRepository } from '../permission/repository/permission.repository';
 import { UserRepository } from '../user/repository/user.repository';
 
@@ -9,6 +10,11 @@ import { UserRepository } from '../user/repository/user.repository';
  * Trả kiểu phẳng, không trả model Prisma.
  */
 export interface AddressBrief {
+  addressSystem?: 'legacy_3level';
+  ghnProvinceId?: number | null;
+  ghnDistrictId?: number | null;
+  ghnWardCode?: string | null;
+
   id: string;
   recipientName: string;
   phone: string;
@@ -43,6 +49,23 @@ export class IdentityQueryApi {
     const rows = await this.users.findSnapshots([userId]);
     const u = rows[0];
     return u ? { id: u.id, email: u.email, fullName: u.fullName, phone: u.phone, roleCode: u.role.code, status: u.status, emailVerified: u.emailVerifiedAt != null } : null;
+  }
+
+  /*
+   * Xác thực lại mật khẩu của CHÍNH người đang thao tác trước việc nhạy cảm (đổi tài khoản ngân hàng nhận tiền của shop — AUD-03). Chỉ trả đúng/sai; tài khoản không có mật khẩu
+   * (đăng nhập Google, chưa đặt) hoặc không tồn tại ⇒ false. Không ghi log/audit mật khẩu; chống dò mật khẩu bằng RateLimit ở endpoint gọi.
+   */
+  async verifyPassword(userId: string, password: string): Promise<boolean> {
+    const hash = await this.users.passwordHashOf(userId);
+    return !!hash && AuthService.verifyPassword(hash, password);
+  }
+
+  /*
+   * Tài khoản có gắn đăng nhập Google (`google_sub`) không? (PLAN-0040 5.3) — tài khoản TẠO bằng Google có mật khẩu NGẪU NHIÊN không ai biết, nên khi xác thực lại mật khẩu thất bại
+   * module gọi dùng cờ này để gợi ý "đặt mật khẩu bằng Quên mật khẩu" thay vì để người dùng đoán mãi. Chỉ trả cờ; user không tồn tại ⇒ false.
+   */
+  isGoogleLinked(userId: string): Promise<boolean> {
+    return this.users.hasGoogleSub(userId);
   }
 
   /* Tìm user theo email (module shop dùng khi chủ shop thêm lại nhân viên cũ — khôi phục tài khoản). */
@@ -90,12 +113,12 @@ export class IdentityQueryApi {
   /* Địa chỉ giao hàng của khách (order dùng khi đặt bằng sổ địa chỉ) — chỉ trả địa chỉ của đúng user. */
   async findAddress(userId: string, addressId: string): Promise<AddressBrief | null> {
     const a = await this.addresses.findOfUser(userId, addressId);
-    return a ? { id: a.id, recipientName: a.recipientName, phone: a.phone, provinceCode: a.provinceCode, provinceName: a.provinceName, districtName: a.districtName, wardName: a.wardName, street: a.street, isDefault: a.isDefault } : null;
+    return a ? { id: a.id, addressSystem: a.addressSystem as 'legacy_3level', ghnProvinceId: a.ghnProvinceId, ghnDistrictId: a.ghnDistrictId, ghnWardCode: a.ghnWardCode, recipientName: a.recipientName, phone: a.phone, provinceCode: a.provinceCode, provinceName: a.provinceName, districtName: a.districtName, wardName: a.wardName, street: a.street, isDefault: a.isDefault } : null;
   }
 
   async defaultAddress(userId: string): Promise<AddressBrief | null> {
     const list = await this.addresses.listOfUser(userId);
     const a = list.find((x) => x.isDefault) ?? list[0] ?? null;
-    return a ? { id: a.id, recipientName: a.recipientName, phone: a.phone, provinceCode: a.provinceCode, provinceName: a.provinceName, districtName: a.districtName, wardName: a.wardName, street: a.street, isDefault: a.isDefault } : null;
+    return a ? { id: a.id, addressSystem: a.addressSystem as 'legacy_3level', ghnProvinceId: a.ghnProvinceId, ghnDistrictId: a.ghnDistrictId, ghnWardCode: a.ghnWardCode, recipientName: a.recipientName, phone: a.phone, provinceCode: a.provinceCode, provinceName: a.provinceName, districtName: a.districtName, wardName: a.wardName, street: a.street, isDefault: a.isDefault } : null;
   }
 }

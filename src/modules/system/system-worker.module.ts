@@ -15,6 +15,7 @@ import { ProductQueryApi } from '../product/queryapi/product.queryapi';
 import { OrderModule } from '../order/order.module';
 import { ProductModule } from '../product/product.module';
 import { ShopModule } from '../shop/shop.module';
+import { WorkerHeartbeatJob } from './health/service/worker-heartbeat.job';
 import { SystemModule } from './system.module';
 
 /* Múi giờ Việt Nam cố định UTC+7 (không có giờ mùa hè) — "hôm nay" của thông báo tính theo ngày VN, không theo TZ máy chủ. */
@@ -133,15 +134,19 @@ export class ShopNotificationListeners {
   /*
    * Tài khoản ngân hàng nhận tiền của shop đổi → báo TẤT CẢ thành viên active (kể cả người đổi) để người khác kịp phát hiện
    * đổi trái phép. Chỉ hiện 4 số cuối; số tài khoản đầy đủ không bao giờ có trong payload/thông báo.
+   * EMAIL riêng cho chủ shop + báo nhân viên sàn khi TK chờ xác minh do `ShopBankListeners` (shop-worker.module.ts) đảm nhiệm — listener riêng nên mail lỗi không làm mất thông báo này.
    */
   @OnEvent(`outbox.${SHOP_MODULE}.${SHOP_EVENT.BANK_CHANGED}`, { suppressErrors: false })
   async onShopBankChanged(msg: OutboxEventMessage): Promise<void> {
-    const { shopId, name, bankAccountLast4, bankAccountNumberMasked, changedByEmail } = msg.payload as {
+    const { shopId, name, bankAccountLast4, bankAccountNumberMasked, changedByEmail, bankPendingVerification, holdHours } = msg.payload as {
       shopId?: string;
       name?: string;
       bankAccountLast4?: string | null;
       bankAccountNumberMasked?: string | null;
       changedByEmail?: string;
+      /* PLAN-0040 5.2: tên chủ TK lệch tên chủ shop ⇒ chờ sàn xác minh; holdHours = setting giữ chi trả sau đổi TK (chỉ để hiển thị). */
+      bankPendingVerification?: boolean;
+      holdHours?: number;
     };
     if (!shopId) {
       this.logger.warn({ eventId: msg.id }, 'SHOP_BANK_CHANGED thiếu shopId — bỏ qua thông báo');
@@ -149,6 +154,7 @@ export class ShopNotificationListeners {
     }
     const last4 = bankAccountLast4 ?? bankAccountNumberMasked?.slice(-4) ?? null;
     const account = last4 ? ` (số tài khoản ••••${last4})` : '';
+    const holdNote = bankPendingVerification ? ' Tên chủ tài khoản không khớp tên chủ gian hàng nên chi trả bị giữ cho tới khi sàn xác minh.' : holdHours ? ` Chi trả được tạm giữ ${holdHours} giờ.` : '';
     const userIds = await this.shops.activeMemberUserIds(shopId);
     const sent = await this.notifyOnce(
       msg,
@@ -156,7 +162,7 @@ export class ShopNotificationListeners {
       {
         type: 'system',
         title: 'Tài khoản ngân hàng nhận tiền đã thay đổi',
-        content: `Tài khoản ngân hàng nhận tiền của gian hàng${name ? ` ${name}` : ''}${account} vừa được đổi bởi ${changedByEmail ?? 'một thành viên'}. Nếu không phải bạn, hãy liên hệ sàn ngay.`,
+        content: `Tài khoản ngân hàng nhận tiền của gian hàng${name ? ` ${name}` : ''}${account} vừa được đổi bởi ${changedByEmail ?? 'một thành viên'}.${holdNote} Nếu không phải bạn, hãy liên hệ sàn ngay.`,
         link: '/vendor/shop',
       },
       { shopId },
@@ -236,6 +242,6 @@ export class ShopNotificationListeners {
  */
 @Module({
   imports: [SystemModule, OrderModule, ProductModule, ShopModule],
-  providers: [ShopNotificationListeners],
+  providers: [ShopNotificationListeners, WorkerHeartbeatJob], // PLAN-0040 tầng 4: WorkerHeartbeatJob = nhịp tim worker cho /health (AUD-12a)
 })
 export class SystemWorkerModule {}
