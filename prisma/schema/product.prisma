@@ -64,6 +64,10 @@ model Product {
 }
 
 model ProductVariant {
+  weightGram Int? @map("weight_gram")
+  lengthCm Int? @map("length_cm")
+  widthCm Int? @map("width_cm")
+  heightCm Int? @map("height_cm")
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId String   @map("product_id") @db.Uuid
   shopId    String   @map("shop_id") @db.Uuid // PLAN-0014 bước 5: SKU unique theo shop (index partial — xem cuối model)

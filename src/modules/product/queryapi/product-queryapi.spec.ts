@@ -89,7 +89,7 @@ describe('ProductQueryApi.variantSnapshots — snapshot biến thể dynamic (H7
 
     const snap = (await api.variantSnapshots(['v-dyn'])).get('v-dyn');
 
-    expect(Object.keys(snap ?? {}).sort()).toEqual(['available', 'categorySlug', 'color', 'colorCode', 'imageUrl', 'isSellable', 'name', 'productId', 'shopId', 'size', 'sku', 'slug', 'unitPrice', 'variantId']);
+    expect(Object.keys(snap ?? {}).sort()).toEqual(['available', 'categorySlug', 'color', 'colorCode', 'heightCm', 'imageUrl', 'isSellable', 'lengthCm', 'name', 'productId', 'shopId', 'size', 'sku', 'slug', 'unitPrice', 'variantId', 'weightGram', 'widthCm']);
     expect(typeof snap?.color).toBe('string');
     expect(typeof snap?.size).toBe('string');
   });

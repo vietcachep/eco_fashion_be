@@ -1,3 +1,4 @@
+import { variantParcelFields, type VariantParcel } from '../../foundation/variant-parcel';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@common/prisma/prisma.service';
 import type { Tx } from '@common/prisma/types';
@@ -35,6 +36,7 @@ export const PRODUCT_CARD_SELECT = {
 
 export const PRODUCT_DETAIL_SELECT = {
   ...PRODUCT_CARD_SELECT,
+  variants: { ...PRODUCT_CARD_SELECT.variants, select: { ...PRODUCT_CARD_SELECT.variants.select, weightGram: true, lengthCm: true, widthCm: true, heightCm: true } },
   shortDescription: true,
   description: true,
   material: true,
@@ -308,11 +310,11 @@ export class ProductRepository {
     return rows.map((r) => ({ variantId: r.variantId, receiptCode: r.receipt.code }));
   }
 
-  async upsertVariant(productId: string, shopId: string, v: { sku: string; colorCode: string; colorName: string; colorHex: string | null; sizeCode: string; price: bigint | null; isActive: boolean }, actorId: string | null, tx: Tx): Promise<VariantRow> {
+  async upsertVariant(productId: string, shopId: string, v: { sku: string; colorCode: string; colorName: string; colorHex: string | null; sizeCode: string; price: bigint | null; isActive: boolean } & VariantParcel, actorId: string | null, tx: Tx): Promise<VariantRow> {
     return tx.productVariant.upsert({
       where: { productId_colorCode_sizeCode: { productId, colorCode: v.colorCode, sizeCode: v.sizeCode } },
-      create: { productId, shopId, sku: v.sku, colorCode: v.colorCode, colorName: v.colorName, colorHex: v.colorHex, sizeCode: v.sizeCode, price: v.price === null ? null : new Prisma.Decimal(v.price.toString()), isActive: v.isActive, createdBy: actorId, updatedBy: actorId },
-      update: { sku: v.sku, colorName: v.colorName, colorHex: v.colorHex, price: v.price === null ? null : new Prisma.Decimal(v.price.toString()), isActive: v.isActive, isDeleted: false, updatedBy: actorId, version: { increment: 1 } },
+      create: { productId, shopId, sku: v.sku, colorCode: v.colorCode, colorName: v.colorName, colorHex: v.colorHex, sizeCode: v.sizeCode, price: v.price === null ? null : new Prisma.Decimal(v.price.toString()), isActive: v.isActive, ...variantParcelFields(v), createdBy: actorId, updatedBy: actorId },
+      update: { sku: v.sku, colorName: v.colorName, colorHex: v.colorHex, price: v.price === null ? null : new Prisma.Decimal(v.price.toString()), isActive: v.isActive, ...variantParcelFields(v), isDeleted: false, updatedBy: actorId, version: { increment: 1 } },
       select: { id: true, sku: true, colorCode: true, colorName: true, colorHex: true, sizeCode: true, price: true, stock: true, reserved: true, isActive: true, options: { select: { id: true, attributeId: true, attributeValueId: true, displayValue: true } } },
     });
   }
@@ -321,7 +323,7 @@ export class ProductRepository {
      chỉ gọi cho tổ hợp trục CHƯA có; tổ hợp đã có đi qua updateVariantDynamic để giữ id/tồn kho/giữ hàng.
      displayValue đã được service lớp trên snapshot sẵn (qua CatalogQueryApi) — repository chỉ ghi, không tự
      đọc bảng DynamicAttributeValue (giữ đúng ranh giới schema catalog/product). Tồn đầu = 0 (nhập kho qua phiếu). */
-  async createVariantDynamic(productId: string, shopId: string, v: { sku: string; options: Array<{ attributeId: string; attributeValueId: string; displayValue: string }>; price: bigint | null; isActive: boolean }, actorId: string | null, tx: Tx): Promise<VariantRow> {
+  async createVariantDynamic(productId: string, shopId: string, v: { sku: string; options: Array<{ attributeId: string; attributeValueId: string; displayValue: string }>; price: bigint | null; isActive: boolean } & VariantParcel, actorId: string | null, tx: Tx): Promise<VariantRow> {
     return tx.productVariant.create({
       data: {
         productId,
@@ -333,6 +335,7 @@ export class ProductRepository {
         sizeCode: null,
         price: v.price === null ? null : new Prisma.Decimal(v.price.toString()),
         isActive: v.isActive,
+        ...variantParcelFields(v),
         createdBy: actorId,
         updatedBy: actorId,
         // Tối đa 2 dòng option/biến thể (service đã kiểm) — tạo lồng nhau, một câu lệnh.
@@ -343,10 +346,10 @@ export class ProductRepository {
   }
 
   /* Cập nhật biến thể dynamic ĐÃ CÓ (khớp theo tổ hợp trục): chỉ đổi SKU/giá/bật-tắt — KHÔNG đụng stock/reserved/options. */
-  async updateVariantDynamic(id: string, v: { sku: string; price: bigint | null; isActive: boolean }, actorId: string | null, tx: Tx): Promise<VariantRow> {
+  async updateVariantDynamic(id: string, v: { sku: string; price: bigint | null; isActive: boolean } & VariantParcel, actorId: string | null, tx: Tx): Promise<VariantRow> {
     return tx.productVariant.update({
       where: { id },
-      data: { sku: v.sku, price: v.price === null ? null : new Prisma.Decimal(v.price.toString()), isActive: v.isActive, updatedBy: actorId, version: { increment: 1 } },
+      data: { sku: v.sku, price: v.price === null ? null : new Prisma.Decimal(v.price.toString()), isActive: v.isActive, ...variantParcelFields(v), updatedBy: actorId, version: { increment: 1 } },
       select: { id: true, sku: true, colorCode: true, colorName: true, colorHex: true, sizeCode: true, price: true, stock: true, reserved: true, isActive: true, options: { select: { id: true, attributeId: true, attributeValueId: true, displayValue: true } } },
     });
   }

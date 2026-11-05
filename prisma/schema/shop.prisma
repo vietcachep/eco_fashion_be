@@ -10,6 +10,9 @@
 /// Gian hàng. status/commissionRate do sàn quản (AdminShopController); profile do chính vendor
 /// sửa (ShopController, quyền shop.profile.update, shopId luôn suy từ ShopMember — không nhận qua param).
 model Shop {
+  shippingCarrierEnabled Boolean @default(false) @map("shipping_carrier_enabled")
+  shippingPickup Json? @map("shipping_pickup")
+  shippingReturn Json? @map("shipping_return")
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code              String   @unique @db.VarChar(20)
   slug              String   @unique @db.VarChar(160)
@@ -32,6 +35,15 @@ model Shop {
   bankCode          String?  @map("bank_code") @db.VarChar(20)
   bankAccountNumber String?  @map("bank_account_number") @db.VarChar(30)
   bankAccountName   String?  @map("bank_account_name") @db.VarChar(120)
+  /**
+   * PLAN-0040 Tầng 5.2 — xác minh TK ngân hàng: `verified` (tên chủ TK khớp tên chủ shop, hoặc sàn đã xác minh) | `pending_verification` (tên lệch — chờ quản lý sàn xác minh, kỳ chi `held`).
+   * Mỗi lần đổi TK tính lại (và xoá bankVerifiedAt). Shop có sẵn trước migration coi là `verified`.
+   */
+  bankStatus        String   @default("verified") @map("bank_status") @db.VarChar(20)
+  /**
+   * Lúc quản lý sàn xác minh TK (`POST /admin/shops/:id/bank/verify`); NULL = chưa được xác minh tay (khớp tên tự động, hoặc chờ xác minh). Từ mốc này mới đếm `payout.bank_change_hold_hours`.
+   */
+  bankVerifiedAt    DateTime? @map("bank_verified_at") @db.Timestamptz
   ratingAvg         Decimal? @map("rating_avg") @db.Decimal(3, 2)
   /**
    * Denormalized — cập nhật qua outbox listener từ product khi module product làm xong (bước 5), chưa dùng ở đây.

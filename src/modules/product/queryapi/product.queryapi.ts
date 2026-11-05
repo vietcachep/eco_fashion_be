@@ -12,6 +12,7 @@ export type { ProductCardResponse } from '../product/dto/product.responses';
 
 /* Snapshot biến thể cho giỏ/đơn — module khác chép vào chứng từ, không giữ tham chiếu sống. */
 export interface VariantSnapshot {
+  weightGram?: number | null; lengthCm?: number | null; widthCm?: number | null; heightCm?: number | null;
   variantId: string;
   productId: string;
   slug: string;
@@ -72,6 +73,7 @@ export class ProductQueryApi {
         price: true,
         stock: true,
         reserved: true,
+        weightGram:true, lengthCm:true, widthCm:true, heightCm:true,
         isActive: true,
         options: { select: { attributeId: true, displayValue: true } },
         product: { select: { id: true, slug: true, name: true, categorySlug: true, basePrice: true, status: true, isDeleted: true, images: { orderBy: [{ sortOrder: 'asc' }], select: { url: true, colorCode: true, isPrimary: true } } } },
@@ -88,6 +90,7 @@ export class ProductQueryApi {
           v.id,
           {
             variantId: v.id,
+            weightGram:v.weightGram, lengthCm:v.lengthCm, widthCm:v.widthCm, heightCm:v.heightCm,
             productId: v.product.id,
             slug: v.product.slug,
             name: v.product.name,

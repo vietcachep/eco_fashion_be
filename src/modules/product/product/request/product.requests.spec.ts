@@ -8,6 +8,13 @@ const UUID_A = '3f2b8c1e-5d4a-4f6b-9a7c-1e2d3c4b5a69';
 const UUID_B = '7a1c9e2d-8b3f-4c5d-a6e7-2f3a4b5c6d7e';
 
 describe('request sản phẩm', () => {
+  it('PLAN-0043: thông số kiện lồng giữ số nguyên/null, chặn số lẻ/0/quá giới hạn', () => {
+    const body = (parcel: object) => plainToInstance(SaveVariantsRequest, { variants: [{ sku: 'PARCEL-1', ...parcel }] });
+    const valid = body({ weightGram: 1500, lengthCm: 20, widthCm: 10, heightCm: null });
+    expect(validateSync(valid, PIPE)).toHaveLength(0);
+    expect(valid.variants[0]).toMatchObject({ weightGram: 1500, heightCm: null });
+    for (const invalid of [{ weightGram: 0 }, { weightGram: 50001 }, { lengthCm: 201 }, { widthCm: 1.5 }, { heightCm: '20' }]) expect(validateSync(body(invalid), PIPE).length).toBeGreaterThan(0);
+  });
   const platformFields = { isFeatured: true, isNew: true, tags: ['new'] };
 
   it('M6: request của vendor KHÔNG nhận isFeatured/isNew/tags — whitelist loại bỏ, không báo lỗi', () => {

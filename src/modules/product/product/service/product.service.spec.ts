@@ -7,6 +7,7 @@ import { makeSku } from '@common/utils/slug';
 import type { CatalogQueryApi } from '../../../catalog/queryapi/catalog.queryapi';
 import type { ShopQueryApi } from '../../../shop/queryapi/shop.queryapi';
 import type { ProductAuditLogService } from '../../audit/product-audit-log.service';
+import { variantParcelFields, type VariantParcel } from '../../foundation/variant-parcel';
 import { PRODUCT_AUDIT, PRODUCT_ERR } from '../../foundation/product.constants';
 import type { ProductOutboxService } from '../../outbox/product-outbox.service';
 import type { ProductDetailRow, ProductRepository } from '../repository/product.repository';
@@ -19,7 +20,7 @@ import { ProductService, VariantSpec } from './product.service';
  * Nhờ vậy test C2 kiểm được điều quan trọng nhất — lưu biến thể hai lần liên tiếp phải GIỮ id + tồn kho + hàng đang giữ.
  */
 
-interface FVariant {
+interface FVariant extends VariantParcel {
   id: string;
   productId: string;
   shopId: string;
@@ -99,7 +100,7 @@ class FakeRepo {
       createdAt: new Date(),
       updatedAt: new Date(),
       attributeValues: p.attributes,
-      variants: this.s.variants.filter((v) => v.productId === p.id && !v.isDeleted).map((v) => ({ ...v, price: v.price ? new Prisma.Decimal(v.price) : null })),
+      variants: this.s.variants.filter((v) => v.productId === p.id && !v.isDeleted).map((v) => ({ ...v, weightGram: v.weightGram ?? null, lengthCm: v.lengthCm ?? null, widthCm: v.widthCm ?? null, heightCm: v.heightCm ?? null, price: v.price ? new Prisma.Decimal(v.price) : null })),
     };
   }
 
@@ -185,8 +186,8 @@ class FakeRepo {
     const cur = this.s.variants.find((x) => x.productId === productId && x.colorCode === v.colorCode && x.sizeCode === v.sizeCode);
     this.assertSkuFree(shopId, v.sku, cur?.id);
     const price = v.price === null ? null : v.price.toString();
-    if (cur) Object.assign(cur, { sku: v.sku, colorName: v.colorName, colorHex: v.colorHex, price, isActive: v.isActive, isDeleted: false });
-    else this.s.variants.push({ id: this.id('var'), productId, shopId, sku: v.sku, colorCode: v.colorCode, colorName: v.colorName, colorHex: v.colorHex, sizeCode: v.sizeCode, price, stock: 0, reserved: 0, isActive: v.isActive, isDeleted: false, options: [] });
+    if (cur) Object.assign(cur, { sku: v.sku, colorName: v.colorName, colorHex: v.colorHex, price, isActive: v.isActive, isDeleted: false, ...variantParcelFields(v) });
+    else this.s.variants.push({ id: this.id('var'), productId, shopId, sku: v.sku, colorCode: v.colorCode, colorName: v.colorName, colorHex: v.colorHex, sizeCode: v.sizeCode, price, stock: 0, reserved: 0, isActive: v.isActive, isDeleted: false, options: [], ...variantParcelFields(v) });
   }
 
   async createVariantDynamic(productId: string, shopId: string, v: DynamicSpec): Promise<void> {
@@ -204,15 +205,16 @@ class FakeRepo {
       stock: 0,
       reserved: 0,
       isActive: v.isActive,
+      ...variantParcelFields(v),
       isDeleted: false,
       options: v.options.map((o) => ({ id: this.id('opt'), ...o })),
     });
   }
 
-  async updateVariantDynamic(id: string, v: { sku: string; price: bigint | null; isActive: boolean }): Promise<void> {
+  async updateVariantDynamic(id: string, v: { sku: string; price: bigint | null; isActive: boolean } & VariantParcel): Promise<void> {
     const cur = this.s.variants.find((x) => x.id === id)!;
     this.assertSkuFree(cur.shopId, v.sku, id);
-    Object.assign(cur, { sku: v.sku, price: v.price === null ? null : v.price.toString(), isActive: v.isActive });
+    Object.assign(cur, { sku: v.sku, price: v.price === null ? null : v.price.toString(), isActive: v.isActive, ...variantParcelFields(v) });
   }
 
   async softDeleteVariants(ids: string[]): Promise<number> {
@@ -398,6 +400,28 @@ const PHONE = { name: 'iPhone 15 Pro', categoryId: 'cat-phone', basePrice: '2500
 const FASHION = { name: 'Áo thun basic', categoryId: 'cat-fashion', basePrice: '159000', gender: 'nam', material: '100% cotton', care: ['Giặt máy'] };
 
 describe('ProductService (ghi sản phẩm)', () => {
+  describe('PLAN-0043 thông số kiện hàng', () => {
+    it.each(['dynamic', 'legacy'])('lưu %s giữ id/kho và thông số bỏ trống; null xoá đúng trường', async (mode) => {
+      const { service, state } = build();
+      const spec: VariantSpec = mode === 'dynamic' ? phoneV('val-128', 'val-den') : { colorCode: 'den', sizeCode: 'M' };
+      const p = await service.createShop(actor, SHOP_A, mode === 'dynamic' ? PHONE : FASHION, [{ ...spec, weightGram: 1200, lengthCm: 25, widthCm: 15, heightCm: 8 }]);
+      const first = live(state)[0];
+      first.stock = 9; first.reserved = 2;
+      const saved = await service.saveVariantsShop(actor, SHOP_A, p.id, [{ ...spec, weightGram: 1500 }]);
+      expect(saved.variants[0]).toMatchObject({ id: first.id, stock: 9, weightGram: 1500, lengthCm: 25, widthCm: 15, heightCm: 8 });
+      expect(live(state)[0].reserved).toBe(2);
+      const cleared = await service.saveVariantsShop(actor, SHOP_A, p.id, [{ ...spec, weightGram: null }]);
+      expect(cleared.variants[0]).toMatchObject({ id: first.id, weightGram: null, lengthCm: 25 });
+      expect(state.variants).toHaveLength(1);
+    });
+
+    it.each([{ weightGram: 0 }, { weightGram: 50001 }, { lengthCm: 201 }, { widthCm: 1.5 }, { heightCm: -1 }])('chặn kiện không hợp lệ trước khi ghi: %j', async (parcel) => {
+      const { service, state } = build();
+      await expect(service.createShop(actor, SHOP_A, PHONE, [phoneV('val-128', 'val-den', parcel)])).rejects.toBeInstanceOf(BusinessException);
+      expect(state.products).toHaveLength(0);
+      expect(state.variants).toHaveLength(0);
+    });
+  });
   // ------------------------------------------------------------ C2 — lưu biến thể dynamic không mất dữ liệu
   describe('C2 — saveVariants dynamic: cập nhật tại chỗ, không xoá-tạo-lại', () => {
     it('tạo sản phẩm kèm 2 biến thể: SKU sinh deterministic <tiền tố slug>-<giá trị trục>, tồn đầu 0', async () => {

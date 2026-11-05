@@ -53,6 +53,10 @@ export class VariantOptionInput {
 }
 
 export class VariantInput {
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1, maximum: 50000, description: 'Khối lượng gram; null dùng mặc định vận chuyển' }) @IsOptional() @IsInt() @Min(1) @Max(50000) weightGram?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1, maximum: 200, description: 'Chiều dài cm; null dùng mặc định vận chuyển' }) @IsOptional() @IsInt() @Min(1) @Max(200) lengthCm?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1, maximum: 200, description: 'Chiều rộng cm; null dùng mặc định vận chuyển' }) @IsOptional() @IsInt() @Min(1) @Max(200) widthCm?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 1, maximum: 200, description: 'Chiều cao cm; null dùng mặc định vận chuyển' }) @IsOptional() @IsInt() @Min(1) @Max(200) heightCm?: number | null;
   @ApiPropertyOptional({ example: 'den', description: 'Bắt buộc cho category legacy_fashion; null cho dynamic' }) @IsOptional() @Matches(CODE) @MaxLength(40) colorCode?: string;
   @ApiPropertyOptional({ example: 'M', description: 'Bắt buộc cho category legacy_fashion; null cho dynamic' }) @IsOptional() @IsString() @Length(1, 40) sizeCode?: string;
   @ApiPropertyOptional({ type: [VariantOptionInput], description: 'Bắt buộc cho category dynamic (tối đa 2); null cho legacy' }) @IsOptional() @IsArray() @ArrayMaxSize(2) @ValidateNested({ each: true }) @Type(() => VariantOptionInput) options?: VariantOptionInput[];

@@ -8,6 +8,7 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { vnd } from '@common/utils/money';
 import { makeSku, slugify } from '@common/utils/slug';
 import { CatalogQueryApi, CategoryAttributeTemplateItem, CategoryBrief } from '../../../catalog/queryapi/catalog.queryapi';
+import { VARIANT_PARCEL_LIMITS, variantParcelFields, type VariantParcel } from '../../foundation/variant-parcel';
 import { ProductAuditLogService } from '../../audit/product-audit-log.service';
 import { PRODUCT_AUDIT, PRODUCT_ERR, PRODUCT_EVENT, PRODUCT_STATUS, ProductSort } from '../../foundation/product.constants';
 import { ProductOutboxService } from '../../outbox/product-outbox.service';
@@ -23,7 +24,7 @@ export interface VariantOptionInput {
   attributeValueId: string;
 }
 
-export interface VariantSpec {
+export interface VariantSpec extends VariantParcel {
   colorCode?: string;
   sizeCode?: string;
   sku?: string;
@@ -73,8 +74,8 @@ type AttributeRow = { attributeId: string; attributeValueId: string | null; cust
 
 /* Kế hoạch ghi biến thể dynamic: cập nhật tại chỗ (giữ id/tồn kho) · tạo mới (tổ hợp chưa có) · gỡ (không còn trong danh sách). */
 interface DynamicVariantPlan {
-  updates: Array<{ id: string; sku: string; price: bigint | null; isActive: boolean }>;
-  creates: Array<{ sku: string; price: bigint | null; isActive: boolean; options: VariantOptionSnapshot[] }>;
+  updates: Array<{ id: string; sku: string; price: bigint | null; isActive: boolean } & VariantParcel>;
+  creates: Array<{ sku: string; price: bigint | null; isActive: boolean; options: VariantOptionSnapshot[] } & VariantParcel>;
   removed: ExistingVariant[];
 }
 
@@ -492,6 +493,12 @@ export class ProductService {
   /* Giá riêng của biến thể (nếu có) phải > 0 — bỏ trống/null = theo giá sản phẩm. Áp cho cả legacy lẫn dynamic. */
   private assertVariantPrices(variants: VariantSpec[]): void {
     for (const v of variants) {
+      for (const key of Object.keys(VARIANT_PARCEL_LIMITS) as Array<keyof VariantParcel>) {
+        const value = v[key];
+        if (value != null && (!Number.isInteger(value) || value < 1 || value > VARIANT_PARCEL_LIMITS[key])) {
+          throw new BusinessException('COMMON_VALIDATION_ERROR', 'Thông số kiện hàng ' + key + ' không nằm trong giới hạn cho phép');
+        }
+      }
       if (v.price === undefined || v.price === null || v.price === '') continue;
       const price = vnd(v.price);
       if (price <= 0n) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Giá riêng của biến thể phải lớn hơn 0 (bỏ trống để dùng giá sản phẩm)');
@@ -573,7 +580,7 @@ export class ProductService {
   }
 
   /* PLAN-0016: Nhánh legacy — mã màu/size phải có trong catalog; SKU: vendor nhập thì dùng (in hoa), bỏ trống thì giữ SKU biến thể cũ, chưa có thì makeSku. */
-  private async resolveVariantsLegacy(slug: string, variants: VariantSpec[], existingByKey: Map<string, ExistingVariant>): Promise<Array<{ sku: string; colorCode: string; colorName: string; colorHex: string | null; sizeCode: string; price: bigint | null; isActive: boolean }>> {
+  private async resolveVariantsLegacy(slug: string, variants: VariantSpec[], existingByKey: Map<string, ExistingVariant>): Promise<Array<{ sku: string; colorCode: string; colorName: string; colorHex: string | null; sizeCode: string; price: bigint | null; isActive: boolean } & VariantParcel>> {
     const [colors, sizes] = await Promise.all([this.catalog.colorMap(), this.catalog.sizeMap()]);
     const seen = new Set<string>();
     const out = [];
@@ -588,7 +595,7 @@ export class ProductService {
       if (seen.has(key)) throw new BusinessException('COMMON_VALIDATION_ERROR', `Biến thể ${color.name} / ${sizeCode} bị lặp`);
       seen.add(key);
       const sku = (v.sku ?? existingByKey.get(key)?.sku ?? makeSku(slug, colorCode, sizeCode)).toUpperCase();
-      out.push({ sku, colorCode, colorName: color.name, colorHex: color.hex, sizeCode, price: v.price ? vnd(v.price) : null, isActive: v.isActive ?? true });
+      out.push({ sku, colorCode, colorName: color.name, colorHex: color.hex, sizeCode, price: v.price ? vnd(v.price) : null, isActive: v.isActive ?? true, ...variantParcelFields(v) });
     }
     return out;
   }
@@ -614,7 +621,7 @@ export class ProductService {
 
     const optionKey = (opts: Array<{ attributeId: string; attributeValueId: string }>) => opts.map((o) => `${o.attributeId}:${o.attributeValueId}`).sort().join('|');
     const seenKeys = new Set<string>();
-    const resolved: Array<{ key: string; options: VariantOptionSnapshot[]; price: bigint | null; isActive: boolean; sku: string | null }> = [];
+    const resolved: Array<{ key: string; options: VariantOptionSnapshot[]; price: bigint | null; isActive: boolean; sku: string | null } & VariantParcel> = [];
 
     for (const v of a.variants) {
       const opts = v.options ?? [];
@@ -645,7 +652,7 @@ export class ProductService {
         })
         .sort((x, y) => (axisOrder.get(x.attributeId) ?? 0) - (axisOrder.get(y.attributeId) ?? 0));
 
-      resolved.push({ key, options, price: v.price ? vnd(v.price) : null, isActive: v.isActive ?? true, sku: v.sku ? v.sku.toUpperCase() : null });
+      resolved.push({ key, options, price: v.price ? vnd(v.price) : null, isActive: v.isActive ?? true, sku: v.sku ? v.sku.toUpperCase() : null, ...variantParcelFields(v) });
     }
 
     // Khớp biến thể hiện có theo tổ hợp trục.
@@ -682,8 +689,8 @@ export class ProductService {
     resolved.forEach((r, i) => {
       const sku = fixed[i] ?? this.generateSku(prefix, r.options.map((o) => o.displayValue), i, taken);
       const m = matched[i];
-      if (m) plan.updates.push({ id: m.id, sku, price: r.price, isActive: r.isActive });
-      else plan.creates.push({ sku, price: r.price, isActive: r.isActive, options: r.options });
+      if (m) plan.updates.push({ id: m.id, sku, price: r.price, isActive: r.isActive, ...variantParcelFields(r) });
+      else plan.creates.push({ sku, price: r.price, isActive: r.isActive, options: r.options, ...variantParcelFields(r) });
     });
     return plan;
   }

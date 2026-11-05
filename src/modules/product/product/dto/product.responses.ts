@@ -58,6 +58,10 @@ export class VariantOptionResponse {
 }
 
 export class ProductVariantResponse {
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Khối lượng gram, null dùng mặc định vận chuyển' }) weightGram?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) lengthCm?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) widthCm?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) heightCm?: number | null;
   @ApiProperty() id: string;
   @ApiPropertyOptional({ example: 'Đen', nullable: true, description: 'null cho category dynamic' }) color: string | null;
   @ApiPropertyOptional({ example: 'den', nullable: true, description: 'null cho category dynamic' }) colorCode: string | null;
