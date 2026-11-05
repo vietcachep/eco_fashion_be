@@ -1,7 +1,7 @@
 // =====================================================================
 // Module order (PLAN-0006) — schema "order": đơn hàng (chụp snapshot mọi thứ: địa chỉ, dòng hàng, giá, mã giảm),
 // lịch sử trạng thái, đổi trả có minh chứng, chuỗi số đơn theo ngày. Tiền numeric(14,0) do server tính.
-// Trạng thái: pending → confirmed → packing → shipping → delivered → completed; pending/confirmed → cancelled; delivered/completed → returned.
+// Trạng thái: pending → confirmed → packing → shipping → delivered → completed; pending/confirmed/shipping → cancelled; shipping/delivered/completed → returned (qua đổi trả — PLAN-0022).
 // =====================================================================
 
 /**
@@ -54,75 +54,139 @@ model OrderGroupSequence {
 }
 
 model Order {
-  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fulfilmentMode String @default("self") @map("fulfilment_mode") @db.VarChar(20)
+  collectionMode String? @map("collection_mode") @db.VarChar(30)
+  shippingProvider String? @map("shipping_provider") @db.VarChar(20)
+  shippingEnvironment String? @map("shipping_environment") @db.VarChar(30)
+  shippingQuoteId String? @map("shipping_quote_id") @db.Uuid
+  shippingSnapshot Json? @map("shipping_snapshot")
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /**
    * DH + yymmdd + 4 số — order_sequences theo ngày, khoá dòng
    */
-  code                   String    @unique @db.VarChar(30)
-  userId                 String    @map("user_id") @db.Uuid
+  code                     String    @unique @db.VarChar(30)
+  userId                   String    @map("user_id") @db.Uuid
   /**
    * Gian hàng sở hữu đơn NÀY — một OrderGroup có N Order, mỗi Order thuộc ĐÚNG 1 shop (PLAN-0014 bước 7).
    * Không @relation sang shop.shops (khác schema — chỉ lưu id theo quy ước schema-per-module).
    */
-  shopId                 String    @map("shop_id") @db.Uuid
-  orderGroupId           String    @map("order_group_id") @db.Uuid
+  shopId                   String    @map("shop_id") @db.Uuid
+  orderGroupId             String    @map("order_group_id") @db.Uuid
   /**
    * % hoa hồng sàn ĐÓNG BĂNG lúc đặt hàng (đọc từ Shop.commissionRate tại thời điểm tạo đơn) — dùng cho
    * đối soát payout PLAN-0015, chưa có logic dùng ở bước 7, chỉ ghi nhận snapshot.
    */
-  commissionRateSnapshot Decimal   @map("commission_rate_snapshot") @db.Decimal(5, 2)
-  status                 String    @default("pending") @db.VarChar(20)
-  paymentMethodCode      String    @map("payment_method_code") @db.VarChar(20)
+  commissionRateSnapshot   Decimal   @map("commission_rate_snapshot") @db.Decimal(5, 2)
+  status                   String    @default("pending") @db.VarChar(20)
+  paymentMethodCode        String    @map("payment_method_code") @db.VarChar(20)
   /**
    * unpaid | processing | paid | refunded — payment cập nhật qua gateway/outbox
    */
-  paymentStatus          String    @default("unpaid") @map("payment_status") @db.VarChar(20)
-  recipientName          String    @map("recipient_name") @db.VarChar(120)
-  recipientPhone         String    @map("recipient_phone") @db.VarChar(20)
-  provinceCode           String?   @map("province_code") @db.VarChar(10)
-  provinceName           String    @map("province_name") @db.VarChar(100)
-  districtName           String?   @map("district_name") @db.VarChar(100)
-  wardName               String?   @map("ward_name") @db.VarChar(100)
-  street                 String    @db.VarChar(255)
+  paymentStatus            String    @default("unpaid") @map("payment_status") @db.VarChar(20)
+  recipientName            String    @map("recipient_name") @db.VarChar(120)
+  recipientPhone           String    @map("recipient_phone") @db.VarChar(20)
+  provinceCode             String?   @map("province_code") @db.VarChar(10)
+  provinceName             String    @map("province_name") @db.VarChar(100)
+  districtName             String?   @map("district_name") @db.VarChar(100)
+  wardName                 String?   @map("ward_name") @db.VarChar(100)
+  street                   String    @db.VarChar(255)
   /**
    * Chuỗi địa chỉ đầy đủ để hiện/ in vận đơn
    */
-  shippingAddress        String    @map("shipping_address") @db.VarChar(500)
-  customerNote           String?   @map("customer_note") @db.VarChar(500)
-  subtotal               Decimal   @db.Decimal(14, 0)
-  shippingFee            Decimal   @map("shipping_fee") @db.Decimal(14, 0)
+  shippingAddress          String    @map("shipping_address") @db.VarChar(500)
+  customerNote             String?   @map("customer_note") @db.VarChar(500)
+  subtotal                 Decimal   @db.Decimal(14, 0)
+  shippingFee              Decimal   @map("shipping_fee") @db.Decimal(14, 0)
   /**
    * Tổng giảm = shopDiscount + platformDiscount. Voucher SÀN (promotionCode) do SÀN chịu chi phí: đối soát/hoa hồng tính trên
    * total + platformDiscount, sàn hoàn phần platformDiscount cho shop. Voucher GIAN HÀNG (shopPromotionCode) do shop chịu.
    */
-  discount               Decimal   @default(0) @db.Decimal(14, 0)
-  shopDiscount           Decimal   @default(0) @map("shop_discount") @db.Decimal(14, 0)
-  platformDiscount       Decimal   @default(0) @map("platform_discount") @db.Decimal(14, 0)
-  promotionCode          String?   @map("promotion_code") @db.VarChar(40)
-  promotionName          String?   @map("promotion_name") @db.VarChar(200)
-  shopPromotionCode      String?   @map("shop_promotion_code") @db.VarChar(40)
-  shopPromotionName      String?   @map("shop_promotion_name") @db.VarChar(200)
-  total                  Decimal   @db.Decimal(14, 0)
-  itemCount              Int       @map("item_count")
-  cancelReason           String?   @map("cancel_reason") @db.VarChar(255)
-  cancelledBy            String?   @map("cancelled_by") @db.Uuid
-  trackingUrl            String?   @map("tracking_url") @db.VarChar(500)
+  discount                 Decimal   @default(0) @db.Decimal(14, 0)
+  shopDiscount             Decimal   @default(0) @map("shop_discount") @db.Decimal(14, 0)
+  platformDiscount         Decimal   @default(0) @map("platform_discount") @db.Decimal(14, 0)
+  /**
+   * PLAN-0030: phần của shopDiscount / platformDiscount rơi vào PHÍ SHIP (voucher freeship) — phần còn lại là giảm trên TIỀN HÀNG. Hoa hồng tính trên tiền hàng, không tính trên phí ship.
+   */
+  shopShippingDiscount     Decimal   @default(0) @map("shop_shipping_discount") @db.Decimal(14, 0)
+  platformShippingDiscount Decimal   @default(0) @map("platform_shipping_discount") @db.Decimal(14, 0)
+  promotionCode            String?   @map("promotion_code") @db.VarChar(40)
+  promotionName            String?   @map("promotion_name") @db.VarChar(200)
+  shopPromotionCode        String?   @map("shop_promotion_code") @db.VarChar(40)
+  shopPromotionName        String?   @map("shop_promotion_name") @db.VarChar(200)
+  total                    Decimal   @db.Decimal(14, 0)
+  itemCount                Int       @map("item_count")
+  cancelReason             String?   @map("cancel_reason") @db.VarChar(255)
+  cancelledBy              String?   @map("cancelled_by") @db.Uuid
+  trackingUrl              String?   @map("tracking_url") @db.VarChar(500)
+  /**
+   * PLAN-0040 Tầng 3.6–3.7 (PLAN-0031 §2.1) — hãng vận chuyển (ghn | ghtk | viettel_post | jnt | spx | ahamove | ninja_van | vnpost | other) + mã vận đơn: BẮT BUỘC khi chuyển sang `shipping`.
+   * Đơn đã `shipping` trước khi có cột này giữ NULL (tương thích). `tracking_reused` = cùng mã vận đơn đã dùng cho đơn khác (chưa huỷ) của cùng shop ⇒ nghi gian lận, CSKH được báo (SHP-13).
+   */
+  carrier                  String?   @db.VarChar(20)
+  trackingCode             String?   @map("tracking_code") @db.VarChar(60)
+  trackingReused           Boolean   @default(false) @map("tracking_reused")
+  /**
+   * PLAN-0031 §2.4 — shop báo giao thất bại: lúc báo + mã lý do; `goods_returned_at` = lúc hàng đã về kho shop VÀ đã nhập kho lại (báo ngay lúc giao thất bại với goodsReturned=true,
+   * hoặc sau đó qua POST /shop/orders/:code/goods-returned). NULL + delivery_failed_at != NULL ⇒ hàng chưa về, chưa nhập kho. Compare-and-set dưới khoá đơn ⇒ nhập kho đúng MỘT lần.
+   */
+  deliveryFailedAt         DateTime? @map("delivery_failed_at") @db.Timestamptz
+  deliveryFailedReason     String?   @map("delivery_failed_reason") @db.VarChar(20)
+  goodsReturnedAt          DateTime? @map("goods_returned_at") @db.Timestamptz
   /**
    * Đơn online chưa thanh toán quá hạn → job huỷ + nhả kho
    */
-  paymentExpiresAt       DateTime? @map("payment_expires_at") @db.Timestamptz
-  confirmedAt            DateTime? @map("confirmed_at") @db.Timestamptz
-  packedAt               DateTime? @map("packed_at") @db.Timestamptz
-  shippedAt              DateTime? @map("shipped_at") @db.Timestamptz
-  deliveredAt            DateTime? @map("delivered_at") @db.Timestamptz
-  completedAt            DateTime? @map("completed_at") @db.Timestamptz
-  cancelledAt            DateTime? @map("cancelled_at") @db.Timestamptz
-  version                Int       @default(0)
-  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  createdBy              String?   @map("created_by") @db.Uuid
-  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  updatedBy              String?   @map("updated_by") @db.Uuid
-  isDeleted              Boolean   @default(false) @map("is_deleted")
+  paymentExpiresAt         DateTime? @map("payment_expires_at") @db.Timestamptz
+  confirmedAt              DateTime? @map("confirmed_at") @db.Timestamptz
+  packedAt                 DateTime? @map("packed_at") @db.Timestamptz
+  shippedAt                DateTime? @map("shipped_at") @db.Timestamptz
+  deliveredAt              DateTime? @map("delivered_at") @db.Timestamptz
+  completedAt              DateTime? @map("completed_at") @db.Timestamptz
+  cancelledAt              DateTime? @map("cancelled_at") @db.Timestamptz
+  /**
+   * PLAN-0022 — mốc job đã cảnh báo "đơn đang giao quá lâu" (shop + CSKH) — chỉ cảnh báo MỘT lần (compare-and-set NULL → now).
+   */
+  shippingAlertedAt        DateTime? @map("shipping_alerted_at") @db.Timestamptz
+  /**
+   * PLAN-0027 (§2.1) — hạn chót xử lý của shop. `confirm_due_at`: COD = lúc đặt + order.shop_confirm_hours, PayOS = lúc nhận tiền + giờ đó. `ship_due_at` = lúc xác nhận + order.shop_ship_hours (gia hạn 1 lần).
+   * NULL = đơn cũ / chưa có hạn ⇒ job SLA KHÔNG BAO GIỜ động tới (điểm an toàn G72: bật SLA không huỷ hàng loạt đơn đang treo).
+   */
+  confirmDueAt             DateTime? @map("confirm_due_at") @db.Timestamptz
+  shipDueAt                DateTime? @map("ship_due_at") @db.Timestamptz
+  /**
+   * Job đã nhắc shop (còn 6h xác nhận / 12h giao) — chỉ nhắc MỘT lần (compare-and-set NULL → now).
+   */
+  confirmRemindedAt        DateTime? @map("confirm_reminded_at") @db.Timestamptz
+  shipRemindedAt           DateTime? @map("ship_reminded_at") @db.Timestamptz
+  /**
+   * Shop gia hạn hạn giao MỘT lần (kèm lý do ≥ 10 ký tự).
+   */
+  shipExtendedAt           DateTime? @map("ship_extended_at") @db.Timestamptz
+  shipExtendReason         String?   @map("ship_extend_reason") @db.VarChar(500)
+  /**
+   * Mã lý do huỷ (docs/10 §7) + bên khởi xướng: customer | shop | platform | system. (`cancelled_by` ở trên là id người thao tác — giữ nguyên.)
+   */
+  cancelReasonCode         String?   @map("cancel_reason_code") @db.VarChar(30)
+  cancelSource             String?   @map("cancel_source") @db.VarChar(20)
+  /**
+   * Yêu cầu huỷ đơn `packing` của khách: status pending | accepted | rejected | auto_accepted; due_at = hạn shop xử lý (job tự chấp nhận khi quá hạn).
+   */
+  cancelRequestStatus      String?   @map("cancel_request_status") @db.VarChar(20)
+  cancelRequestedAt        DateTime? @map("cancel_requested_at") @db.Timestamptz
+  cancelRequestReasonCode  String?   @map("cancel_request_reason_code") @db.VarChar(30)
+  cancelRequestNote        String?   @map("cancel_request_note") @db.VarChar(500)
+  cancelRequestDueAt       DateTime? @map("cancel_request_due_at") @db.Timestamptz
+  cancelRequestResolvedBy  String?   @map("cancel_request_resolved_by") @db.Uuid
+  cancelRequestRejectReason String?  @map("cancel_request_reject_reason") @db.VarChar(500)
+  /**
+   * Ai chuyển đơn sang completed: customer ("Đã nhận hàng") | system (tự hoàn tất) | staff.
+   */
+  completedBy              String?   @map("completed_by") @db.VarChar(20)
+  version                  Int       @default(0)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy                String?   @map("created_by") @db.Uuid
+  updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy                String?   @map("updated_by") @db.Uuid
+  isDeleted                Boolean   @default(false) @map("is_deleted")
 
   orderGroup OrderGroup           @relation(fields: [orderGroupId], references: [id])
   items      OrderItem[]
@@ -134,6 +198,11 @@ model Order {
   @@index([paymentStatus, paymentExpiresAt])
   @@index([shopId, createdAt(sort: Desc)])
   @@index([orderGroupId])
+  @@index([status, shippedAt])
+  @@index([status, confirmDueAt])
+  @@index([status, shipDueAt])
+  @@index([cancelRequestStatus, cancelRequestDueAt])
+  @@index([shopId, trackingCode])
   @@map("orders")
   @@schema("order")
 }
@@ -188,35 +257,127 @@ model OrderStatusHistory {
 }
 
 /**
- * Yêu cầu đổi trả: requested → approved → refunded | rejected. Minh chứng ảnh/video bắt buộc ≥ 1.
+ * Yêu cầu đổi trả (PLAN-0022) — mỗi bước đúng MỘT bên chịu trách nhiệm, có hạn chót, hết hạn thì job chuyển bước:
+ * requested → approved → received → refunded; requested → rejected → escalated (khách khiếu nại); requested/approved → escalated (shop quá hạn / hàng không khớp);
+ * escalated → received (sàn phân xử hoàn tiền) | rejected (sàn từ chối lần cuối); requested/approved → cancelled (khách rút); approved → expired (khách không gửi hàng).
+ * `received` = hàng đã về kho shop (hoặc sàn phân xử hoàn tiền / không cần trả hàng) VÀ khoản hoàn đã được tạo bên payment; payment báo xong ⇒ `refunded`.
+ * Yêu cầu còn MỞ (chặn đối soát chi trả shop): requested · approved · escalated · received.
  */
 model ReturnRequest {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId      String    @map("order_id") @db.Uuid
-  orderCode    String    @map("order_code") @db.VarChar(30)
-  userId       String    @map("user_id") @db.Uuid
-  status       String    @default("requested") @db.VarChar(20)
-  reason       String    @db.VarChar(255)
-  detail       String?   @db.VarChar(1000)
-  rejectReason String?   @map("reject_reason") @db.VarChar(500)
-  refundAmount Decimal   @map("refund_amount") @db.Decimal(14, 0)
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId                String    @map("order_id") @db.Uuid
+  orderCode              String    @map("order_code") @db.VarChar(30)
+  userId                 String    @map("user_id") @db.Uuid
   /**
-   * MediaItem[] {type,url,name} — ảnh/video Cloudinary
+   * Gian hàng của đơn — chép từ Order.shopId để shop lọc danh sách + job SLA quét theo chỉ mục, không phải JOIN sang orders.
    */
-  evidence     Json      @default("[]")
-  processedBy  String?   @map("processed_by") @db.Uuid
-  processedAt  DateTime? @map("processed_at") @db.Timestamptz
-  refundedAt   DateTime? @map("refunded_at") @db.Timestamptz
-  version      Int       @default(0)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
-  updatedBy    String?   @map("updated_by") @db.Uuid
+  shopId                 String    @map("shop_id") @db.Uuid
+  status                 String    @default("requested") @db.VarChar(20)
+  /**
+   * defective | wrong_item | not_as_described | damaged_shipping | size_issue | changed_mind | not_received | other.
+   */
+  reasonCode             String    @default("other") @map("reason_code") @db.VarChar(30)
+  /**
+   * false khi `not_received` (khách chưa nhận hàng): không có hàng để trả ⇒ shop duyệt là hoàn tiền ngay, không nhập kho.
+   */
+  requireReturn          Boolean   @default(true) @map("require_return")
+  reason                 String    @db.VarChar(255)
+  detail                 String?   @db.VarChar(1000)
+  rejectReason           String?   @map("reject_reason") @db.VarChar(500)
+  /**
+   * shop | platform — ai từ chối. Chỉ yêu cầu bị SHOP từ chối mới khiếu nại lên sàn được.
+   */
+  rejectedBy             String?   @map("rejected_by") @db.VarChar(20)
+  rejectedAt             DateTime? @map("rejected_at") @db.Timestamptz
+  /**
+   * MediaItem[] — minh chứng shop đính kèm khi từ chối.
+   */
+  rejectEvidence         Json      @default("[]") @map("reject_evidence")
+  /**
+   * Số tiền sẽ hoàn thực tế (shop chỉ được giảm, sàn ≤ tổng đơn − đã hoàn).
+   */
+  refundAmount           Decimal   @map("refund_amount") @db.Decimal(14, 0)
+  /**
+   * Số tiền hệ thống tính ngay lúc tạo yêu cầu (theo tỉ lệ hàng trả) — để thấy shop/sàn đã chỉnh bao nhiêu. NULL = dữ liệu cũ (coi như bằng refundAmount).
+   */
+  calculatedRefundAmount Decimal?  @map("calculated_refund_amount") @db.Decimal(14, 0)
+  adjustReason           String?   @map("adjust_reason") @db.VarChar(500)
+  /**
+   * MediaItem[] {type,url,name} — ảnh/video minh chứng của KHÁCH (URL https từ host upload của hệ thống, tối đa 8).
+   */
+  evidence               Json      @default("[]")
+  /**
+   * Tài khoản nhận tiền hoàn do khách khai {bankBin, bankName?, accountNumber, accountName} — bắt buộc với đơn COD đã thu tiền. Số đầy đủ chỉ để chuyển cho payment;
+   * response luôn che còn 4 số cuối và KHÔNG bao giờ trả cho shop.
+   */
+  refundAccount          Json?     @map("refund_account")
+  /**
+   * {name, phone, address} — nơi khách gửi hàng trả, shop khai lúc duyệt.
+   */
+  returnAddress          Json?     @map("return_address")
+  approvedAt             DateTime? @map("approved_at") @db.Timestamptz
+  approvedBy             String?   @map("approved_by") @db.Uuid
+  carrier                String?   @db.VarChar(60)
+  trackingCode           String?   @map("tracking_code") @db.VarChar(80)
+  shipBackNote           String?   @map("ship_back_note") @db.VarChar(500)
+  shippedBackAt          DateTime? @map("shipped_back_at") @db.Timestamptz
+  receivedAt             DateTime? @map("received_at") @db.Timestamptz
+  receivedBy             String?   @map("received_by") @db.Uuid
+  /**
+   * ok | not_matching — shop xác nhận hàng nhận về đúng / không khớp (⇒ chuyển sàn phân xử).
+   */
+  receivedCondition      String?   @map("received_condition") @db.VarChar(20)
+  receivedNote           String?   @map("received_note") @db.VarChar(500)
+  receivedEvidence       Json      @default("[]") @map("received_evidence")
+  escalatedAt            DateTime? @map("escalated_at") @db.Timestamptz
+  escalateReason         String?   @map("escalate_reason") @db.VarChar(500)
+  /**
+   * customer | shop_timeout | shop_receive_timeout | shop_not_matching.
+   */
+  escalateSource         String?   @map("escalate_source") @db.VarChar(30)
+  resolvedAt             DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedBy             String?   @map("resolved_by") @db.Uuid
+  /**
+   * refund | reject — quyết định phân xử của sàn.
+   */
+  resolveDecision        String?   @map("resolve_decision") @db.VarChar(10)
+  resolveNote            String?   @map("resolve_note") @db.VarChar(500)
+  /**
+   * Người ra quyết định (shop duyệt/từ chối hoặc sàn phân xử) + lúc đó — giữ cho FE/báo cáo cũ.
+   */
+  processedBy            String?   @map("processed_by") @db.Uuid
+  processedAt            DateTime? @map("processed_at") @db.Timestamptz
+  refundedAt             DateTime? @map("refunded_at") @db.Timestamptz
+  /**
+   * Lúc yêu cầu kết thúc không qua hoàn tiền: cancelled | expired | rejected (refunded dùng refunded_at).
+   */
+  closedAt               DateTime? @map("closed_at") @db.Timestamptz
+  /**
+   * Hạn của từng bước (job SLA quét bằng chỉ mục, không tính lại): shop duyệt/từ chối · khách gửi hàng trả · shop xác nhận nhận hàng · khách khiếu nại. NULL = bước không còn chờ.
+   */
+  shopRespondDueAt       DateTime? @map("shop_respond_due_at") @db.Timestamptz
+  shipBackDueAt          DateTime? @map("ship_back_due_at") @db.Timestamptz
+  shopReceiveDueAt       DateTime? @map("shop_receive_due_at") @db.Timestamptz
+  escalateDueAt          DateTime? @map("escalate_due_at") @db.Timestamptz
+  /**
+   * Job đã nhắc shop "còn 24h hết hạn duyệt" — chỉ nhắc MỘT lần.
+   */
+  shopRemindedAt         DateTime? @map("shop_reminded_at") @db.Timestamptz
+  version                Int       @default(0)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy              String?   @map("updated_by") @db.Uuid
 
   order Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   items ReturnRequestItem[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
+  @@index([shopId, status, createdAt(sort: Desc)])
+  @@index([orderId])
+  @@index([status, shopRespondDueAt])
+  @@index([status, shipBackDueAt])
+  @@index([status, shopReceiveDueAt])
   @@map("return_requests")
   @@schema("order")
 }
@@ -304,6 +465,46 @@ model OrderProcessedEvent {
 
   @@unique([eventId, handler])
   @@map("processed_events")
+  @@schema("order")
+}
+
+/**
+ * PLAN-0027 (§2.1) — điểm vi phạm xử lý đơn của gian hàng. UNIQUE(order_code, kind) ⇒ job chạy lại / sự kiện phát lại KHÔNG cộng điểm hai lần.
+ * Tổng điểm 30 ngày ≥ setting `shop.violation_suspend_points` ⇒ nhắc quản lý (xem ShopViolationAlert).
+ */
+model ShopViolation {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId    String   @map("shop_id") @db.Uuid
+  orderCode String   @map("order_code") @db.VarChar(30)
+  kind      String   @db.VarChar(30)
+  points    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([orderCode, kind])
+  @@index([shopId, createdAt(sort: Desc)])
+  @@map("shop_violations")
+  @@schema("order")
+}
+
+/**
+ * Mốc lần nhắc quản lý gần nhất về điểm vi phạm của một gian hàng (nhắc tối đa 1 lần / 7 ngày) — claim bằng upsert có điều kiện, an toàn nhiều worker.
+ */
+model ShopViolationAlert {
+  shopId    String   @id @map("shop_id") @db.Uuid
+  alertedAt DateTime @default(now()) @map("alerted_at") @db.Timestamptz
+
+  @@map("shop_violation_alerts")
+  @@schema("order")
+}
+
+/**
+ * Trạng thái bền của job order (khoá → mốc chạy gần nhất). Job SLA ghi nhịp `order-sla`: nghỉ lâu (tắt SLA, worker sập) rồi chạy lại ⇒ đẩy các hạn đã trễ sang "bây giờ + số giờ" thay vì huỷ hàng loạt.
+ */
+model OrderJobState {
+  key       String   @id @db.VarChar(60)
+  lastRunAt DateTime @map("last_run_at") @db.Timestamptz
+
+  @@map("job_state")
   @@schema("order")
 }
 

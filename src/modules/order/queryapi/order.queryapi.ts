@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@common/prisma/prisma.service';
 import { Prisma, type Tx } from '@common/prisma/types';
+import { commissionBase } from '../foundation/commission';
+import { RETURN_OPEN_STATUSES, RETURN_REJECTED_BY, RETURN_STATUS } from '../foundation/order.constants';
 import { OrderRepository } from '../order/repository/order.repository';
 
 /* QueryAPI của order — review (đã mua chưa?), ai (đơn của tôi cho chatbot), reporting. Thứ DUY NHẤT module khác import. */
 @Injectable()
 export class OrderQueryApi {
+  async simulatedOrderCodes(codes: string[]): Promise<ReadonlySet<string>> {
+    if (codes.length === 0) return new Set();
+    const rows = await this.prisma.order.findMany({ where: { code: { in: codes }, OR: [{ shippingProvider: 'fake' }, { shippingEnvironment: 'demo' }] }, select: { code: true } });
+    return new Set(rows.map((r) => r.code));
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly repo: OrderRepository,
@@ -90,21 +97,23 @@ export class OrderQueryApi {
 
   /* Đơn ONLINE (PayOS) đã thu tiền về sàn để tính đối soát (payout) — PLAN-0020: đơn COD không đi đường này (ví đặt cọc). status=completed, `paymentStatus` paid/partially_refunded,
      đã qua hạn đổi trả (tính từ ngày giao) tính đến periodEnd — escrow: không đưa đơn còn trong hạn đổi trả vào kỳ. Payment tự loại đơn đã nằm trong kỳ trước. */
-  async settlementOrders(returnWindowDays: number, periodEnd: Date): Promise<Array<{ orderCode: string; shopId: string; total: Prisma.Decimal; platformDiscount: Prisma.Decimal; commissionRateSnapshot: Prisma.Decimal; settleFrom: Date }>> {
+  async settlementOrders(returnWindowDays: number, periodEnd: Date): Promise<Array<{ orderCode: string; shopId: string; total: Prisma.Decimal; platformDiscount: Prisma.Decimal; /* PLAN-0030: gốc hoa hồng = tiền hàng sau voucher shop (không phí ship) */ commissionBase: Prisma.Decimal; shopRevenue?: Prisma.Decimal; commissionRateSnapshot: Prisma.Decimal; settleFrom: Date }>> {
     const cutoff = new Date(periodEnd.getTime() - returnWindowDays * 86_400_000);
     const rows = await this.prisma.order.findMany({
       where: {
         isDeleted: false,
         status: 'completed',
         // PLAN-0020: đơn COD shop tự cầm tiền mặt — sàn trừ hoa hồng từ ví đặt cọc nên KHÔNG đưa vào đối soát chi trả.
-        paymentMethodCode: { not: 'cod' },
+        AND:[{OR:[{paymentMethodCode:{not:'cod'}},{collectionMode:'carrier_cod',paymentStatus:{in:['paid','partially_refunded']}}]}],
         paymentStatus: { in: ['paid', 'partially_refunded'] },
         OR: [{ deliveredAt: { lte: cutoff } }, { deliveredAt: null, completedAt: { lte: cutoff } }],
-        // Đơn đang có yêu cầu đổi trả CHƯA xử lý xong thì giữ lại (escrow) — chi trước rồi mới hoàn thì shop đã nhận tiền thừa, thành nợ mang sang.
-        returns: { none: { status: { in: ['requested', 'approved'] } } },
+        // Đơn đang có yêu cầu đổi trả CHƯA xong thì giữ lại (escrow) — chi trước rồi mới hoàn thì shop đã nhận tiền thừa, thành nợ mang sang. "Chưa xong" = requested · approved ·
+        // escalated · received (đã nhận hàng, khoản hoàn đang chờ payment báo xong — PLAN-0022), VÀ yêu cầu bị SHOP từ chối mà khách còn trong hạn khiếu nại (nếu khiếu nại thắng thì
+        // sàn hoàn tiền SAU khi đã chi cho shop). Chỉ refunded/cancelled/expired, rejected do sàn, hoặc rejected do shop đã hết hạn khiếu nại mới được thả.
+        returns: { none: { OR: [{ status: { in: [...RETURN_OPEN_STATUSES] } }, { status: RETURN_STATUS.REJECTED, rejectedBy: RETURN_REJECTED_BY.SHOP, escalateDueAt: { gt: new Date() } }] } },
       },
-      select: { code: true, shopId: true, total: true, platformDiscount: true, commissionRateSnapshot: true, deliveredAt: true, completedAt: true },
+      select: { code: true, fulfilmentMode:true, shopId: true, total: true, platformDiscount: true, subtotal: true, shopDiscount: true, shopShippingDiscount: true, commissionRateSnapshot: true, deliveredAt: true, completedAt: true },
     });
-    return rows.map((o) => ({ orderCode: o.code, shopId: o.shopId, total: o.total, platformDiscount: o.platformDiscount, commissionRateSnapshot: o.commissionRateSnapshot, settleFrom: (o.deliveredAt ?? o.completedAt) as Date }));
+    return rows.map((o) => ({ orderCode: o.code, shopId: o.shopId, total: o.total, platformDiscount: o.platformDiscount, commissionBase: new Prisma.Decimal(commissionBase(o).toString()), ...(o.fulfilmentMode==='carrier' ? {shopRevenue:o.subtotal.sub(o.shopDiscount)}:{}), commissionRateSnapshot: o.commissionRateSnapshot, settleFrom: (o.deliveredAt ?? o.completedAt) as Date }));
   }
 }

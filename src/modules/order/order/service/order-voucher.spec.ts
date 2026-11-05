@@ -131,6 +131,15 @@ describe('OrderService.applyVouchers — phân bổ voucher về đơn con', () 
     expectMoneyInvariants(r);
   });
 
+  it('[COD-04] tách phần giảm rơi vào PHÍ SHIP (hoa hồng không tính trên phí ship): freeship sàn ⇒ platformShippingDiscount; % / số tiền ⇒ 0', () => {
+    const fs = apply([grp(A, 500_000n, 30_000n)], [platformV(30_000n, { type: 'free_shipping' })]);
+    expect(fs[0]).toMatchObject({ platformDiscount: 30_000n, platformShippingDiscount: 30_000n, shopShippingDiscount: 0n });
+    const pct = apply([grp(A, 500_000n, 30_000n)], [platformV(50_000n, { type: 'percentage' })]);
+    expect(pct[0]).toMatchObject({ platformDiscount: 50_000n, platformShippingDiscount: 0n });
+    const mixed = apply([grp(A, 500_000n, 30_000n)], [platformV(30_000n, { type: 'free_shipping' }), shopV(A, 40_000n, { type: 'fixed_amount' })]);
+    expect(mixed[0]).toMatchObject({ shopDiscount: 40_000n, shopShippingDiscount: 0n, platformShippingDiscount: 30_000n });
+  });
+
   it('(c2) free_shipping khi gói CUỐI có ship 0: phần dư dồn vào gói có trọng số cuối (không phải gói cuối danh sách)', () => {
     const groups = [grp(A, 500_000n, 30_000n), grp(B, 300_000n, 20_000n), grp(C, 1_500_000n, 0n)];
     const r = apply(groups, [platformV(50_000n, { type: 'free_shipping' })]);
@@ -351,6 +360,8 @@ function buildFixture(cfg: { lines?: Basket['lines']; vouchers?: VoucherDef[]; m
     }),
     /* Thành viên ACTIVE của shop (mặc định rỗng) — placeOrder chặn khách là thành viên của chính shop có hàng trong giỏ. */
     activeMemberUserIds: jest.fn((shopId: string): Promise<string[]> => Promise.resolve(members[shopId] ?? [])),
+    /* PLAN-0027 (G12): huỷ đơn báo thành viên shop — mặc định không ai. */
+    memberUserIdsWithPermission: jest.fn((_shopId: string, _perm: string): Promise<string[]> => Promise.resolve([])),
   };
 
   const scopeOf = jest.fn((code: string): Promise<{ scope: 'platform' | 'shop'; shopId: string | null } | null> => {
@@ -379,10 +390,11 @@ function buildFixture(cfg: { lines?: Basket['lines']; vouchers?: VoucherDef[]; m
   const restock = jest.fn((_lines: unknown, _ref: unknown, _tx: Tx): Promise<void> => Promise.resolve());
   const inventory = { reserve, release: inventoryRelease, restock, commit: jest.fn(), availableOf: jest.fn() } as unknown as InventoryGateway;
 
-  const initiate = jest.fn((_input: { orderCode: string; amount: bigint }, _tx: Tx): Promise<unknown> => Promise.resolve({}));
+  const initiate = jest.fn((_input: { orderCode: string; amount: bigint }, _tx: Tx): Promise<unknown> => Promise.resolve({}));
+  const createCheckoutLinks = jest.fn((_codes: string[]): Promise<Map<string, unknown>> => Promise.resolve(new Map()));
   const paymentCancel = jest.fn((_code: string, _reason: string, _tx: Tx): Promise<void> => Promise.resolve());
   const requestRefund = jest.fn((_input: { orderCode: string; amount: bigint }, _tx: Tx): Promise<{ refundId: string | null }> => Promise.resolve({ refundId: null }));
-  const payment = { isMethodActive: jest.fn((_m: string): Promise<boolean> => Promise.resolve(true)), initiate, cancel: paymentCancel, requestRefund, markCodCollected: jest.fn(), codAvailability: jest.fn((ids: string[]) => Promise.resolve(new Map(ids.map((i) => [i, true])))) } as unknown as PaymentGateway;
+  const payment = { isMethodActive: jest.fn((_m: string): Promise<boolean> => Promise.resolve(true)), initiate, createCheckoutLinks, cancel: paymentCancel, requestRefund, markCodCollected: jest.fn(), codAvailability: jest.fn((ids: string[]) => Promise.resolve(new Map(ids.map((i) => [i, true])))) } as unknown as PaymentGateway;
 
   const audit = { write: jest.fn((..._a: unknown[]): Promise<void> => Promise.resolve()) };
   const outbox = { publish: jest.fn((..._a: unknown[]): Promise<void> => Promise.resolve()) };
@@ -1074,9 +1086,9 @@ describe('OrderService — huỷ đơn con nhả voucher', () => {
       expect(f.release).not.toHaveBeenCalled();
     });
 
-    it('khách không huỷ được đơn đã xác nhận (CANNOT_CANCEL) ⇒ voucher giữ nguyên, không nhả', async () => {
+    it('khách không huỷ trực tiếp được đơn đang đóng gói (CANNOT_CANCEL — phải gửi yêu cầu huỷ) ⇒ voucher giữ nguyên, không nhả', async () => {
       const f = buildFixture();
-      f.findByCodeForUpdate.mockResolvedValueOnce(row('o1', 'DH261001', { status: ORDER_STATUS.CONFIRMED }));
+      f.findByCodeForUpdate.mockResolvedValueOnce(row('o1', 'DH261001', { status: ORDER_STATUS.PACKING }));
       await expect(f.service.cancelByCustomer(actor, 'DH261001', 'Đổi ý')).rejects.toMatchObject({ errorCode: ORDER_ERR.CANNOT_CANCEL });
       expect(f.release).not.toHaveBeenCalled();
     });

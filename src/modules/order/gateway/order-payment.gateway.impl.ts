@@ -7,10 +7,15 @@ import { ReturnService } from '../return/return.service';
 /* Cài OrderPaymentGateway (cổng ngược): payment báo tiền về / thất bại / hoàn xong trong CÙNG tx xử lý IPN. */
 @Injectable()
 export class OrderPaymentGatewayImpl implements OrderPaymentGateway {
+  simulatedOrderCodes(codes: string[]): Promise<ReadonlySet<string>> { return this.orders.simulatedOrderCodes(codes); }
   constructor(
     private readonly orders: OrderService,
     private readonly returns: ReturnService,
   ) {}
+
+  lockOrder(orderCode: string, tx: Tx): Promise<void> {
+    return this.orders.lockOrder(orderCode, tx);
+  }
 
   onPaid(orderCode: string, info: { paymentId: string; methodCode: string; transactionCode: string | null; bankCode: string | null; paidAt: Date }, tx: Tx): Promise<void> {
     return this.orders.onPaid(orderCode, info, tx);
@@ -26,6 +31,10 @@ export class OrderPaymentGatewayImpl implements OrderPaymentGateway {
 
   canRetryPayment(orderCode: string): Promise<boolean> {
     return this.orders.canRetryPayment(orderCode);
+  }
+
+  extendPaymentDeadline(orderCode: string, until: Date, tx: Tx): Promise<void> {
+    return this.orders.extendPaymentDeadline(orderCode, until, tx);
   }
 
   /* payment gọi thêm khi hoàn tiền của yêu cầu đổi trả xong. */

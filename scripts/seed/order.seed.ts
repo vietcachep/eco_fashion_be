@@ -236,7 +236,11 @@ export async function seed(prisma: PrismaClient): Promise<void> {
         const processed = s.returned !== 'requested';
         const rr = await tx.returnRequest.create({
           data: {
-            orderId: o.id, orderCode: s.code, userId: u.id, status: s.returned, reason: 'Không vừa size', detail: 'Mặc hơi rộng, muốn đổi sang size nhỏ hơn hoặc hoàn tiền.',
+            // PLAN-0022: shop_id bắt buộc; "approved" cũ = đã nhập kho + đã yêu cầu hoàn ⇒ "received".
+            orderId: o.id, orderCode: s.code, userId: u.id, shopId: o.shopId, status: s.returned === 'approved' ? 'received' : s.returned, reasonCode: 'size_issue',
+            receivedAt: s.returned === 'requested' ? null : new Date(requestedAt.getTime() + 6 * 3_600_000), receivedCondition: s.returned === 'requested' ? null : 'ok',
+            shopRespondDueAt: s.returned === 'requested' ? new Date(requestedAt.getTime() + 72 * 3_600_000) : null,
+            reason: 'Không vừa size', detail: 'Mặc hơi rộng, muốn đổi sang size nhỏ hơn hoặc hoàn tiền.',
             refundAmount: refund.toString(), evidence: [{ type: 'image', url: item.imageUrl ?? '', name: 'anh-san-pham.jpg' }],
             processedBy: processed ? staffId('sales') : null, processedAt: processed ? new Date(requestedAt.getTime() + 6 * 3_600_000) : null,
             createdAt: requestedAt, updatedAt: requestedAt,
