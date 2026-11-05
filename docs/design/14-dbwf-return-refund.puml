@@ -1,6 +1,6 @@
 @startuml 14-dbwf-return-refund
 title Database Workflow 5 — Đổi trả sau giao hàng: khách gửi yêu cầu → nhân viên duyệt → nhập lại kho → hoàn tiền qua QR/SePay
-header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018).
+header THIẾT KẾ CŨ (SePay/VietQR/VNPay/ví COD) — KHÔNG còn hiệu lực. PLAN-0018: sàn thu mọi khoản qua PayOS + COD, tự động đối soát và chi trả shop (xem PLAN-0018). Luồng đổi trả/hoàn tiền hiện hành (shop duyệt → khách gửi hàng → shop nhận → kế toán chi; sàn chỉ phân xử): xem PLAN-0022.
 
 skinparam shadowing false
 skinparam ActivityBackgroundColor #FFFFFF
