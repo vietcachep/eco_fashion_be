@@ -4,7 +4,7 @@ import type { CarrierGateway, CarrierCreateInput, CarrierState, QuoteInput } fro
 import { escapeHtml, shippingText } from '../foundation/shipping.pure';
 
 type RecordValue = Record<string, unknown>;
-export class GhnHttpError extends Error { constructor(readonly status: number) { super('GHN không chấp nhận yêu cầu'); } }
+export class GhnHttpError extends Error { constructor(readonly status: number, readonly clientOrderNotFound = false) { super('GHN không chấp nhận yêu cầu'); } }
 /* Một adapter gọi GHN duy nhất. Timeout hữu hạn, không log secret, không retry mù create/huỷ. */
 @Injectable()
 export class GhnGateway implements CarrierGateway {
@@ -19,7 +19,20 @@ export class GhnGateway implements CarrierGateway {
     if (!process.env.GHN_TOKEN || !process.env.GHN_SHOP_ID) throw new BusinessException('SHIPPING_UNAVAILABLE', 'Chưa cấu hình kết nối GHN', 503);
     const query = method === 'GET' ? `?${new URLSearchParams(Object.entries(body).filter(([, value]) => value !== undefined).map(([key, value]) => [key, shippingText(value)])).toString()}` : '';
     const r = await fetch(`${this.baseURL}/shiip/public-api/${path}${query}`, { method, headers: { Token: process.env.GHN_TOKEN ?? '', ShopId: process.env.GHN_SHOP_ID ?? '', 'Content-Type': 'application/json' }, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(8_000) });
-    if (!r.ok) throw new GhnHttpError(r.status);
+    if (!r.ok) {
+      let clientOrderNotFound = false;
+      // Staging trả400 cho mã client chưa tồn tại. Chỉ nhận đúng lỗi đã xác minh;
+      // không giữ/log body hãng và không coi lỗi quyền, validation, timeout là chưa tạo.
+      if (r.status === 400 && path === 'v2/shipping-order/detail-by-client-code') {
+        const failure: unknown = await r.json().catch(() => null);
+        if (failure && typeof failure === 'object' && !Array.isArray(failure)) {
+          const { code, message, data } = failure as RecordValue;
+          clientOrderNotFound = code === 400 && data === null && typeof message === 'string'
+            && /^(?:Lỗi gọi API: corev2_tenant_order_detail_by_client_order_code - )?Đơn hàng không tồn tại$/u.test(message.normalize('NFC').trim());
+        }
+      }
+      throw new GhnHttpError(r.status, clientOrderNotFound);
+    }
     const data = await r.json() as { code: number; data: unknown };
     if (data.code !== 200) throw new BusinessException('SHIPPING_GATEWAY_REJECTED', 'GHN chưa chấp nhận yêu cầu vận chuyển', 503);
     return data.data;
@@ -45,7 +58,7 @@ export class GhnGateway implements CarrierGateway {
     try { return this.state(await this.request('GET', 'v2/shipping-order/detail-by-client-code', { client_order_code: code })); }
     catch (e) {
       // Chỉ mã lỗi không-tồn-tại rõ ràng mới cho retry cùng mã. Lỗi mạng/5xx không được coi là chưa tạo.
-      if (e instanceof GhnHttpError && e.status === 404) return null;
+      if (e instanceof GhnHttpError && (e.status === 404 || e.clientOrderNotFound)) return null;
       throw e;
     }
   }

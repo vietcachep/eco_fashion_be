@@ -12,7 +12,7 @@ import { ShippingService } from './shipping.service';
 const address = { name: 'Khách thử', phone: '0900000000', street: '1 Đường A', provinceName: 'Hồ Chí Minh', districtName: 'Quận 1', wardName: 'Phường Bến Nghé', provinceId: 202, districtId: 1442, wardCode: '20101', addressSystem: 'legacy_3level' as const };
 const snapshot: ShippingSnapshot = { pickup: address, destination: address, parcel: { weightGram: 500, lengthCm: 20, widthCm: 15, heightCm: 10 }, quotedFee: '25000', quoteId: '11111111-1111-4111-8111-111111111111', provider: 'fake', environment: 'demo' };
 
-function fixture() {
+function fixture(ghn?: GhnGateway) {
   let row: Shipment | null = null;
   let upstream: CarrierState | null = null;
   let timeoutAfterCreate = false;
@@ -42,11 +42,40 @@ function fixture() {
     shipment: jest.fn(() => Promise.resolve(row)),
   };
   const modules = { get: () => gateway } as unknown as ModuleRef;
-  const service = new ShippingService(repo as unknown as ShippingRepository, fake, {} as GhnGateway, modules);
+  const service = new ShippingService(repo as unknown as ShippingRepository, fake, ghn ?? {} as GhnGateway, modules);
   return { service, repo, order, apply, find, create, quote, track, row: () => row, failCreate: () => { timeoutAfterCreate = true; }, failFinalize: () => { failFinalize = true; }, setUpstreamStatus: (status: string) => { if (upstream) upstream.rawStatus = status; } };
 }
 
 describe('PLAN-0043 claim/recovery', () => {
+  it('adapter staging400 chưa tồn tại tạo đúng một vận đơn rồi replay giữ mã đã tạo', async () => {
+    const previousFetch = global.fetch;
+    const previousEnv = { GHN_TOKEN: process.env.GHN_TOKEN, GHN_SHOP_ID: process.env.GHN_SHOP_ID, GHN_BASE_URL: process.env.GHN_BASE_URL };
+    try {
+      process.env.GHN_TOKEN = 'contract-only'; process.env.GHN_SHOP_ID = '123'; process.env.GHN_BASE_URL = 'https://dev-online-gateway.ghn.vn';
+      const response = (data: unknown) => ({ ok: true, status: 200, json: () => Promise.resolve({ code: 200, data }) });
+      const http = jest.fn()
+        .mockResolvedValueOnce({ ok: false, status: 400, json: () => Promise.resolve({ code: 400, message: 'Lỗi gọi API: corev2_tenant_order_detail_by_client_order_code - Đơn hàng không tồn tại', data: null }) })
+        .mockResolvedValueOnce(response({ order_code: 'GHN-STAGING-1' }))
+        .mockResolvedValueOnce(response({ order_code: 'GHN-STAGING-1', client_order_code: 'DH-DEMO-S1', status: 'ready_to_pick', total_fee: 25000 }));
+      global.fetch = http;
+      const f = fixture(new GhnGateway());
+      f.order.shippingSnapshot = { ...snapshot, provider: 'ghn', environment: 'staging' };
+      const created = await f.service.ship(null, f.order.shopId, f.order.code);
+      expect(created).toMatchObject({ provider: 'ghn', createStatus: 'created', carrierOrderCode: 'GHN-STAGING-1' });
+      await f.service.ship(null, f.order.shopId, f.order.code);
+      expect(http).toHaveBeenCalledTimes(3);
+      const [url, options] = http.mock.calls[1] as [string, RequestInit];
+      expect(url).toContain('/v2/shipping-order/create');
+      expect(options.method).toBe('POST');
+      if (typeof options.body !== 'string') throw new Error('Thiếu body JSON');
+      expect(JSON.parse(options.body)).toMatchObject({ client_order_code: 'DH-DEMO-S1', cod_amount: 530000 });
+      expect(f.repo.create).toHaveBeenCalledTimes(1);
+      expect(f.apply).toHaveBeenCalledTimes(1);
+    } finally {
+      global.fetch = previousFetch;
+      for (const [key, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    }
+  });
   it('phường thuộc quận khác bị chặn trước báo giá, không fallback nhận địa chỉ sai', async () => {
     const f = fixture();
     await expect(f.service.quote({ userId: f.order.userId, shopId: f.order.shopId, pickup: address, destination: { ...address, wardCode: '10301' }, parcel: snapshot.parcel, codValue: '530000', fallbackFee: '30000' })).rejects.toMatchObject({ errorCode: 'SHIPPING_ADDRESS_INVALID' });

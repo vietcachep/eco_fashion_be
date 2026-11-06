@@ -4,6 +4,14 @@
 > Thay thế PLAN-0042 và nội dung PLAN-0043 trước lần sửa này. PLAN-0042 chỉ dùng khảo sát.
 > Repo: eco_backend, fashion_frontend_user, fashion_frontend_admin. Đọc AGENTS.md từng repo; owner điều khiển git, không commit/push/tạo nhánh.
 > Không đọc/in khoá thật; chỉ sửa .env.example. Tiếng Việt, VND nguyên; tính bằng bigint, lưu Decimal/numeric theo repo. Không FK/import repository xuyên schema.
+
+### Hotfix staging 2026-11-06 — tra mã client chưa tồn tại
+
+Bằng chứng vận hành: GET detail-by-client-code trả HTTP400, code400, data=null và message `Lỗi gọi API: corev2_tenant_order_detail_by_client_order_code - Đơn hàng không tồn tại`. Adapter chỉ nhận404 nên createClaimed không bao giờ gọi create ở lượt đầu. Sửa phạm vi hẹp: chỉ endpoint tra mã client, chỉ400/code400/data=null và thông báo không-tồn-tại xác định mới trả null. Lỗi xác thực/validation/5xx/timeout giữ nguyên lỗi để tránh tạo trùng. Giữ lease, clientOrderCode, transaction/audit/outbox; không migration, không tạo dữ liệu kiểm thử trên server.
+
+- [x] Regression phản hồi staging thực tế và lỗi khác không bị nuốt: test trước sửa 2 fail/16 pass; sau sửa 3 suite shipping/48 test pass, gồm service + adapter tạo một lần/replay không HTTP.
+- [x] Adapter hotfix: lint ba file sửa, build và check:boundaries đều exit0; 3 suite shipping/48 test đạt. Không sửa env/key, không tạo DB/container hay dữ liệu thử nghiệm trên VPS. Bản sửa mới nằm trong workspace, chưa commit/push/deploy.
+- [ ] Chủ dự án deploy bản sửa; đối soát lại attempt cũ và xác minh callback create thật (chưa thực hiện).
 > Ownership: khách theo JWT userId; vendor theo ShopContextGuard, không nhận shopId từ body/query; sàn theo mã quyền.
 
 ## 1. Mục tiêu và các mốc nghiệm thu

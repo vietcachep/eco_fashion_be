@@ -22,6 +22,39 @@ describe('PLAN-0043 GHN contract', () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 });
     await expect(new GhnGateway().findByClientCode('DH1-SA')).resolves.toBeNull();
   });
+  it.each([
+    'Lỗi gọi API: corev2_tenant_order_detail_by_client_order_code - Đơn hàng không tồn tại',
+    'Đơn hàng không tồn tại',
+  ])('HTTP400 không-tồn-tại xác định từ staging cho phép tạo cùng mã client: %s', async (message) => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ code: 400, message, data: null }) });
+    await expect(new GhnGateway().findByClientCode('DH1-SA')).resolves.toBeNull();
+  });
+  it.each([
+    [400, 400, 'Token không hợp lệ', null],
+    [400, 400, 'Thiếu client_order_code', null],
+    [400, 400, 'Đơn hàng không tồn tại hoặc không có quyền truy cập', null],
+    [400, 401, 'Đơn hàng không tồn tại', null],
+    [400, 400, 'Đơn hàng không tồn tại', { order_code: 'EXISTING' }],
+    [401, 400, 'Đơn hàng không tồn tại', null],
+    [403, 400, 'Đơn hàng không tồn tại', null],
+    [503, 400, 'Đơn hàng không tồn tại', null],
+  ])('lỗi HTTP%s/code%s (%s) không được coi là mã client chưa tồn tại', async (status, code, message, data) => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status, json: () => Promise.resolve({ code, message, data }) });
+    await expect(new GhnGateway().findByClientCode('DH1-SA')).rejects.toBeInstanceOf(GhnHttpError);
+  });
+  it('HTTP400 không phải JSON vẫn giữ lỗi, không tạo mù', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.reject(new SyntaxError('invalid JSON')) });
+    await expect(new GhnGateway().findByClientCode('DH1-SA')).rejects.toBeInstanceOf(GhnHttpError);
+  });
+  it('HTTP400 không-tồn-tại ở endpoint track không được đổi thành null', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ code: 400, message: 'Đơn hàng không tồn tại', data: null }) });
+    await expect(new GhnGateway().track('GHN-1')).rejects.toBeInstanceOf(GhnHttpError);
+  });
+  it('timeout tra mã client giữ lỗi, không cho tạo mù', async () => {
+    const timeout = new Error('request timeout');
+    global.fetch = jest.fn().mockRejectedValue(timeout);
+    await expect(new GhnGateway().findByClientCode('DH1-SA')).rejects.toBe(timeout);
+  });
   it('huỷ HTTP 200 nhưng một mã result=false vẫn thất bại', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ code: 200, data: [{ order_code: 'G1', result: false }] }) });
     await expect(new GhnGateway().cancel('G1')).rejects.toMatchObject({ errorCode: 'SHIPMENT_CANCEL_REJECTED' });
