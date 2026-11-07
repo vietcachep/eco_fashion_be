@@ -17,6 +17,7 @@ import { ReportingWorkerModule } from '@modules/reporting/reporting-worker.modul
 import { ReviewWorkerModule } from '@modules/review/review-worker.module';
 import { ShopWorkerModule } from '@modules/shop/shop-worker.module';
 import { SystemWorkerModule } from '@modules/system/system-worker.module';
+import { LivestreamWorkerModule } from '@modules/livestream/livestream-worker.module';
 
 /*
  * Lắp ráp WORKER: cùng code với API nhưng chỉ nạp processor BullMQ, relay outbox và job định kỳ.
@@ -42,6 +43,7 @@ import { SystemWorkerModule } from '@modules/system/system-worker.module';
     AiWorkerModule,
     ShopWorkerModule,
     SystemWorkerModule,
+    LivestreamWorkerModule,
   ],
   providers: [MailProcessor],
 })

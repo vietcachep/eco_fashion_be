@@ -13,7 +13,7 @@ export const ENV = Symbol('ENV');
   imports: [
     NestConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env'],
+      envFilePath: [process.env.DOTENV_CONFIG_PATH ?? '.env'],
       validate: (cfg) => loadEnv(cfg as NodeJS.ProcessEnv),
     }),
   ],

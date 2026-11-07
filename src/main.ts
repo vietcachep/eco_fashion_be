@@ -5,6 +5,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { text } from 'express';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from 'nestjs-pino';
@@ -22,6 +23,8 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(Logger);
   app.useLogger(logger);
   const env = app.get<Env>(ENV);
+  // LiveKit ký trên bytes nguyên bản; không JSON.stringify lại payload trước khi kiểm chữ ký.
+  app.use(`/${env.EF_API_PREFIX}/livestreams/media/webhook`, text({ type: 'application/webhook+json', limit: '1mb' }));
 
   app.set('trust proxy', env.EF_TRUSTED_PROXY_COUNT);
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

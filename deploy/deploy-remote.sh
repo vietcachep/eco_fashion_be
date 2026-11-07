@@ -30,6 +30,16 @@ set_image() {
 }
 
 PREV=$(grep -E '^FITLY_IMAGE=' .env.production | tail -1 | cut -d= -f2- || true)
+PREV_VISUAL=$(grep -E '^VISUAL_ENCODER_IMAGE=' .env.production | tail -1 | cut -d= -f2- || true)
+set_visual_image() {
+  [ -n "${1:-}" ] || return 0
+  if grep -q '^VISUAL_ENCODER_IMAGE=' .env.production; then
+    sed -i "s|^VISUAL_ENCODER_IMAGE=.*|VISUAL_ENCODER_IMAGE=$1|" .env.production
+  else
+    printf '\nVISUAL_ENCODER_IMAGE=%s\n' "$1" >> .env.production
+  fi
+  chmod 600 .env.production
+}
 [ -n "$PREV" ] || PREV="fitly-backend:prod"   # lần đầu chuyển sang CD: image cũ là bản tự build tại máy chủ
 echo "== image hiện tại: $PREV"
 echo "== image mới:      $IMAGE"
@@ -46,6 +56,7 @@ ls -1t "$BACKUP_DIR"/fitly-pre-*.dump 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1
 
 echo "== 2. kéo image mới"
 set_image "$IMAGE"
+set_visual_image "${VISUAL_IMAGE:-}"
 if [ "${SKIP_PULL:-0}" != "1" ]; then
   "${COMPOSE[@]}" pull migrate api worker
 fi
@@ -69,6 +80,7 @@ if [ "$ok" != "1" ]; then
   "${COMPOSE[@]}" logs --tail 40 migrate api >&2 || true
   echo "!! Quay về image cũ: $PREV" >&2
   set_image "$PREV"
+  set_visual_image "${PREV_VISUAL:-${VISUAL_IMAGE:-}}"
   "${COMPOSE[@]}" up -d --remove-orphans >&2 || true
   echo "!! Nếu migration mới đã áp dụng, schema đã đổi: bản sao lưu ở $BACKUP_DIR/fitly-pre-$TS.dump" >&2
   exit 1

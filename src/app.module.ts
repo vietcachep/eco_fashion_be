@@ -19,6 +19,7 @@ import { ReportingModule } from '@modules/reporting/reporting.module';
 import { ReviewModule } from '@modules/review/review.module';
 import { ShopModule } from '@modules/shop/shop.module';
 import { SystemModule } from '@modules/system/system.module';
+import { LivestreamModule } from '@modules/livestream/livestream.module';
 
 /*
  * Lắp ráp runtime API. Thứ tự import: config → logger → prisma → common (guard/filter) → module nghiệp vụ.
@@ -31,6 +32,7 @@ import { SystemModule } from '@modules/system/system.module';
     LoggerModule,
     PrismaModule,
     CommonModule,
+    LivestreamModule,
     EventEmitterModule.forRoot({ wildcard: true, delimiter: '.' }),
     ScheduleModule.forRoot(),
     SystemModule,

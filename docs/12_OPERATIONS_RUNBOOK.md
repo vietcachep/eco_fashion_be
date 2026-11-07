@@ -127,3 +127,6 @@
 - COD đã thu/chưa tiền về: kế toán đối chiếu chứng từ rồi xác nhận đúng tổng/mã nhận; không nhập mã tuỳ ý để đẩy payout. Khoản hoàn carrier COD chưa remitted không được chi.
 - Theo dõi danh sách /shipping/shipments cho quá hạn lấy, chưa rõ kết quả, exception/lost và lỗi inbox. Không xoá inbox để làm mất lỗi; reconcile chạy cùng đường xử lý.
 - Demo dùng FakeCarrierState DB riêng + simulator non-production; staging GHN là lượt kiểm riêng. Dữ liệu/tiến trình E2E phải cô lập và dọn sau kiểm. Không giả lập trạng thái của vận đơn GHN thật.
+
+## PLAN-0044 — vận hành tìm ảnh
+Xem services/visual-encoder/README.md: bật profile visual-search, cấu hình token/URL cùng API-worker, chờ encoder /health200 rồi kiểm GET /admin/ai/image-index/status và POST /admin/ai/image-index/reindex (ai.knowledge.manage). Ảnh failed thử lại5phút; sweep10sản phẩm/lô mỗi30s. Không chạy lại seed/restore/xoá DB để lập chỉ mục. Thay ảnh cần URL version mới hoặc update product. Thiếu encoder/rerank trả degraded hoặc no-match rõ, không bịa dữ liệu. Ngưỡng0.65 chưa hiệu chỉnh trên held-out, không được nói65% accuracy.

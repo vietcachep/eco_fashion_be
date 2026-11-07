@@ -120,3 +120,5 @@ Sau migration mới của module nào, **phải chạy `perms:sync`/seed tương
 
 Sơ đồ: `docs/database/eco_fashion.dbml` (dán vào dbdiagram.io; phản ánh tới migration `payment_platform_collects_all` của PLAN-0018). Thiết kế từng module:
 `docs/database/<m>-database-design.md`.
+
+PLAN-0045: migration `20261106150000_livestream_commerce` thêm schema livestream và dữ liệu commerce liên quan. Livestream lưu metadata, audit/outbox/inbox, admission ngắn hạn và nguồn mua24giờ; không lưu video hoặc media JWT. Session/product/user/shop xuyên module là UUID trần, không FK xuyên schema. Chat raw giữ30ngày (giữ thêm khi report pending), admission raw24giờ; uniqueViewers/peak/views lưu tổng bền để cleanup không làm sai báo cáo. Follow thuộc shop. DBML có toàn bộ14bảng core+follow và các bảng commerce.

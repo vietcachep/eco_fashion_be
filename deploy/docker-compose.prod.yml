@@ -20,6 +20,17 @@ x-backend-env: &backend-env
     EF_REDIS_URL: redis://:${REDIS_PASSWORD:?đặt REDIS_PASSWORD trong .env.production}@redis:6379/0
 
 services:
+  visual-encoder:
+    profiles: ["visual-search"]
+    image: ${VISUAL_ENCODER_IMAGE:-fitly-visual-encoder:prod}
+    restart: unless-stopped
+    environment:
+      VISUAL_ENCODER_TOKEN: ${EF_VISUAL_ENCODER_TOKEN:-}
+      VISUAL_CPU_THREADS: "2"
+    expose: ["8080"]
+    volumes: ["visual_models:/models"]
+    mem_limit: 3g
+    cpus: 2
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
@@ -121,6 +132,7 @@ services:
         condition: service_completed_successfully
 
 volumes:
+  visual_models:
   pg_data:
   redis_data:
   caddy_data:

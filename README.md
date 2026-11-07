@@ -192,3 +192,6 @@ thử sandbox/khoá thật một kỳ nhỏ trước khi bật chi tự động 
 ## PLAN-0043 — vận chuyển GHN (đang kiểm E2E)
 
 Đã thêm schema/module shipping, báo phí theo shop và snapshot tuyến, tạo vận đơn/nhãn, inbox+worker, FakeCarrier DB, remittance COD và màn khách/vendor/sàn. Đơn cũ tự giao giữ nguyên luật. Migration 20261105090000_shipping_ghn đã kiểm trên DB cô lập (drift=0). Kết quả cuối ghi docs/13; chưa nghiệm thu staging GHN/tiền thật khi chưa có credential.
+
+### PLAN-0044 — tìm kiếm ảnh
+Đã bổ sung pipeline ảnh↔ảnh, chọn món/crop và rerank ảnh ứng viên; cần bật encoder nội bộ + chỉ mục catalog để dùng visual retrieval. Cấu hình/deploy/benchmark: [visual-encoder](services/visual-encoder/README.md). Bộ embeddings văn bản cho chatbot giữ riêng. Bản nâng cấp không tự được deploy lên VPS.

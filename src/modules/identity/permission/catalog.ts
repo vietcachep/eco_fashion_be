@@ -46,6 +46,16 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   p('payment', 'cod.confirm', 'Xác nhận tiền COD hãng đã nộp về sàn'),
   p('shipping', 'simulator.use', 'Giả lập vận chuyển trong môi trường demo'),
   // order
+  p('livestream', 'session.read', 'Xem các phiên livestream toàn sàn'),
+  p('livestream', 'session.terminate', 'Buộc dừng phiên livestream vi phạm'),
+  p('livestream', 'report.read', 'Xem báo cáo nội dung livestream'),
+  p('livestream', 'report.process', 'Xử lý báo cáo nội dung livestream'),
+  p('livestream', 'shop.restrict', 'Hạn chế hoặc khôi phục quyền live của shop'),
+  p('shop', 'livestream.read', 'Xem phiên livestream của shop'),
+  p('shop', 'livestream.manage', 'Tạo phiên và quản lý hàng, lịch, người điều hành'),
+  p('shop', 'livestream.broadcast', 'Phát và kết thúc livestream của shop'),
+  p('shop', 'livestream.moderate', 'Điều hành bình luận trong livestream'),
+  p('shop', 'livestream.report.read', 'Xem dữ liệu phiên livestream của shop'),
   p('order', 'order.read', 'Xem đơn hàng'),
   { ...p('order', 'order.status.update', 'Xác nhận / đóng gói / giao / hoàn tất đơn'), deprecated: true }, // PLAN-0021: việc của CHỦ SHOP — sàn không làm thay
   p('order', 'order.cancel', 'Huỷ đơn thay khách'),
@@ -188,7 +198,7 @@ export const ROLE_PRESETS: Record<RoleCode, { name: string; description: string;
     name: 'Quản lý cửa hàng',
     description: 'Ngành hàng, sản phẩm, tồn kho, đơn, khuyến mãi, đánh giá, báo cáo, duyệt gian hàng',
     codes: [
-      ...codesOfModules('catalog', 'product', 'promotion', 'review', 'reporting'),
+      ...codesOfModules('catalog', 'product', 'promotion', 'review', 'reporting', 'livestream'),
       // Đơn + đổi trả: quản lý XEM và huỷ đơn khi tranh chấp; phân xử đổi trả (order.return.process) là việc của admin + CSKH (PLAN-0022).
       ...codesOfModules('order').filter((c) => c !== 'order.return.process'),
       ...codes(

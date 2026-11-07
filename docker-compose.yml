@@ -10,6 +10,15 @@
 # Cổng publish (không đụng dự án eco_books cùng máy): API 4000 · Postgres 5434 · Redis 6381 · Mailpit 8026/1026.
 # =====================================================================
 services:
+  visual-encoder:
+    profiles: ["visual-search"]
+    build: ./services/visual-encoder
+    image: fitly-visual-encoder:dev
+    environment:
+      VISUAL_ENCODER_TOKEN: ${EF_VISUAL_ENCODER_TOKEN:-}
+    expose: ["8080"]
+    volumes: ["visual_models:/models"]
+    mem_limit: 3g
   db:
     image: pgvector/pgvector:pg16
     container_name: ecofashion-db
@@ -137,5 +146,6 @@ services:
         condition: service_completed_successfully
 
 volumes:
+  visual_models:
   ecofashion_pg_data:
   ecofashion_redis_data:

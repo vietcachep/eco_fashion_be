@@ -310,3 +310,38 @@ Giới hạn: chưa gọi GHN staging/production, chưa xác minh tài khoản n
 Cổng kiểm cuối: backend `npm run verify` exit0, 98 suite / 2.515 test; `npx tsc --noEmit` exit0. Hai sửa tích hợp cuối (cờ huỷ trước picked và tìm mã vận đơn giữ bộ lọc shop/status) có thêm 14 regression, bộ tập trung 2 suite / 52 test đạt. Storefront lint/typecheck đạt, production build exit0 (34 trang; 2 cảnh báo img có sẵn). Admin lint/typecheck đạt, production build exit0 (72 trang). Không tuyên bố refund đã done hay outbound payout đã paid: t12 kiểm yêu cầu hoàn và dòng sổ SALE.
 
 Dọn dẹp đã xác minh: xoá đúng hai container audit và anonymous volume (toàn bộ đơn/user/quote/simulator do bài thử tạo); dừng API, hai FE dev, PayOS mock và Chrome audit; không còn listener ở4031/3403/3404/4021/9227/55443/56390. Xoá profile .ghn-browser-audit chứa phiên đăng nhập và ba file tạm fitly-ghn-*.log/json. Giữ harness và bốn ảnh bằng chứng; không xoá file/thay đổi sẵn có hoặc DB của người dùng. Backend lint các file sửa cuối + build lại đều exit0.
+
+## 16. PLAN-0044 — tìm sản phẩm bằng ảnh (2026-11-06)
+
+Đã thay pipeline chỉ dựa từ khoá bằng SigLIP2 ảnh768 chiều, lập chỉ mục ảnh catalog qua worker, hợp nhất ứng viên ảnh/OCR và xếp hạng lại bằng ảnh thật khi có OpenAI. FE chọn vùng bằng chuột/chạm/bàn phím, nhận diện món theo yêu cầu, trả ảnh màu khớp và lý do similar/related. Không báo similarity thành phần trăm chắc chắn, không tự lấp kết quả khi reranker trả rỗng. Có API quản trị index, compose/CD profile riêng và CLI benchmark tuning/held-out.
+
+Môi trường audit riêng: PostgreSQL16/pgvector localhost55445/fitly_visual_audit, Redis56391, API4005, encoder18183. Tắt OpenAI, không đọc key thật, không ghi vào DB/server triển khai. Ảnh mẫu tải qua GET public, fixture chỉ tạo trong DB audit. Model Google SigLIP2 base-patch16-224 revision75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2 chạy CPU thật.
+
+| Cổng | Kết quả |
+|---|---|
+| Backend `npm run verify` | exit0: lint, boundaries, build, **99 suite / 2509 test** đạt |
+| Migration | 49 migration áp lên DB mới, `migration:check` không lệch schema |
+| Encoder Python | 4 test đạt: ảnh RGB hợp lệ, base64/bytes sai, GIF bị loại, giới hạn kích thước |
+| Encoder HTTP thật | health200/dimensions768 đúng model; không token401; ảnh sai và batch quá lớn400 |
+| PostgreSQL + encoder thật | `scripts/audit/visual-search-smoke.ts`: **7/7** self-image cosine>.99, đúng product/ảnh, index idempotent, lọc hidden/suspended và prune ảnh không còn bán |
+| API HTTP thật | analyze200 không key trả hướng dẫn crop; search200 mode visual trả đúng một sản phẩm/ảnh fixture; admin index không auth401 |
+| Regression có mock OpenAI | Người mặc đồ/vùng hợp lệ, iPhone không phụ thuộc tên điện thoại, ảnh màu, ID bịa/trùng, no-match không bị lấp, stale image URL, fallback và vector invalid |
+| Frontend | lint/typecheck đạt; production build exit0,34 trang; hai cảnh báo img có sẵn ở account-shell/profile-screen |
+| Deployment files | Compose config và bash syntax đạt; chưa push/deploy hay bật model trên VPS |
+| Diff | Hai repo `git diff --check` đạt |
+
+Giới hạn nghiệm thu: **7/7 là smoke tích hợp, không phải accuracy benchmark**. Chưa có bộ ảnh người gán nhãn tuning/held-out và chưa gọi OpenAI thật; chưa thể công bố mức tăng độ chính xác hoặc nghiệm thu chất lượng nhận diện vùng/rerank ngoài mock. Threshold0.65 là khởi điểm cần hiệu chỉnh, không phải65% accuracy. FE đã code responsive nhưng chưa kiểm trình duyệt desktop/390px: lệnh mở server FE local bị automatic review từ chối, chỉ nêu `blocked by policy`. Không khởi chạy lại bằng đường khác.
+
+Dọn dẹp đã xác minh: dừng API/Chrome audit; xoá đúng ba container fitly-visual-*-audit cùng anonymous volumes, volume fitly-visual-audit-models và tag image fitly-visual-encoder:audit. Toàn bộ fixture DB bị xoá cùng DB audit. Không còn listener4005/18183/55445/56391/9228/3414, container hoặc volume fitly-visual; ba container ago-erp có sẵn vẫn chạy. **Còn sót** D:\Fullstack\eco_fashion\.visual-browser-audit và ba log trong TEMP (fitly-visual-lint.log, fitly-visual-verify.log, fitly-visual-final-verify.log): lệnh xoá thư mục/log bị automatic review từ chối `blocked by policy`. Không công bố đã dọn sạch file khi chưa xoá được. Giữ source/test harness/model service và tài liệu cần cho triển khai; không có ảnh query lưu trong DB thật.
+
+Để bật trên VPS: làm theo [services/visual-encoder/README.md](../services/visual-encoder/README.md), cấu hình profile/token/URL nội bộ, kiểm RAM/model health và theo dõi index ready trước khi nghiệm thu bằng bộ ảnh thật.
+
+## 17. PLAN-0045 — FITLY Live A+B (2026-11-06)
+
+Chi tiết nguồn/code/harness/bằng chứng và giới hạn: [biên bản triển khai Live](plans/PLAN-0045-livestream-implementation.md).
+
+Backend lint/boundaries/build đạt; toàn bộ104suite/2544test đạt trước bổ sung bộ lọc khám phá cuối. 50migration trên DB audit mới, drift không khác, seed live idempotent2lần. Video và audio WebRTC thật qua LiveKit cục bộ đã nhận/giải mã ở browser độc lập và storefront. Dừng phiên thật thu hồi room; token host cũ không tự tạo lại phòng (`room.auto_create:false`). Worker pin outbox→Redis→Socket.IO thật và chặn user khác shop đã kiểm.
+
+UI storefront đặt COD thành công nhóm `DHN2611060009`/con `DH2611060009`, tổng80.000đ sau voucher live50.000đ; giỏ cũ2chiếc giữ nguyên, reload không đặt trùng. HTTP kiểm thêm buy_now isolation, attempt replay/fencing, giỏ snapshot, coupon1of3, COD huỷ/khôi phục và recovery lượng1 giữ expiry. Admin7màn390px không tràn; camera preview dùng thiết bị giả lập Chrome. Hai FE production build đạt (36/76trang); còn2/4cảnh báo lint có sẵn.
+
+Mọi ghi ở DB audit localhost55446, Redis56392, API4006/worker riêng và LiveKit7880; không dùng Cloud/thanh toán/GHN thật, không DB triển khai. Không tuyên bố nghiệm thu tải10viewer, camera phần cứng hai máy hoặc PayOS/LiveKit Cloud thật. Chưa push/deploy. Kiểm cuối sau lọc ngành: boundaries/build và104suite/2544test đạt; lọc ngành16phiên→15+1, admission10+11th409 và heartbeat chungIP đạt. Đã dừng process, xoá3container+volume dữ liệu riêng; không còn listener audit. **Còn profile `.live-browser-audit` và13file TEMP vì automatic review chặn xoá `blocked by policy`**; đường dẫn đầy đủ tại biên bản triển khai. Không công bố đã sạch filesystem.

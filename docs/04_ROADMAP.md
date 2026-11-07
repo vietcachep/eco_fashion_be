@@ -68,3 +68,5 @@ Sau mỗi plan: seed idempotent (kèm ảnh nếu module có ảnh) + docker com
   `npm run seed:gen-images`), nằm sẵn trong `scripts/seed/assets` (~930 ảnh, không bị gitignore — phải commit cùng repo) — máy khác seed KHÔNG cần mạng ngoài; xem `docs/05_SEED_AND_REPRODUCE.md`.
 - Seed upload lên Cloudinary với `public_id` cố định (`ecofashion/seed/<module>/<slug>`) → chạy lại không tạo
   bản trùng; chưa cấu hình Cloudinary → dùng đường dẫn tĩnh `/static/seed/...` do API phục vụ.
+
+PLAN-0044 (2026-11-06): nâng tìm ảnh từ keywords-only sang SigLIP2 ảnh↔ảnh + OCR + vision rerank, chọn vùng/món trên FE, worker index và deploy sidecar. Cổng kiểm trong plan và services/visual-encoder/README.md; không công bố accuracy khi chưa có benchmark gán nhãn.

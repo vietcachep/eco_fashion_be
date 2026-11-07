@@ -1,0 +1,20 @@
+# Self-host LiveKit: copy to a private config and replace keys/node_ip before deployment.
+# https://github.com/livekit/livekit/blob/master/config-sample.yaml
+# Never expose the development key used by scripts/audit in production.
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: true
+room:
+  # Required: BE explicitly creates rooms. A cached token must not recreate a room after force-stop.
+  auto_create: false
+  empty_timeout: 60
+  departure_timeout: 20
+keys:
+  REPLACE_API_KEY: REPLACE_API_SECRET
+webhook:
+  api_key: REPLACE_API_KEY
+  urls:
+    - https://REPLACE_BACKEND_HOST/api/v1/livestreams/media/webhook
