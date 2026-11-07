@@ -1,4 +1,5 @@
 import type { Tx } from '../prisma/types';
+import type { LiveCartSource } from './live-commerce.gateway';
 
 export const PROMOTION_GATEWAY = Symbol('PROMOTION_GATEWAY');
 
@@ -8,10 +9,14 @@ export interface BasketForPromotion {
   shopId?: string | null;
   subtotal: bigint;
   shippingFee: bigint;
-  lines: Array<{ productId: string; categorySlug: string; lineTotal: bigint }>;
+  shippingByShop?: Record<string, bigint>;
+  lines: Array<{ productId: string; categorySlug: string; lineTotal: bigint; variantId?: string; shopId?: string; quantity?: number; unitPrice?: bigint; liveSources?: LiveCartSource[] }>;
 }
 
 export interface PromotionQuote {
+  liveCampaignId?: string;
+  eligibleShopWeights?: Record<string, string>;
+  eligibleVariantWeights?: Record<string, string>;
   ok: boolean;
   code: string;
   name: string | null;
@@ -35,6 +40,6 @@ export interface PromotionGateway {
   /* Tra phạm vi mã (không kiểm điều kiện). null = mã không tồn tại / đã xoá. */
   scopeOf(code: string): Promise<{ scope: 'platform' | 'shop'; shopId: string | null } | null>;
   quote(code: string, basket: BasketForPromotion): Promise<PromotionQuote>;
-  consume(code: string, basket: BasketForPromotion, orderCode: string, tx: Tx): Promise<PromotionQuote>;
+  consume(code: string, basket: BasketForPromotion, orderCode: string, tx: Tx, appliedDiscount?:bigint): Promise<PromotionQuote>;
   release(orderCode: string, tx: Tx): Promise<void>;
 }

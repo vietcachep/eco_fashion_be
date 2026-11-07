@@ -61,6 +61,7 @@ function promo(s: PromoSeed): PromoRow {
   const shopId = s.shopId ?? null;
   return {
     id,
+    liveCampaignId: null,
     code: s.code,
     name: s.name ?? `Mã ${s.code}`,
     description: null,

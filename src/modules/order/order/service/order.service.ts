@@ -38,6 +38,8 @@ import { OrderShippingPricingService, type CarrierQuote, type CarrierPricingCont
 import { ShippingApplicationApi } from '@modules/shipping/applicationapi/shipping.applicationapi';
 import { ShippingQueryApi } from '@modules/shipping/queryapi/shipping.queryapi';
 import type { ShippingSnapshot, ShippingOrderSnapshot, CarrierOrderUpdate } from '@common/gateway/order-shipping.gateway';
+import { CheckoutIntentRepository } from '../../checkout/checkout-intent.repository';
+import { allocateLiveLines, type LiveLineAllocation } from '../../checkout/live-allocation';
 
 export interface CheckoutAddress {
   addressSystem?: string; ghnProvinceId?: number | null; ghnDistrictId?: number | null; ghnWardCode?: string | null;
@@ -51,6 +53,7 @@ export interface CheckoutAddress {
 }
 
 export interface PlaceOrderInput {
+  checkoutIntentId?: string;
   quoteIds?: string[];
   addressId?: string;
   address?: CheckoutAddress;
@@ -93,6 +96,7 @@ interface ShopGroupPriced {
 
 /* Gói đã trừ voucher: shopDiscount do SHOP chịu, platformDiscount do SÀN chịu (phần phân bổ của voucher sàn). */
 interface PricedGroup extends ShopGroupPriced {
+  lineAllocations?:Map<string,LiveLineAllocation>;
   shopDiscount: bigint;
   platformDiscount: bigint;
   /* PLAN-0030: phần của mỗi loại giảm rơi vào PHÍ SHIP (voucher freeship) — hoa hồng không tính trên phí ship. */
@@ -151,6 +155,7 @@ export class OrderService {
     @Optional() private readonly shippingPricing?: OrderShippingPricingService,
     @Optional() private readonly shippingCommands?: ShippingApplicationApi,
     @Optional() private readonly shippingQueries?: ShippingQueryApi,
+    @Optional() private readonly checkoutIntents?: CheckoutIntentRepository,
   ) {}
 
   /* Sự kiện hãng đã xác minh: caller giữ ĐƠN/SHIPMENT, tất cả side-effect cùng tx inbox. */
@@ -267,7 +272,7 @@ export class OrderService {
   }
 
   private static promoLines(lines: Basket['lines']) {
-    return lines.map((l) => ({ productId: l.productId, categorySlug: l.categorySlug, lineTotal: l.lineTotal }));
+    return lines.map((l) => ({ productId: l.productId, categorySlug: l.categorySlug, lineTotal: l.lineTotal, variantId:l.variantId,shopId:l.shopId,quantity:l.quantity,unitPrice:l.unitPrice,liveSources:l.sourceLots }));
   }
 
   /*
@@ -275,8 +280,8 @@ export class OrderService {
    * cho mỗi shop có trong giỏ (tính trên riêng phần hàng của shop đó, SHOP chịu). Mã thứ hai cùng loại/cùng shop, hoặc mã shop không có
    * trong giỏ → bị từ chối kèm lý do (không im lặng bỏ qua).
    */
-  private async price(userId: string, provinceHint: string | null, codes: string[], carrier?: CarrierPricingContext): Promise<Priced> {
-    const basket = await this.cart.basketOf(userId, true);
+  private async price(userId: string, provinceHint: string | null, codes: string[], carrier?: CarrierPricingContext, sourceBasket?:Basket): Promise<Priced> {
+    const basket = sourceBasket ?? await this.cart.basketOf(userId, true);
     const warnings: string[] = [];
     for (const l of basket.lines) {
       if (!l.isSellable) warnings.push(`${l.name} (${l.color}/${l.size}) đã ngừng bán`);
@@ -305,7 +310,7 @@ export class OrderService {
     if (subtotal > 0n) {
       let platformTaken = false;
       const shopTaken = new Set<string>();
-      const wholeBasket = { userId, subtotal, shippingFee, lines: OrderService.promoLines(sellable) };
+      const wholeBasket = { userId, subtotal, shippingFee, lines: OrderService.promoLines(sellable),shippingByShop:Object.fromEntries(raw.map(g=>[g.shopId,g.shippingFee])) };
       for (const code of codes) {
         const scope = await this.promotion.scopeOf(code);
         if (!scope) {
@@ -349,7 +354,7 @@ export class OrderService {
     const shopQuote = new Map<string, PromotionQuote>();
     for (const v of vouchers) if (v.shopId && v.quote.ok) shopQuote.set(v.shopId, v.quote);
 
-    const weight = (g: ShopGroupPriced) => (platform?.type === 'free_shipping' ? g.shippingFee : g.subtotal);
+    const weight = (g: ShopGroupPriced) => platform?.eligibleShopWeights ? BigInt(platform.eligibleShopWeights[g.shopId] ?? '0') : (platform?.type === 'free_shipping' ? g.shippingFee : g.subtotal);
     const totalWeight = groups.reduce((s, g) => s + weight(g), 0n);
     const lastWeighted = groups.reduce((idx, g, i) => (weight(g) > 0n ? i : idx), -1);
     let allocated = 0n;
@@ -360,19 +365,22 @@ export class OrderService {
         if (i !== lastWeighted) allocated += platformShare;
       }
       const cap = g.subtotal + g.shippingFee;
-      const rawShop = shopQuote.get(g.shopId)?.discount ?? 0n;
-      const shopDiscount = rawShop > cap ? cap : rawShop;
+      const sq = shopQuote.get(g.shopId);
+      const rawShop = sq?.discount ?? 0n;
+      let shopDiscount = rawShop > cap ? cap : rawShop;
       let platformDiscount = platformShare > cap - shopDiscount ? cap - shopDiscount : platformShare;
       // Freeship sàn + freeship shop trên cùng đơn con: tổng hai mã không được vượt phí ship (shop ưu tiên) — nếu không phần dư sẽ trừ vào tiền hàng.
       if (platform?.type === 'free_shipping' && shopQuote.get(g.shopId)?.type === 'free_shipping') {
         const room = g.shippingFee - shopDiscount; // phần phí ship còn lại sau voucher shop
         if (platformDiscount > room) platformDiscount = room > 0n ? room : 0n;
       }
-      const discount = shopDiscount + platformDiscount;
       // Phần giảm trên phí ship: voucher freeship ⇒ toàn bộ phần giảm đó (đã bị chặn ≤ phí ship ở trên); voucher loại khác ⇒ 0 (giảm trên tiền hàng).
       const shopShippingDiscount = shopQuote.get(g.shopId)?.type === 'free_shipping' ? (shopDiscount > g.shippingFee ? g.shippingFee : shopDiscount) : 0n;
       const platformShippingDiscount = platform?.type === 'free_shipping' ? (platformDiscount > g.shippingFee ? g.shippingFee : platformDiscount) : 0n;
-      return { ...g, shopDiscount, platformDiscount, shopShippingDiscount, platformShippingDiscount, discount, total: cap - discount };
+      const live=(sq?.liveCampaignId||platform?.liveCampaignId) ? allocateLiveLines(g.lines,shopDiscount,platformDiscount,g.shippingFee,shopShippingDiscount,platformShippingDiscount,sq?.type==='free_shipping'?undefined:sq?.eligibleVariantWeights,platform?.type==='free_shipping'?undefined:platform?.eligibleVariantWeights):null;
+      if(live) {shopDiscount=live.shopGoods+shopShippingDiscount;platformDiscount=live.platformGoods+platformShippingDiscount;}
+      const discount=shopDiscount+platformDiscount;
+      return { ...g, shopDiscount, platformDiscount, shopShippingDiscount, platformShippingDiscount, discount, total: cap - discount,...(live?{lineAllocations:live.allocations}:{}) };
     });
   }
 
@@ -382,10 +390,11 @@ export class OrderService {
     return a?.provinceCode ?? a?.provinceName ?? null;
   }
 
-  async checkoutSummary(actor: AuthenticatedActor, q: { voucherCode?: string; voucherCodes?: string[]; province?: string; addressId?: string; paymentMethodCode?: string }): Promise<CheckoutSummaryResponse> {
+  async checkoutSummary(actor: AuthenticatedActor, q: { voucherCode?: string; voucherCodes?: string[]; province?: string; addressId?: string; paymentMethodCode?: string; checkoutIntentId?:string }): Promise<CheckoutSummaryResponse> {
     const hint = await this.resolveProvinceHint(actor.userId, q);
     const a = this.shippingPricing ? (q.addressId ? await this.identity.findAddress(actor.userId,q.addressId) : await this.identity.defaultAddress(actor.userId)) : null;
-    const p = await this.price(actor.userId, hint, OrderService.normalizeCodes(q), a ? {address:OrderService.fromAddressBrief(a),methodCode:q.paymentMethodCode ?? 'cod'} : undefined);
+    const sourceBasket=q.checkoutIntentId && this.checkoutIntents ? await this.checkoutIntents.basket(actor.userId,q.checkoutIntentId):undefined;
+    const p = await this.price(actor.userId, hint, OrderService.normalizeCodes(q), a ? {address:OrderService.fromAddressBrief(a),methodCode:q.paymentMethodCode ?? 'cod'} : undefined,sourceBasket);
     return this.toSummary(p);
   }
 
@@ -432,7 +441,8 @@ export class OrderService {
    * toán duy nhất: việc đó thuộc PLAN-0015 (đóng băng payment module ở vòng này theo đúng yêu cầu).
    */
   async placeOrder(actor: AuthenticatedActor, input: PlaceOrderInput, idempotencyKey: string | null): Promise<OrderGroupResponse> {
-    const commandHash = this.shippingPricing ? IdempotencyService.hashRequest({userId:actor.userId,addressId:input.addressId ?? null,address:input.address ?? null,methodCode:input.paymentMethodCode,note:input.note ?? null,vouchers:OrderService.normalizeCodes(input).map((c)=>c.toUpperCase()).sort()}) : null;
+    if(input.checkoutIntentId && this.checkoutIntents) { const intent=await this.checkoutIntents.row(actor.userId,input.checkoutIntentId); if(intent.state==='consumed' && intent.resultGroupCode) return this.myOrderGroup(actor,intent.resultGroupCode); }
+    const commandHash = this.shippingPricing ? IdempotencyService.hashRequest({userId:actor.userId,addressId:input.addressId ?? null,address:input.address ?? null,methodCode:input.paymentMethodCode,note:input.note ?? null,vouchers:OrderService.normalizeCodes(input).map((c)=>c.toUpperCase()).sort(),...(input.checkoutIntentId?{checkoutIntentId:input.checkoutIntentId}:{})}) : null;
     if(idempotencyKey && commandHash) { const replay=await this.repo.completedPlacement(actor.userId,idempotencyKey,commandHash); if(replay) return this.myOrderGroup(actor,replay); }
     // 1. Địa chỉ giao
     let address: CheckoutAddress;
@@ -458,17 +468,19 @@ export class OrderService {
       const replay = await this.repo.completedPlacement(actor.userId,idempotencyKey,requestHash);
       if (replay) return this.myOrderGroup(actor,replay);
     }
-    const prepriced = this.shippingPricing ? await this.price(actor.userId,address.provinceCode ?? address.provinceName,OrderService.normalizeCodes(input),{address,methodCode,quoteIds:input.quoteIds}) : null;
+    const sourceBasket=input.checkoutIntentId && this.checkoutIntents ? await this.checkoutIntents.basket(actor.userId,input.checkoutIntentId):undefined;
+    const prepriced = this.shippingPricing ? await this.price(actor.userId,address.provinceCode ?? address.provinceName,OrderService.normalizeCodes(input),{address,methodCode,quoteIds:input.quoteIds},sourceBasket) : null;
     const prepared = prepriced ? new Map(prepriced.groups.map((g) => [g.shopId,g.carrierQuote ?? null])) : undefined;
     const createdOrderCodes: string[] = []; // mã đơn con vừa tạo trong transaction (rỗng khi replay Idempotency-Key)
     const groupCode = await this.prisma.$transaction(
       async (tx) => {
         const idem = idempotencyKey ? await IdempotencyService.begin<{ code: string }>(tx.orderIdempotencyKey, { scope: 'place-order', actorKey: actor.userId, key: idempotencyKey, requestHash, ttlHours: 24 }) : null;
         if (idem?.replay) return idem.replay.code;
+        if(input.checkoutIntentId && this.checkoutIntents) { const row=await this.checkoutIntents.row(actor.userId,input.checkoutIntentId,tx,true); if(row.state==='consumed' && row.resultGroupCode) { if(idem) await idem.complete(200,{code:row.resultGroupCode},row.resultGroupCode); return row.resultGroupCode; } }
 
         // 3. Giỏ + tiền theo từng shop (đọc trong tx để nhất quán)
         let p: Priced;
-        try { p = await this.price(actor.userId, address.provinceCode ?? address.provinceName, OrderService.normalizeCodes(input), prepared ? {address,methodCode,prepared} : undefined); }
+        try { p = await this.price(actor.userId, address.provinceCode ?? address.provinceName, OrderService.normalizeCodes(input), prepared ? {address,methodCode,prepared} : undefined,input.checkoutIntentId && this.checkoutIntents ? await this.checkoutIntents.basket(actor.userId,input.checkoutIntentId,tx):undefined); }
         catch (err) { if (err instanceof BusinessException && err.errorCode === 'ORDER_SHIPPING_QUOTE_CHANGED') throw new PriceChangedSignal(expectedTotal ?? prepriced?.total ?? 0n,null); throw err; }
         if (p.groups.length === 0) throw new BusinessException(ORDER_ERR.CART_EMPTY, 'Giỏ hàng trống hoặc không còn sản phẩm nào bán được');
         if (p.warnings.length > 0) throw new BusinessException(ORDER_ERR.CART_CHANGED, `Giỏ hàng có thay đổi: ${p.warnings.join('; ')}`, 409);
@@ -520,9 +532,10 @@ export class OrderService {
           const group = v.shopId ? p.groups.find((g) => g.shopId === v.shopId) : null;
           const basket = group
             ? { userId: actor.userId, shopId: group.shopId, subtotal: group.subtotal, shippingFee: group.shippingFee, lines: OrderService.promoLines(group.lines) }
-            : { userId: actor.userId, subtotal: p.subtotal, shippingFee: p.shippingFee, lines: OrderService.promoLines(p.groups.flatMap((g) => g.lines)) };
+            : { userId: actor.userId, subtotal: p.subtotal, shippingFee: p.shippingFee, lines: OrderService.promoLines(p.groups.flatMap((g) => g.lines)),shippingByShop:Object.fromEntries(p.groups.map(g=>[g.shopId,g.shippingFee])) };
           const orderRef = group ? (childCodes.get(group.shopId) as string) : groupCode;
-          const consumed = await this.promotion.consume(v.quote.code, basket, orderRef, tx);
+          const applied=group?group.shopDiscount:p.groups.reduce((n,g)=>n+g.platformDiscount,0n);
+          const consumed = await this.promotion.consume(v.quote.code, basket, orderRef, tx,applied);
           const voucherLost = !consumed.ok
             ? new BusinessException(ORDER_ERR.PROMOTION_INVALID, `${v.quote.code}: ${consumed.error ?? 'Mã giảm giá không còn hiệu lực'}`)
             : consumed.discount !== v.quote.discount
@@ -606,7 +619,7 @@ export class OrderService {
               confirmDueAt,
               createdBy: actor.userId,
               updatedBy: actor.userId,
-              items: { create: g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId, shopId: l.shopId, slug: l.slug, name: l.name, imageUrl: l.imageUrl, color: l.color, size: l.size, sku: l.sku, quantity: l.quantity, unitPrice: l.unitPrice.toString(), lineTotal: l.lineTotal.toString() })) },
+              items: { create: g.lines.map((l) => ({ variantId: l.variantId, productId: l.productId, shopId: l.shopId, slug: l.slug, name: l.name, imageUrl: l.imageUrl, color: l.color, size: l.size, sku: l.sku, quantity: l.quantity, unitPrice: l.unitPrice.toString(), lineTotal: l.lineTotal.toString(),liveSources:JSON.parse(JSON.stringify(l.sourceLots??[])) as Prisma.InputJsonValue,...(g.lineAllocations?.has(l.variantId)?{discountAllocation:{...g.lineAllocations.get(l.variantId)!}}:{}) })) },
             },
             tx,
           );
@@ -632,7 +645,8 @@ export class OrderService {
         }
 
         // 7. Xoá dòng giỏ đã mua (toàn bộ, không phân biệt shop) + 1 thông báo tổng cho khách
-        await this.cartWrite.removeLines(actor.userId, purchasedVariantIds, tx);
+        if(input.checkoutIntentId && this.checkoutIntents) await this.checkoutIntents.committed(actor.userId,input.checkoutIntentId,groupCode,tx);
+        else await this.cartWrite.removeLines(actor.userId, purchasedVariantIds, tx);
         await this.notify.notify(
           {
             userId: actor.userId,
@@ -661,7 +675,7 @@ export class OrderService {
   private async rethrowPlaceFailure(err: unknown, actor: AuthenticatedActor, address: CheckoutAddress, input: PlaceOrderInput): Promise<never> {
     if (!(err instanceof PriceChangedSignal)) throw err;
     // Tính lại cùng đầu vào (cùng tỉnh, cùng mã) khi tín hiệu không mang sẵn báo giá — dòng giỏ chưa bị xoá vì transaction đã rollback.
-    const fresh = err.priced ?? (await this.price(actor.userId, address.provinceCode ?? address.provinceName, OrderService.normalizeCodes(input),this.shippingPricing ? {address,methodCode:input.paymentMethodCode,quoteIds:input.quoteIds}:undefined));
+    const fresh = err.priced ?? (await this.price(actor.userId, address.provinceCode ?? address.provinceName, OrderService.normalizeCodes(input),this.shippingPricing ? {address,methodCode:input.paymentMethodCode,quoteIds:input.quoteIds}:undefined,input.checkoutIntentId && this.checkoutIntents ? await this.checkoutIntents.basket(actor.userId,input.checkoutIntentId):undefined));
     if (!err.priced && err.fallback && fresh.total === err.expected) throw err.fallback;
     throw new BusinessException(
       ORDER_ERR.PRICE_CHANGED,

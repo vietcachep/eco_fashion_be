@@ -208,6 +208,8 @@ model Order {
 }
 
 model OrderItem {
+  liveSources Json @default("[]") @map("live_sources")
+  discountAllocation Json? @map("discount_allocation")
   id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId   String  @map("order_id") @db.Uuid
   /**
@@ -237,6 +239,49 @@ model OrderItem {
   @@index([productId])
   @@index([shopId])
   @@map("order_items")
+  @@schema("order")
+}
+
+model CheckoutIntent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  mode String @db.VarChar(30)
+  requestKey String? @map("request_key") @db.VarChar(100)
+  requestHash String? @map("request_hash") @db.VarChar(64)
+  state String @default("active") @db.VarChar(20)
+  lines Json
+  resultGroupCode String? @map("result_group_code") @db.VarChar(30)
+  version Int @default(0)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@index([userId, createdAt(sort: Desc)])
+  @@unique([userId, requestKey])
+  @@map("checkout_intents")
+  @@schema("order")
+}
+
+/// Chứng cứ thực thi/idempotency kỹ thuật của intent; actor=userId, không xoá/expire khi chưa rõ kết quả.
+model CheckoutAttempt {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  intentId String @map("intent_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  requestKey String @map("request_key") @db.VarChar(100)
+  requestHash String @map("request_hash") @db.VarChar(64)
+  command Json
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz
+  state String @default("processing") @db.VarChar(20)
+  groupCode String? @map("group_code") @db.VarChar(30)
+  errorCode String? @map("error_code") @db.VarChar(100)
+  message String? @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  @@unique([userId, requestKey])
+  @@index([intentId, createdAt(sort: Desc)])
+  @@map("checkout_attempts")
   @@schema("order")
 }
 

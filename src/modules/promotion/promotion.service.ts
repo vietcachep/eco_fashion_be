@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { LiveVoucherService } from './live/live-voucher.service';
 import { AuditEntry, writeAuditLog } from '@common/audit/audit';
 import { BusinessException, ConflictException, ForbiddenException, NotFoundException } from '@common/exception/business.exception';
 import { BasketForPromotion, PromotionGateway, PromotionQuote } from '@common/gateway/promotion.gateway';
@@ -81,6 +82,7 @@ export class PromotionService implements PromotionGateway {
   constructor(
     private readonly prisma: PrismaService,
     private readonly shops: ShopQueryApi,
+    @Optional() private readonly liveVouchers?:LiveVoucherService,
   ) {}
 
   // ------------------------------------------------------------------ tính toán thuần
@@ -101,9 +103,12 @@ export class PromotionService implements PromotionGateway {
   }
 
   private async evaluate(p: PromoRow, basket: BasketForPromotion, tx?: Tx | null): Promise<PromotionQuote> {
+    const live = p.liveCampaignId && this.liveVouchers ? await this.liveVouchers.prepare(p,basket,tx??undefined):null;
+    if(live?.error) return {ok:false,code:p.code,name:p.name,type:p.type,scope:p.scope==='shop'?'shop':'platform',shopId:p.shopId,discount:0n,error:live.error,missingAmount:null};
+    if(live) basket=live.basket;
     const now = new Date();
     const scope = p.scope === 'shop' ? 'shop' : 'platform';
-    const q = (error: string | null, discount = 0n, missing: bigint | null = null): PromotionQuote => ({ ok: error === null, code: p.code, name: p.name, type: p.type, scope, shopId: p.shopId, discount, error, missingAmount: missing });
+    const q = (error: string | null, discount = 0n, missing: bigint | null = null): PromotionQuote => ({ ok: error === null, code: p.code, name: p.name, type: p.type, scope, shopId: p.shopId, discount, error, missingAmount: missing,...(live?{liveCampaignId:live.campaignId,eligibleShopWeights:live.weights,eligibleVariantWeights:Object.fromEntries(live.basket.lines.map(l=>[l.variantId!,l.lineTotal.toString()]))}:{}) });
     if (!p.isActive || p.isDeleted) return q('Mã không tồn tại hoặc đã hết hạn');
     // Voucher shop chỉ áp cho giỏ của đúng shop phát hành — chặn dùng mã shop A cho hàng shop B (kể cả khi gọi gateway sai giỏ).
     if (p.scope === 'shop' && (!p.shopId || basket.shopId !== p.shopId)) return q('Mã chỉ áp dụng cho sản phẩm của gian hàng phát hành mã');
@@ -140,14 +145,15 @@ export class PromotionService implements PromotionGateway {
     return this.evaluate(p, basket);
   }
 
-  async consume(code: string, basket: BasketForPromotion, orderCode: string, tx: Tx): Promise<PromotionQuote> {
+  async consume(code: string, basket: BasketForPromotion, orderCode: string, tx: Tx, appliedDiscount?:bigint): Promise<PromotionQuote> {
     const head = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "promotion"."promotions" WHERE upper(code) = upper(${code.trim()}) AND is_deleted = false FOR UPDATE`;
     const p = head[0] ? await tx.promotion.findUnique({ where: { id: head[0].id }, include: { targets: true } }) : null;
     if (!p) return PromotionService.notFound(code);
     const q = await this.evaluate(p, basket, tx);
     if (!q.ok) return q;
     await tx.promotion.update({ where: { id: p.id }, data: { usedCount: { increment: 1 } } });
-    await tx.promotionUsage.create({ data: { promotionId: p.id, userId: basket.userId, orderCode, discountAmount: new Prisma.Decimal(q.discount.toString()) } });
+    const usage=await tx.promotionUsage.create({ data: { promotionId: p.id, userId: basket.userId, orderCode, discountAmount: new Prisma.Decimal((appliedDiscount??q.discount).toString()) } });
+    if(p.liveCampaignId && this.liveVouchers) await this.liveVouchers.consumed(p,basket,usage.id,orderCode,appliedDiscount??q.discount,tx);
     return q;
   }
 
@@ -158,6 +164,7 @@ export class PromotionService implements PromotionGateway {
   async release(orderCode: string, tx: Tx): Promise<void> {
     const usages = await tx.promotionUsage.findMany({ where: { orderCode, releasedAt: null } });
     for (const u of usages) {
+      if(this.liveVouchers && await tx.liveVoucherUse.findUnique({where:{promotionUsageId:u.id}})) continue;
       await tx.promotionUsage.update({ where: { id: u.id }, data: { releasedAt: new Date() } });
       await tx.promotion.update({ where: { id: u.promotionId }, data: { usedCount: { decrement: 1 } } });
     }
@@ -317,6 +324,7 @@ export class PromotionService implements PromotionGateway {
   async update(actor: AuthenticatedActor, id: string, patch: PromotionInput, ownerShopId?: string): Promise<PromotionAdminResponse> {
     const before = await this.findWritable(id, ownerShopId, true);
     if (!before) throw new NotFoundException(PROMO_ERR.NOT_FOUND, 'Không tìm thấy mã khuyến mãi');
+    if(before.liveCampaignId)throw new BusinessException('LIVE_CAMPAIGN_IMMUTABLE','Ưu đãi live có policy cố định; hãy đóng nhận hoặc thu hồi tại phiên live',409);
     this.validate(patch, before);
     if (patch.code && patch.code.toUpperCase() !== before.code && (await this.findByCode(patch.code))) throw new ConflictException(PROMO_ERR.CODE_EXISTS, `Mã '${patch.code}' đã tồn tại`);
     const after = await this.prisma.$transaction(async (tx) => {
@@ -355,6 +363,7 @@ export class PromotionService implements PromotionGateway {
   async remove(actor: AuthenticatedActor, id: string, ownerShopId?: string): Promise<void> {
     const before = await this.findWritable(id, ownerShopId, false);
     if (!before) throw new NotFoundException(PROMO_ERR.NOT_FOUND, 'Không tìm thấy mã khuyến mãi');
+    if(before.liveCampaignId)throw new BusinessException('LIVE_CAMPAIGN_IMMUTABLE','Không xoá chứng từ ưu đãi live; hãy thu hồi tại phiên live',409);
     await this.prisma.$transaction(async (tx) => {
       await tx.promotion.update({ where: { id }, data: { isDeleted: true, isActive: false, updatedBy: actor.userId } });
       await this.audit(tx, actor, { action: 'PROMOTION_DELETED', entityType: 'promotion', entityId: id, entityCode: before.code });

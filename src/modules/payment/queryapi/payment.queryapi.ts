@@ -11,6 +11,12 @@ export class PaymentQueryApi {
     private readonly payments: PaymentService,
   ) {}
 
+  async liveRefundSettlement(codes:string[]):Promise<Map<string,{moneyCollected:boolean;refundPending:boolean;refundDone:bigint}>> {
+    if(!codes.length)return new Map();
+    const [payments,refunds]=await Promise.all([this.prisma.payment.findMany({where:{orderCode:{in:codes}},select:{orderCode:true,status:true,paidAt:true,codCollectedAt:true}}),this.prisma.refund.findMany({where:{orderCode:{in:codes},kind:'order'},select:{orderCode:true,status:true,amount:true}})]);
+    return new Map(payments.map(p=>[p.orderCode,{moneyCollected:!!p.paidAt||!!p.codCollectedAt||['paid','partially_refunded','refunded'].includes(p.status),refundPending:refunds.some(r=>r.orderCode===p.orderCode&&r.status!=='done'),refundDone:refunds.filter(r=>r.orderCode===p.orderCode&&r.status==='done').reduce((n,r)=>n+BigInt(r.amount.toString()),0n)}]));
+  }
+
   /* Báo nhận COD theo lô cho shipping; không truyền model payment qua module. */
   async carrierCodReceipts(codes:string[]):Promise<Map<string,{collectedAt:string|null;remittedAt:string|null;reference:string|null}>> {
     if(!codes.length) return new Map();

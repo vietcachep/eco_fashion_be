@@ -4,6 +4,7 @@
 // =====================================================================
 
 model Promotion {
+  liveCampaignId String? @unique @map("live_campaign_id") @db.Uuid
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code              String   @db.VarChar(40)
   name              String   @db.VarChar(200)
@@ -51,6 +52,78 @@ model Promotion {
   @@index([isActive, startsAt, endsAt])
   @@index([scope, shopId])
   @@map("promotions")
+  @@schema("promotion")
+}
+
+model LiveVoucherCampaign {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  shopId String @map("shop_id") @db.Uuid
+  promotionId String @unique @map("promotion_id") @db.Uuid
+  state String @default("draft") @db.VarChar(20)
+  claimLimit Int @default(100) @map("claim_limit")
+  claimedCount Int @default(0) @map("claimed_count")
+  redeemUntil DateTime? @map("redeem_until") @db.Timestamptz
+  policyVersion String @default("FITLY_LIVE_V1") @map("policy_version") @db.VarChar(40)
+  reason String? @db.VarChar(500)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@index([sessionId, state])
+  @@map("live_campaigns")
+  @@schema("promotion")
+}
+
+/// Receipt quyền kỹ thuật campaign-user; actor=userId, không soft-delete để tránh nhận lại sau khi đã dùng.
+model LiveVoucherClaim {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  state String @default("available") @db.VarChar(30)
+  activeUseId String? @map("active_use_id") @db.Uuid
+  recoveryEntitlementId String? @unique @map("recovery_entitlement_id") @db.Uuid
+  recoveryLines Json? @map("recovery_lines")
+  restoreReason String? @map("restore_reason") @db.VarChar(255)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  @@unique([campaignId, userId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("live_claims")
+  @@schema("promotion")
+}
+
+/// Lịch sử liên kết claim-usage/order và đối soát phục hồi; không soft-delete hay ghi đè snapshot covered.
+model LiveVoucherUse {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  claimId String @map("claim_id") @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+  promotionUsageId String @unique @map("promotion_usage_id") @db.Uuid
+  orderCode String @map("order_code") @db.VarChar(30)
+  covered Json
+  discount Decimal @db.Decimal(14, 0)
+  policyVersion String @default("FITLY_LIVE_V1") @map("policy_version") @db.VarChar(40)
+  state String @default("active") @db.VarChar(30)
+  restoredAt DateTime? @map("restored_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@index([state, createdAt])
+  @@map("live_uses")
+  @@schema("promotion")
+}
+
+/// Nhật ký policy append-only; miễn cột master/version/soft-delete, giữ actor và thời điểm thực hiện.
+model LivePromotionAudit {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId String? @map("actor_user_id") @db.Uuid
+  action String @db.VarChar(80)
+  entityId String @map("entity_id") @db.Uuid
+  summary Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@index([entityId, createdAt])
+  @@map("live_audit_logs")
   @@schema("promotion")
 }
 

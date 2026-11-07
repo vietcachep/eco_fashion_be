@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsUUID, IsOptional, Max, Min, ValidateNested } from 'class-validator';
 import { ApiResponse } from '@common/response/api-response';
 import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor } from '@common/security/decorators';
@@ -11,6 +11,8 @@ import { CartResponse, CartService } from './cart.service';
 import { WishlistService } from './wishlist.service';
 
 class AddCartItemRequest {
+  @ApiPropertyOptional() @IsOptional() @IsUUID() sourceGrantId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() requestId?: string;
   @ApiProperty() @IsUUID() variantId: string;
   @ApiProperty({ example: 1 }) @Type(() => Number) @IsInt() @Min(1) @Max(100) quantity: number;
 }
@@ -42,7 +44,7 @@ export class CartController {
 
   @Post('items') @RateLimit({ name: 'cart-add', limit: 60, windowSeconds: 60, by: 'user' }) @ApiOperation({ summary: 'Thêm biến thể vào giỏ (cộng dồn)' })
   async add(@CurrentActor() actor: AuthenticatedActor, @Body() body: AddCartItemRequest): Promise<ApiResponse<CartResponse>> {
-    return ApiResponse.ok(await this.cart.addItem(actor.userId, body.variantId, body.quantity), 'Đã thêm vào giỏ');
+    return ApiResponse.ok(await this.cart.addItem(actor.userId, body.variantId, body.quantity, { sourceGrantId: body.sourceGrantId, requestId: body.requestId }), 'Đã thêm vào giỏ');
   }
 
   @Patch('items/:variantId') @ApiOperation({ summary: 'Đổi số lượng (0 = xoá)' })

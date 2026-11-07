@@ -27,6 +27,7 @@ model CartItem {
    * Dòng được tick để thanh toán (FE cho chọn từng dòng).
    */
   selected  Boolean  @default(true)
+  sourceLots Json @default("[]") @map("source_lots")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -36,6 +37,30 @@ model CartItem {
   @@index([variantId])
   @@index([shopId])
   @@map("cart_items")
+  @@schema("cart")
+}
+
+/// Receipt kỹ thuật chống dùng lại source grant; bất biến, actor=userId, không soft-delete hay sửa lịch sử.
+model CartSourceReceipt {
+  id String @id @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  referenceId String @map("reference_id") @db.Uuid
+  kind String @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@index([userId, createdAt])
+  @@map("source_receipts")
+  @@schema("cart")
+}
+
+/// Khoá idempotency kỹ thuật của mutation giỏ; giữ hash/requestId, không phải master data cần soft-delete.
+model CartMutation {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  requestId String @map("request_id") @db.VarChar(100)
+  requestHash String @map("request_hash") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@unique([userId, requestId])
+  @@map("mutations")
   @@schema("cart")
 }
 

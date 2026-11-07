@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CART_GATEWAY } from '@common/gateway/cart.gateway';
+import { LIVE_CART_GATEWAY } from '@common/gateway/live-commerce.gateway';
 import { ProductModule } from '../product/product.module';
 import { ShopModule } from '../shop/shop.module';
 import { SystemModule } from '../system/system.module';
@@ -12,7 +13,7 @@ import { WishlistService } from './wishlist.service';
 @Module({
   imports: [ProductModule, SystemModule, ShopModule],
   controllers: [CartController, WishlistController],
-  providers: [CartService, WishlistService, CartQueryApi, { provide: CART_GATEWAY, useExisting: CartService }],
-  exports: [CartQueryApi, CART_GATEWAY],
+  providers: [CartService, WishlistService, CartQueryApi, { provide: CART_GATEWAY, useExisting: CartService }, { provide: LIVE_CART_GATEWAY, useExisting: CartService }],
+  exports: [CartQueryApi, CART_GATEWAY, LIVE_CART_GATEWAY],
 })
 export class CartModule {}
