@@ -35,6 +35,7 @@ const STEPS: SeedStep[] = [
   { name: 'review-marketplace', describe: 'hàng trăm đánh giá theo ngành hàng + trả lời của shop + tính lại rating sản phẩm/shop', load: () => import('./review-marketplace.seed') },
   { name: 'content-marketplace', describe: 'banner theo ngành, FAQ/chính sách người bán, kho tri thức chatbot cho các ngành mới', load: () => import('./content-marketplace.seed') },
   { name: 'ai', describe: 'kho tri thức chatbot (chính sách/FAQ/size/bảo quản), phiên chat mẫu, yêu cầu hỗ trợ, lượt xem', load: () => import('./ai.seed') },
+  { name: 'livestream', describe: 'bản nháp FITLY Live; không tạo media, lượt xem hoặc giao dịch giả', load: () => import('./livestream.seed') },
 ];
 
 async function main(): Promise<number> {

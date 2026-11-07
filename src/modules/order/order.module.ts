@@ -1,4 +1,9 @@
 import { Global, Module } from '@nestjs/common';
+import { CheckoutIntentController } from './checkout/checkout-intent.controller';
+import { CheckoutIntentRepository } from './checkout/checkout-intent.repository';
+import { CheckoutIntentService } from './checkout/checkout-intent.service';
+import { LIVE_RECOVERY_CHECKOUT_GATEWAY, LIVE_COMMERCE_ORDER_GATEWAY } from '@common/gateway/live-commerce.gateway';
+import { LiveOrderGateway } from './checkout/live-order.gateway';
 import { ORDER_ACTIONS_GATEWAY } from '@common/gateway/order-actions.gateway';
 import { ORDER_PAYMENT_GATEWAY } from '@common/gateway/payment.gateway';
 import { ORDER_SHIPPING_GATEWAY } from '@common/gateway/order-shipping.gateway';
@@ -39,8 +44,12 @@ import { ShopReturnService } from './return/shop-return.service';
 @Global()
 @Module({
   imports: [ShippingModule, CartModule, ProductModule, PromotionModule, SystemModule, PaymentModule, ShopModule],
-  controllers: [OrderController, AdminOrderController, ShopOrderController, ReturnController, AdminReturnController, ShopReturnController, AdminShopViolationController, ShopViolationController],
+  controllers: [CheckoutIntentController, OrderController, AdminOrderController, ShopOrderController, ReturnController, AdminReturnController, ShopReturnController, AdminShopViolationController, ShopViolationController],
   providers: [
+    CheckoutIntentRepository,
+    CheckoutIntentService,
+    {provide:LIVE_RECOVERY_CHECKOUT_GATEWAY,useExisting:CheckoutIntentRepository},
+    {provide:LIVE_COMMERCE_ORDER_GATEWAY,useClass:LiveOrderGateway},
     OrderShippingPricingService,
     {provide:ORDER_SHIPPING_GATEWAY,useClass:OrderShippingGatewayImpl},
     OrderRepository,
@@ -63,6 +72,6 @@ import { ShopReturnService } from './return/shop-return.service';
     { provide: ORDER_ACTIONS_GATEWAY, useClass: OrderActionsGatewayImpl },
   ],
   // OrderService/OrderOutboxService/ReturnSlaService export CHỈ cho OrderWorkerModule (job huỷ quá hạn, job SLA đổi trả, listener mail).
-  exports: [ORDER_SHIPPING_GATEWAY,OrderQueryApi, ORDER_PAYMENT_GATEWAY, ORDER_ACTIONS_GATEWAY, OrderService, OrderOutboxService, ReturnSlaService, OrderFulfilmentService, OrderSlaService, ShopViolationService],
+  exports: [LIVE_COMMERCE_ORDER_GATEWAY,LIVE_RECOVERY_CHECKOUT_GATEWAY, ORDER_SHIPPING_GATEWAY,OrderQueryApi, ORDER_PAYMENT_GATEWAY, ORDER_ACTIONS_GATEWAY, OrderService, OrderOutboxService, ReturnSlaService, OrderFulfilmentService, OrderSlaService, ShopViolationService],
 })
 export class OrderModule {}

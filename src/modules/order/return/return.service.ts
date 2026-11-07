@@ -13,6 +13,7 @@ import { OrderRepository, OrderRow } from '../order/repository/order.repository'
 import { OrderOutboxService } from '../outbox/order-outbox.service';
 import { ReturnRequestResponse } from './dto/return.responses';
 import { RETURN_INCLUDE } from './return.mapper';
+import { snapshotRefund } from '../checkout/live-allocation';
 import { boundedSetting, canCancel, canEscalate, normalizeEvidence, normalizeRefundAccount, proportionalRefund } from './return.rules';
 import { ReturnCoreService } from './return-core.service';
 
@@ -92,6 +93,7 @@ export class ReturnService {
       const asked = notReceived ? new Map(o.items.map((i) => [i.id, i.quantity])) : wanted;
       const rows = [];
       const priced: Array<{ unitPrice: bigint; quantity: number }> = [];
+      let exactRefund=0n;let hasExact=true;
       for (const [orderItemId, quantity] of asked) {
         const oi = o.items.find((x) => x.id === orderItemId);
         if (!oi) throw new NotFoundException(ORDER_ERR.NOT_FOUND, 'Dòng hàng không thuộc đơn này');
@@ -104,8 +106,10 @@ export class ReturnService {
         }
         rows.push({ orderItemId: oi.id, variantId: oi.variantId, name: oi.name, color: oi.color, size: oi.size, quantity, imageUrl: oi.imageUrl, unitPrice: oi.unitPrice });
         priced.push({ unitPrice: vnd(oi.unitPrice.toString()), quantity });
+        const exact=snapshotRefund(oi.discountAllocation,oi.quantity,used.get(oi.id)??0,quantity);
+        if(exact===null)hasExact=false;else exactRefund+=exact;
       }
-      const refund = proportionalRefund(priced, vnd(o.subtotal.toString()), vnd(o.total.toString()));
+      const refund = hasExact ? exactRefund : proportionalRefund(priced, vnd(o.subtotal.toString()), vnd(o.total.toString()));
       const now = new Date();
       const r = await tx.returnRequest.create({
         data: {

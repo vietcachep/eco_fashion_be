@@ -152,6 +152,11 @@ export class ReturnCoreService {
    * chưa thu tiền / không có khoản nào để hoàn ⇒ không có tiền cần chi ⇒ `refunded` luôn. Trả trạng thái yêu cầu nên chuyển sang: `received` (chờ payment báo xong) hoặc `refunded`.
    */
   async settleRefund(tx: Tx, r: ReturnRow, o: OrderRow, p: { actor: ReturnActor; restock: boolean; amount: bigint; reason: string; suffix?: string }): Promise<typeof RETURN_STATUS.RECEIVED | typeof RETURN_STATUS.REFUNDED> {
+    if(p.amount===0n && o.items.some(i=>!!i.discountAllocation)) {
+      if(o.collectionMode==='carrier_cod' && !o.deliveredAt && (o.shippingSnapshot as Prisma.JsonObject|null)?.verifiedCarrierStatus!=='returned') throw new ConflictException('PAYMENT_COD_CARRIER_DISPUTE','Cần xác minh với hãng về kiện hàng trước khi duyệt');
+      if(p.restock)await this.inventory.restock(r.items.map(i=>({variantId:i.variantId,quantity:i.quantity})),{type:'return',id:r.orderCode},tx);
+      return RETURN_STATUS.REFUNDED; // Hàng được giảm hết phần phân bổ: ghi hoàn lượng, không tạo lệnh chi0đ.
+    }
     if(o.collectionMode==='carrier_cod' && o.paymentStatus !== PAYMENT_STATUS.PAID && o.paymentStatus !== PAYMENT_STATUS.PARTIALLY_REFUNDED) {
       if(!o.deliveredAt && (o.shippingSnapshot as Prisma.JsonObject | null)?.verifiedCarrierStatus==='returned') {
         await this.payment.cancel(o.code,'Hãng đã trả kiện, COD chưa thu',tx);

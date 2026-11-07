@@ -54,3 +54,16 @@ Mọi khoá bên thứ ba đang **để TRỐNG**. Hệ thống tự lùi về �
 ## GHN — PLAN-0043
 
 GHN_BASE_URL, GHN_TOKEN, GHN_SHOP_ID, GHN_WEBHOOK_SECRET; SHIPPING_CARRIER=fake|ghn, mặc định fake cho demo, production chặn fake. Cấu hình riêng staging/production, header webhook x-ghn-secret và che log. Credential trống không chứng minh staging đã chạy; không ghi khoá thật vào source/bằng chứng.
+
+## PLAN-0044 — encoder ảnh
+EF_VISUAL_ENCODER_URL/TOKEN/MODEL_VERSION, EF_VISUAL_IMAGE_ORIGINS, EF_VISUAL_CATALOG_BASE_URL, EF_VISUAL_MIN_SIMILARITY, EF_VISUAL_RERANK. Token encoder riêng, không đưa lên FE; profile COMPOSE_PROFILES=visual-search và VISUAL_ENCODER_IMAGE do CD ghi. Giữ OpenAI vision key nếu dùng detect/OCR/rerank; không key vẫn có vector. Xem services/visual-encoder/README.md.
+
+## FITLY Live — PLAN-0045
+
+`EF_LIVEKIT_URL` là URL signaling công khai `wss://...`; `EF_LIVEKIT_API_KEY` và `EF_LIVEKIT_API_SECRET` chỉ đặt ở API/worker, không đưa vào biến NEXT_PUBLIC. Thiếu một trong ba biến: endpoint phát/cấp media token trả503 `LIVE_MEDIA_UNAVAILABLE`, không dựng video giả. `EF_LIVE_MAX_VIEWERS=10`, `EF_LIVE_DURATION_MINUTES=60` là giới hạn demo; rehearsal cố định10phút/2người xem.
+
+LiveKit gửi webhook có chữ ký tới `https://<backend>/api/v1/livestreams/media/webhook`, content-type `application/webhook+json`; webhook dùng cùng cặp API key/secret và xác minh hash raw body. Không dùng GHN_WEBHOOK_SECRET cho media. API/worker cần truy cập được RoomService HTTP(S); browser cần truy cập signaling WebSocket và các cổng WebRTC/TURN của LiveKit.
+
+Self-host: dùng [mẫu cấu hình](../../deploy/livekit.example.yaml), đặt `room.auto_create: false` để token còn hạn không tự tạo lại phòng đã bị force-stop. BE luôn tạo phòng qua RoomService. [LiveKit quy định token revocation chỉ có trên Cloud](https://docs.livekit.io/frontends/reference/tokens-grants/); SDK removeParticipant gửi cutoff rõ ràng cho Cloud, self-host dựa vào xoá phòng + tắt tự tạo + token ngắn120giây. Không tái sử dụng tên phòng của phiên đã kết thúc. Không dùng `devkey/secret` bên ngoài kiểm thử local.
+
+Chạy cả API và worker: worker xử lý presence TTL, reconnect90giây, timeout phát, retry stop, outbox/realtime, thông báo follower và nhắc lịch theo scheduleVersion. Chỉ API không đủ để vận hành live. Xem [runbook kiểm thử](./08_LIVE_RUNBOOK.md).

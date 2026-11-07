@@ -424,3 +424,14 @@ Khi BE thêm/đổi route: cập nhật bảng này TRƯỚC, rồi báo FE ch�
 - Từ chối sửa tay giao/nhập kho carrier bằng SHIPMENT_MANAGED_BY_CARRIER. Creating/cancel chưa rõ: SHIPMENT_OPERATION_PENDING, FE không hiển thị đã huỷ.
 - Carrier COD delivered hiện collected_pending_remittance; khách không trả lần hai. Kế toán xác nhận tiền về mới paid/được xét chi. Hoàn trước remittance giữ chờ kế toán; không đảo ví cọc carrier.
 - Giới hạn: địa chỉ ba cấp cho demo; GHN staging/tiền thật chưa nghiệm thu nếu chưa có credential. Lỗi seed setting quá 255 ký tự đã rút gọn mô tả, giữ nguyên giá trị/chính sách.
+
+## PLAN-0044 — visual search
+POST /ai/image-search giữ multipart image, thêm target? (<=80 ký tự); response thêm searchMode=hybrid|visual|description|unavailable và matches[{productId,imageUrl,colorCode,relevance:similar|related,reason}]. items typed ProductCardResponse, imageUrl là ảnh khớp. Không confidence%. POST /ai/image-search/analyze (cùng upload/rate/magic) trả {available,regions:[{id,label,x,y,width,height}],message}; tọa độ0..1, FE crop client và gửi ảnh đã cắt. Không lưu ảnh query.
+
+## PLAN-0045 — FITLY Live
+
+Hợp đồng endpoint/DTO chi tiết: [live-api-contract.md](./plans/assets/live-api-contract.md). Public `/livestreams` hỗ trợ shopSlug chính xác; shop `/shop/livestreams`, sàn `/admin/livestreams`. Page/size mặc định1/15; detail có pinnedProduct đầy đủ, mediaAvailable và canModerate tính theo actor. Cover/schedule PATCH nhận null để xoá. Moderator GET trả userIds và candidates chứa userId/fullName, không suy UUID người dùng từ memberId.
+
+Viewer xin admission + media JWT tại POST `/:id/viewer-session`, heartbeat20giây qua POST `/:id/heartbeat` và rời qua `/:id/leave`. Socket namespace `/live`, auth `{sessionId,token?,admissionId?,guestKey?}`; host/assigned moderator vẫn phải có quyền shop. Chat mutation HTTP hoặc message.send socket đều qua validation/rate/mute/idempotency BE. Token subscribe không được publish/data; host chỉ camera/micro, TTL120giây. Terminal UI cần đóng media; mediaStopStatus có retry riêng.
+
+Mua/nhận mã cần đăng nhập. POST `/:id/source-grants` `{productId,quantity}` kiểm admission/session/product, trả sourceGrantId/id + eligibleUntil; không tự khai sourceSessionId để hưởng ưu đãi. POST `/:id/likes` tăng số thật; ghim sản phẩm/message có version để xử lý409 và tải lại. Chi tiết commerce/voucher ở final-decisions của PLAN-0045.

@@ -1,0 +1,246 @@
+model LiveSession {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId String @map("shop_id") @db.Uuid
+  hostUserId String? @map("host_user_id") @db.Uuid
+  title String @db.VarChar(160)
+  description String? @db.VarChar(2000)
+  coverUrl String? @map("cover_url") @db.VarChar(1000)
+  state String @default("draft") @db.VarChar(20)
+  mode String @default("public") @db.VarChar(20)
+  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz
+  scheduleVersion Int @default(0) @map("schedule_version")
+  providerRoomId String? @unique @map("provider_room_id") @db.VarChar(160)
+  startedAt DateTime? @map("started_at") @db.Timestamptz
+  endedAt DateTime? @map("ended_at") @db.Timestamptz
+  endReason String? @map("end_reason") @db.VarChar(500)
+  reconnectUntil DateTime? @map("reconnect_until") @db.Timestamptz
+  startDeadline DateTime? @map("start_deadline") @db.Timestamptz
+  mediaStopStatus String @default("none") @map("media_stop_status") @db.VarChar(20)
+  pinnedProductId String? @map("pinned_product_id") @db.Uuid
+  pinnedMessageId String? @map("pinned_message_id") @db.Uuid
+  nextSequence Int @default(0) @map("next_sequence")
+  nextDisplayNumber Int @default(0) @map("next_display_number")
+  views Int @default(0)
+  uniqueViewers Int @default(0) @map("unique_viewers")
+  peakViewers Int @default(0) @map("peak_viewers")
+  likes Int @default(0)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@index([state,mode,scheduledAt])
+  @@index([shopId,state])
+  @@map("sessions")
+  @@schema("livestream")
+}
+
+model LiveSessionProduct {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  displayNumber Int @map("display_number")
+  position Int
+  removed Boolean @default(false)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@unique([sessionId,productId])
+  @@unique([sessionId,displayNumber])
+  @@index([sessionId,removed,position])
+  @@map("session_products")
+  @@schema("livestream")
+}
+
+model LiveMessage {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  clientMessageId String @map("client_message_id") @db.Uuid
+  sequence Int
+  displayName String @map("display_name") @db.VarChar(100)
+  body String @db.VarChar(300)
+  replyToId String? @map("reply_to_id") @db.Uuid
+  deleted Boolean @default(false)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@unique([sessionId,userId,clientMessageId])
+  @@unique([sessionId,sequence])
+  @@map("messages")
+  @@schema("livestream")
+}
+
+model LiveMute {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  muted Boolean @default(true)
+  reason String? @db.VarChar(500)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@unique([sessionId,userId])
+  @@map("mutes")
+  @@schema("livestream")
+}
+
+model LiveModerator {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  active Boolean @default(true)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@unique([sessionId,userId])
+  @@map("moderators")
+  @@schema("livestream")
+}
+
+model LiveReport {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  reason String @db.VarChar(100)
+  description String? @db.VarChar(2000)
+  status String @default("pending") @db.VarChar(20)
+  resolutionNote String? @map("resolution_note") @db.VarChar(2000)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@index([status,createdAt])
+  @@map("reports")
+  @@schema("livestream")
+}
+
+model LiveRestriction {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId String @unique @map("shop_id") @db.Uuid
+  restricted Boolean @default(true)
+  reason String @db.VarChar(500)
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  
+  @@map("shop_restrictions")
+  @@schema("livestream")
+}
+
+/// Admission technique TTL; preuve commerciale conservée séparément dans source_grants.
+model LiveAdmission {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  userId String? @map("user_id") @db.Uuid
+  guestHash String? @map("guest_hash") @db.VarChar(64)
+  participantIdentity String @unique @map("participant_identity") @db.VarChar(160)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz
+  leftAt DateTime? @map("left_at") @db.Timestamptz
+  @@index([sessionId,expiresAt])
+  @@index([userId,sessionId])
+  @@map("admissions")
+  @@schema("livestream")
+}
+/// Preuve immutable; jamais de token media persisté.
+model LiveSourceGrant {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  shopId String @map("shop_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  quantity Int
+  eligibleUntil DateTime @map("eligible_until") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@index([userId,eligibleUntil])
+  @@map("source_grants")
+  @@schema("livestream")
+}
+/// Inbox technique pour les webhooks signés et reprise après crash.
+model LiveMediaInbox {
+  id String @id @db.VarChar(160)
+  event String @db.VarChar(80)
+  roomId String @map("room_id") @db.VarChar(160)
+  payload Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+  @@index([processedAt,createdAt])
+  @@map("media_inbox")
+  @@schema("livestream")
+}
+
+model LiveAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorEmail     String?  @map("actor_email") @db.VarChar(255)
+  action         String   @db.VarChar(80)
+  moduleCode     String   @map("module_code") @db.VarChar(40)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  entityCode     String?  @map("entity_code") @db.VarChar(100)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  beforeSummary  Json?    @map("before_summary")
+  afterSummary   Json?    @map("after_summary")
+  ipAddress      String?  @map("ip_address") @db.VarChar(45)
+  userAgent      String?  @map("user_agent") @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+  @@schema("livestream")
+}
+
+model LiveOutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(80)
+  eventVersion  String    @default("v1") @map("event_version") @db.VarChar(10)
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  status        String    @default("PENDING") @db.VarChar(20)
+  retryCount    Int       @default(0) @map("retry_count")
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  errorMessage  String?   @map("error_message")
+  requestId     String?   @map("request_id") @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+  @@schema("livestream")
+}
+
+model LiveProcessedEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(80)
+  handler     String   @db.VarChar(120)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz
+
+  @@unique([eventId, handler])
+  @@map("processed_events")
+  @@schema("livestream")
+}
