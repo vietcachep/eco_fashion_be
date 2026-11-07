@@ -4,6 +4,33 @@
 // Mọi tính năng có ĐƯỜNG LÙI không-AI; AI hỏng không làm gián đoạn mua bán.
 // =====================================================================
 
+model ProductImageEmbedding {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  imageId      String   @map("image_id") @db.Uuid
+  sourceUrl    String   @map("source_url") @db.VarChar(500)
+  colorCode    String?  @map("color_code") @db.VarChar(40)
+  sourceHash   String   @map("source_hash") @db.VarChar(64)
+  modelVersion String   @map("model_version") @db.VarChar(160)
+  embedding    Unsupported("vector(768)")?
+  status       String   @default("pending") @db.VarChar(20)
+  error        String?  @db.VarChar(500)
+  retryAt      DateTime? @map("retry_at") @db.Timestamptz
+  leaseToken   String?  @map("lease_token") @db.Uuid
+  leaseUntil   DateTime? @map("lease_until") @db.Timestamptz
+  version      Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy    String?  @map("created_by") @db.Uuid
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy    String?  @map("updated_by") @db.Uuid
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+
+  @@unique([imageId, modelVersion])
+  @@index([modelVersion, status, productId])
+  @@map("product_image_embeddings")
+  @@schema("ai")
+}
+
 model ProductEmbedding {
   productId   String                       @id @map("product_id") @db.Uuid
   productSlug String                       @map("product_slug") @db.VarChar(160)

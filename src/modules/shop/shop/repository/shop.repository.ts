@@ -74,6 +74,9 @@ export class ShopRepository {
     const rows = await this.prisma.shop.findMany({ where: { isDeleted: false, status: { not: 'approved' }, members: { some: {} } }, select: { id: true } });
     return rows.map((r) => r.id);
   }
+  async listApprovedIds(): Promise<string[]> {
+    return (await this.prisma.shop.findMany({ where: { isDeleted: false, status: 'approved' }, select: { id: true } })).map((shop) => shop.id);
+  }
 
   async findByIds(ids: string[]): Promise<ShopRow[]> {
     return this.prisma.shop.findMany({ where: { id: { in: ids }, isDeleted: false }, select: SHOP_SELECT });

@@ -3,6 +3,7 @@ export const AI_MODULE = 'ai';
 
 /* Tên job trên hàng đợi BullMQ `ai` (API enqueue, worker xử lý). */
 export const AI_JOB = {
+  VISUAL_INDEX: 'visual-index-sweep',
   TRY_ON: 'try-on',
   EMBED_PRODUCT: 'embed-product',
   INDEX_DOCUMENT: 'index-document',

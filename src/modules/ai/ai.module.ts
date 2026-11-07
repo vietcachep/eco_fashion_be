@@ -26,6 +26,10 @@ import { ReviewAiService } from './review-ai/review-ai.service';
 import { StyleAnalysisService } from './style/style-analysis.service';
 import { TryOnService } from './tryon/try-on.service';
 import { AiUsageService } from './usage/ai-usage.service';
+import { VisualEncoderProvider } from './image-search/visual-encoder.provider';
+import { CatalogImageProvider } from './image-search/catalog-image.provider';
+import { VisualIndexRepository } from './image-search/visual-index.repository';
+import { VisualIndexService } from './image-search/visual-index.service';
 
 /*
  * Module ai (PLAN-0012 chatbot agent/RAG/gợi ý/so sánh/FAQ/tín hiệu/công cụ nhân viên, PLAN-0013 thử đồ 2D + phân tích ảnh).
@@ -35,7 +39,7 @@ import { AiUsageService } from './usage/ai-usage.service';
 @Module({
   imports: [ProductModule, CatalogModule, ReviewModule, SystemModule, CartModule, PromotionModule, PaymentModule, ReportingModule],
   controllers: [AiController, AdminAiController],
-  providers: [AiUsageService, OpenAiProvider, ReplicateProvider, EmbeddingService, KnowledgeService, ChatActionService, ChatService, StyleAnalysisService, TryOnService, ImageSearchService, ReviewAiService, AiInsightService, RecommendationService, SignalService, ProductFaqService, ChatInsightsService, MetricsAgentService, StaffInsightService],
-  exports: [EmbeddingService, KnowledgeService, TryOnService, ImageSearchService, ReviewAiService, AiInsightService, ProductFaqService],
+  providers: [VisualEncoderProvider, CatalogImageProvider, VisualIndexRepository, VisualIndexService, AiUsageService, OpenAiProvider, ReplicateProvider, EmbeddingService, KnowledgeService, ChatActionService, ChatService, StyleAnalysisService, TryOnService, ImageSearchService, ReviewAiService, AiInsightService, RecommendationService, SignalService, ProductFaqService, ChatInsightsService, MetricsAgentService, StaffInsightService],
+  exports: [VisualIndexService, EmbeddingService, KnowledgeService, TryOnService, ImageSearchService, ReviewAiService, AiInsightService, ProductFaqService],
 })
 export class AiModule {}

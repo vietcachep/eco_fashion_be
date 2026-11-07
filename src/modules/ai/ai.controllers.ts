@@ -17,6 +17,8 @@ import { ChatInsightsResponse, ChatInsightsService } from './insight/chat-insigh
 import { MetricsAgentService } from './insight/metrics-agent.service';
 import { ClassifyProductResponse, ComboSuggestionsResponse, InventoryInsightsResponse, PrecheckResponse, RevenueInsightResponse, StaffInsightService } from './insight/staff-insight.service';
 import { ImageSearchResponse, ImageSearchService } from './image-search/image-search.service';
+import { VisualAnalyzeResponse, VisualSearchRequest } from './image-search/visual-search.dto';
+import { VisualIndexService } from './image-search/visual-index.service';
 import { AiDocumentResponse, KnowledgeService } from './knowledge/knowledge.service';
 import { OpenAiProvider } from './provider/openai.provider';
 import { CollectionsResponse, CompareResponse, RecommendationResponse, RecommendationService } from './recommendation/recommendation.service';
@@ -56,7 +58,7 @@ export class AiController {
   @Public() @Get('status') @ApiOperation({ summary: 'Tính năng AI nào đang bật (FE ẩn/hiện nút)' })
   status(): ApiResponse<{ chat: boolean; chatLlm: boolean; chatActions: boolean; styleAnalysis: boolean; styleAnalysisLlm: boolean; tryOn: boolean; imageSearch: boolean; compare: boolean; collections: boolean; productFaq: boolean }> {
     const llm = this.openai.isConfigured;
-    return ApiResponse.ok({ chat: true, chatLlm: llm, chatActions: llm, styleAnalysis: true, styleAnalysisLlm: llm, tryOn: this.tryOn.isAvailable, imageSearch: llm, compare: llm, collections: true, productFaq: llm });
+    return ApiResponse.ok({ chat: true, chatLlm: llm, chatActions: llm, styleAnalysis: true, styleAnalysisLlm: llm, tryOn: this.tryOn.isAvailable, imageSearch: this.imageSearch.available, compare: llm, collections: true, productFaq: llm });
   }
 
   // ------------------------------------------------------------ chatbot
@@ -124,10 +126,10 @@ export class AiController {
   @RateLimit({ name: 'ai-image-search', limit: 10, windowSeconds: 3600, by: 'auto' })
   @UseInterceptors(FileInterceptor('image', IMAGE_LIMIT))
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { image: { type: 'string', format: 'binary' } }, required: ['image'] } })
-  @ApiOperation({ summary: 'Upload ảnh sản phẩm → phân tích bằng vision + tìm sản phẩm tương tự (không có khoá OpenAI → available=false; không thấy gì → items rỗng + message)' })
+  @ApiBody({ schema: { type: 'object', properties: { image: { type: 'string', format: 'binary' }, target: { type: 'string', maxLength: 80 } }, required: ['image'] } })
+  @ApiOperation({ summary: 'Ảnh/vùng chọn → truy hồi ảnh catalog + OCR + so ảnh ứng viên; không đủ liên quan thì trả rỗng' })
   @ApiOkResponse({ type: ImageSearchResponse })
-  async search(@CurrentActor() actor: AuthenticatedActor | undefined, @Headers('x-guest-key') guestHeader: string | undefined, @UploadedFile() file?: Express.Multer.File): Promise<ApiResponse<ImageSearchResponse>> {
+  async search(@CurrentActor() actor: AuthenticatedActor | undefined, @Headers('x-guest-key') guestHeader: string | undefined, @UploadedFile() file?: Express.Multer.File, @Body() body?: VisualSearchRequest): Promise<ApiResponse<ImageSearchResponse>> {
     if (!file) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Thiếu ảnh (field `image`)');
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
       throw new BusinessException('COMMON_VALIDATION_ERROR', 'Chỉ nhận ảnh JPEG/PNG/WEBP');
@@ -136,8 +138,19 @@ export class AiController {
       throw new BusinessException('COMMON_VALIDATION_ERROR', 'Ảnh không hợp lệ (magic bytes không khớp)');
     }
     const guestKey = ChatService.resolveGuestKey(guestHeader, actor);
-    const r = await this.imageSearch.search({ actor, guestKey }, { buffer: file.buffer, mimetype: file.mimetype, size: file.size });
+    const r = await this.imageSearch.search({ actor, guestKey }, { buffer: file.buffer, mimetype: file.mimetype, size: file.size }, body?.target);
     return ApiResponse.ok(r);
+  }
+
+  @OptionalAuth() @Post('image-search/analyze') @HttpCode(HttpStatus.OK) @ApiHeader(GUEST_HEADER)
+  @RateLimit({ name: 'ai-image-analyze', limit: 10, windowSeconds: 3600, by: 'auto' })
+  @UseInterceptors(FileInterceptor('image', IMAGE_LIMIT)) @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { image: { type: 'string', format: 'binary' } }, required: ['image'] } })
+  @ApiOkResponse({ type: VisualAnalyzeResponse })
+  async analyzeImage(@CurrentActor() actor: AuthenticatedActor | undefined, @Headers('x-guest-key') guestHeader: string | undefined, @UploadedFile() file?: Express.Multer.File): Promise<ApiResponse<VisualAnalyzeResponse>> {
+    ChatService.resolveGuestKey(guestHeader, actor);
+    if (!file || !ImageSearchService.validateMagicBytes(file.buffer, file.mimetype)) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Chỉ nhận ảnh JPEG/PNG/WEBP hợp lệ');
+    return ApiResponse.ok(await this.imageSearch.analyze({ buffer: file.buffer, mimetype: file.mimetype }, actor));
   }
 
   // ------------------------------------------------------------ thử đồ 2D
@@ -248,7 +261,17 @@ export class AdminAiController {
     private readonly reviewAi: ReviewAiService,
     private readonly signals: SignalService,
     private readonly usage: AiUsageService,
+    private readonly visualIndex: VisualIndexService,
   ) {}
+
+  @Get('image-index/status') @RequirePermission('ai.knowledge.manage')
+  async visualIndexStatus() { return ApiResponse.ok({ configured: this.visualIndex.encoder.configured, modelVersion: this.visualIndex.encoder.modelVersion, counts: await this.visualIndex.repo.status(this.visualIndex.encoder.modelVersion) }); }
+
+  @Post('image-index/reindex') @HttpCode(HttpStatus.ACCEPTED) @RequirePermission('ai.knowledge.manage')
+  async reindexImages(@CurrentActor() actor: AuthenticatedActor) {
+    await this.visualIndex.requestReindex(actor);
+    return ApiResponse.ok(null, 'Worker sẽ quét và cập nhật chỉ mục ảnh; ảnh không đổi được bỏ qua');
+  }
 
   // ---- kho tri thức & chỉ mục
   @Get('documents') @RequirePermission('ai.knowledge.manage')

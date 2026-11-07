@@ -8,7 +8,12 @@ import { toProductCard } from '../product/mapper/product.mapper';
 import { ProductRepository } from '../product/repository/product.repository';
 import { dynamicColorSize } from './variant-label';
 
-export type { ProductCardResponse } from '../product/dto/product.responses';
+export { ProductCardResponse } from '../product/dto/product.responses';
+
+export interface VisualProductSource {
+  id: string; slug: string; name: string; categorySlug: string; updatedAt: Date;
+  images: Array<{ id: string; url: string; colorCode: string | null }>;
+}
 
 /* Snapshot biến thể cho giỏ/đơn — module khác chép vào chứng từ, không giữ tham chiếu sống. */
 export interface VariantSnapshot {
@@ -52,6 +57,17 @@ export class ProductQueryApi {
    */
   private hiddenShopIds(): Promise<string[]> {
     return this.shops.nonApprovedShopIds();
+  }
+
+  /* Ảnh catalog hiện tại cho chỉ mục AI; đọc theo lô/cursor, luôn lọc shop và sản phẩm được bán. */
+  async visualImageSources(input: { productIds?: string[]; after?: string; limit?: number } = {}): Promise<VisualProductSource[]> {
+    return this.prisma.product.findMany({
+      where: { isDeleted: false, status: 'active', shopId: { in: await this.shops.approvedShopIds() },
+        ...(input.productIds ? { id: { in: input.productIds.slice(0, 100) } } : input.after ? { id: { gt: input.after } } : {}) },
+      orderBy: { id: 'asc' }, take: Math.min(100, input.limit ?? 30),
+      select: { id: true, slug: true, name: true, categorySlug: true, updatedAt: true,
+        images: { orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }], take: 8, select: { id: true, url: true, colorCode: true } } },
+    });
   }
 
   /*
@@ -114,6 +130,25 @@ export class ProductQueryApi {
     const rows = await this.repo.findCardsByIds(productIds, true, await this.hiddenShopIds());
     const rank = new Map(productIds.map((id, i) => [id, i]));
     return rows.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)).map((p) => toProductCard(p));
+  }
+
+  /* Chọn hàng cho live: phân trang thật và allowlist shop approved, không đọc chéo Prisma từ livestream. */
+  async listLiveCards(shopId: string, input: { q?: string; page: number; size: number }): Promise<{items:ProductCardResponse[];total:number}> {
+    if (!(await this.shops.existsApproved(shopId))) return {items:[],total:0};
+    const result=await this.repo.list({publicOnly:true,shopId,q:input.q},(input.page-1)*input.size,input.size);
+    const shop=await this.shops.findBrief(shopId);
+    return {items:result.items.map(row=>toProductCard(row,shop??undefined)),total:result.total};
+  }
+  async liveCardsByIds(ids: string[]): Promise<ProductCardResponse[]> {
+    const approved=new Set(await this.shops.approvedShopIds());
+    const rows=(await this.repo.findCardsByIds(ids,true)).filter(row=>approved.has(row.shopId));
+    const shops=await this.shops.findManyBrief(rows.map(row=>row.shopId));
+    return rows.map(row=>toProductCard(row,shops.get(row.shopId)));
+  }
+  /* Exact leaf category for live discovery; callers never query product schema directly. */
+  async liveProductIdsByCategory(categorySlug: string): Promise<string[]> {
+    const rows = await this.prisma.product.findMany({ where: { categorySlug, status: 'active', isDeleted: false, shopId: { in: await this.shops.approvedShopIds() } }, select: { id: true } });
+    return rows.map(row => row.id);
   }
 
   async findProductBrief(productId: string): Promise<{ id: string; slug: string; name: string; status: string; shopId: string } | null> {

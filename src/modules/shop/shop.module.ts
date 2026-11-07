@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ShopFollowService } from './follow/shop-follow.service';
+import { ShopFollowApplicationApi } from './applicationapi/shop-follow.applicationapi';
 import { ShopAuditLogService } from './audit/shop-audit-log.service';
 import { ShopOutboxService } from './outbox/shop-outbox.service';
 import { AdminShopController } from './shop/controller/admin-shop.controller';
@@ -40,6 +42,8 @@ import { ShopContextGuard } from './security/shop-context.guard';
 @Module({
   controllers: [AdminShopController, ShopDirectoryController, AdminShopRegistrationController, ShopController, ShopMemberController, ShopRegistrationController],
   providers: [
+    ShopFollowService,
+    ShopFollowApplicationApi,
     ShopRepository,
     ShopMemberRepository,
     ShopAuditLogService,
@@ -51,6 +55,6 @@ import { ShopContextGuard } from './security/shop-context.guard';
     ShopQueryApi,
     ShopContextGuard,
   ],
-  exports: [ShopQueryApi, ShopContextGuard, ShopRepository, ShopMemberRepository],
+  exports: [ShopQueryApi, ShopContextGuard, ShopRepository, ShopMemberRepository, ShopFollowApplicationApi],
 })
 export class ShopModule {}

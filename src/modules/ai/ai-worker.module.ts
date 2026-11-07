@@ -14,6 +14,7 @@ import { PRODUCT_EVENT, PRODUCT_MODULE } from '../product/enums/product-events';
 import { REVIEW_EVENT, REVIEW_MODULE } from '../review/enums/review-events';
 import { AiModule } from './ai.module';
 import { EmbeddingService } from './embedding/embedding.service';
+import { VisualIndexService } from './image-search/visual-index.service';
 import { ProductFaqService } from './faq/product-faq.service';
 import { AI_JOB } from './foundation/ai.constants';
 import { AiInsightService } from './insight/ai-insight.service';
@@ -100,12 +101,15 @@ export class AiQueueProcessor extends WorkerHost {
     private readonly tryOn: TryOnService,
     private readonly embeddings: EmbeddingService,
     private readonly faq: ProductFaqService,
+    private readonly visual: VisualIndexService,
   ) {
     super();
   }
 
   async process(job: Job<{ jobId?: string; documentId?: string; productId?: string }>): Promise<unknown> {
     switch (job.name) {
+      case AI_JOB.VISUAL_INDEX:
+        this.visual.resetCursor(); await this.visual.sweep(); return null;
       case AI_JOB.TRY_ON:
         await this.tryOn.process(job.data.jobId ?? '');
         return null;
@@ -169,8 +173,20 @@ export class AiHousekeepingJob implements OnModuleInit {
   }
 }
 
+/* Ảnh được lập chỉ mục idempotent bằng lease; periodic sweep phục hồi lỗi/mất sự kiện. */
+@Injectable()
+class VisualIndexJobs {
+  constructor(private readonly index: VisualIndexService) {}
+  @OnEvent(`outbox.${PRODUCT_MODULE}.${PRODUCT_EVENT.PUBLISHED}`)
+  @OnEvent(`outbox.${PRODUCT_MODULE}.${PRODUCT_EVENT.UPDATED}`)
+  @OnEvent(`outbox.${PRODUCT_MODULE}.${PRODUCT_EVENT.HIDDEN}`)
+  async changed(msg: OutboxEventMessage): Promise<void> { const id = (msg.payload as { productId?: string }).productId; if (id) await this.index.indexProduct(id); }
+  @Interval(30_000)
+  async sweep(): Promise<void> { await this.index.sweep(); }
+}
+
 @Module({
   imports: [AiModule],
-  providers: [ReviewOutboxRelayJob, AiEventListeners, AiQueueProcessor, AiHousekeepingJob],
+  providers: [VisualIndexJobs, ReviewOutboxRelayJob, AiEventListeners, AiQueueProcessor, AiHousekeepingJob],
 })
 export class AiWorkerModule {}

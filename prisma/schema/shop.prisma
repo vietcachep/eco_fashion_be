@@ -156,3 +156,21 @@ model ShopProcessedEvent {
   @@map("processed_events")
   @@schema("shop")
 }
+
+model ShopFollow {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  shopId String @map("shop_id") @db.Uuid
+  following Boolean @default(true)
+  notifyLive Boolean @default(true) @map("notify_live")
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String? @map("created_by") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String? @map("updated_by") @db.Uuid
+  isDeleted Boolean @default(false) @map("is_deleted")
+  @@unique([userId,shopId])
+  @@index([shopId,following])
+  @@map("shop_follows")
+  @@schema("shop")
+}

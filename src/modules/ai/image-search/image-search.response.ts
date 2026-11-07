@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import type { ProductCardResponse } from '../../product/queryapi/product.queryapi';
+import { ProductCardResponse } from '../../product/queryapi/product.queryapi';
+import { VisualMatchResponse } from './visual-search.dto';
 
 /*
  * Kết quả POST /ai/image-search.
@@ -8,15 +9,26 @@ import type { ProductCardResponse } from '../../product/queryapi/product.queryap
  * - items chỉ gồm sản phẩm có lý do liên quan (cùng LOẠI sản phẩm / cùng ngành vision nhận ra) và có thể ít hơn 12; ít quá hoặc chỉ cùng ngành ⇒ `message` gợi ý.
  */
 export class ImageSearchResponse {
-  @ApiProperty({ description: 'false khi chưa cấu hình khoá OpenAI — FE ẩn tính năng' }) available: boolean;
-  @ApiPropertyOptional({ nullable: true, description: 'Mô tả ngắn ảnh do vision sinh (≤ 500 ký tự)' }) description: string | null;
-  @ApiProperty({ type: [String], example: ['áo thun', 'màu trắng'], description: 'Từ khoá vision rút ra từ ảnh: loại sản phẩm trước, màu/chất liệu sau (≤ 6); chỉ loại sản phẩm được dùng để tìm' }) keywords: string[];
+  @ApiPropertyOptional({ enum: ['visual', 'hybrid', 'description', 'unavailable'] }) searchMode?: string;
+  @ApiPropertyOptional({ type: [VisualMatchResponse] }) matches?: VisualMatchResponse[];
   @ApiProperty({
-    type: 'array',
-    items: { type: 'object', additionalProperties: true },
-    description: 'Thẻ sản phẩm (cùng dạng ProductCardResponse của GET /products), tối đa 12 (có thể ít hơn — chỉ sản phẩm liên quan), khớp loại sản phẩm trước rồi gợi ý cùng ngành',
+    description: 'Có cấu hình encoder ảnh hoặc vision; runtime không sẵn sàng được báo qua message',
+  })
+  available: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Mô tả ảnh/vùng tìm kiếm' }) description:
+    string | null;
+  @ApiProperty({ type: [String], description: 'Loại/thuộc tính và chữ đọc được trên ảnh' })
+  keywords: string[];
+  @ApiProperty({
+    type: [ProductCardResponse],
+    description: 'Tối đa12 sản phẩm đã kiểm tra được bán; imageUrl là ảnh khớp truy vấn',
   })
   items: ProductCardResponse[];
 
-  @ApiPropertyOptional({ nullable: true, example: 'Không tìm thấy sản phẩm giống ảnh', description: 'Giải thích khi không có kết quả khớp / chỉ có gợi ý theo ngành / rất ít kết quả khớp / vision lỗi' }) message: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'No-match hoặc giải thích chế độ dự phòng',
+  })
+  message: string | null;
 }

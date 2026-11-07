@@ -71,6 +71,13 @@ export class ShopQueryApi {
   async nonApprovedShopIds(): Promise<string[]> {
     return this.shops.listNonApprovedIds();
   }
+  /* Chỉ mục ảnh phải chốt quyền bán bằng allowlist, không phụ thuộc shop còn thành viên hay không. */
+  approvedShopIds(): Promise<string[]> { return this.shops.listApprovedIds(); }
+
+  async searchLiveShopIds(q: string, approvedOnly = true): Promise<string[]> {
+    const rows = await this.prisma.shop.findMany({ where: { isDeleted: false, ...(approvedOnly ? { status: SHOP_STATUS.APPROVED } : {}), name: { contains: q, mode: 'insensitive' } }, select: { id: true } });
+    return rows.map(row => row.id);
+  }
 
   /* Tra nhiều shopId một lần (thẻ sản phẩm/giỏ hàng liệt kê hàng loạt) — tránh N+1 query. */
   async findManyBrief(shopIds: string[]): Promise<Map<string, ShopBrief>> {

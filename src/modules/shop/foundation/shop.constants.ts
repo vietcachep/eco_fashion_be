@@ -114,6 +114,11 @@ export const SHOP_OWNER_ONLY_PERMISSIONS: readonly string[] = ['shop.staff.read'
  * Quyền giữ riêng cho chủ (không có trong danh sách): nhân sự (shop.staff.*), sửa hồ sơ/ngân hàng, đối soát, ví đặt cọc.
  */
 export const SHOP_ASSIGNABLE_PERMISSIONS: readonly string[] = [
+  'shop.livestream.read',
+  'shop.livestream.manage',
+  'shop.livestream.broadcast',
+  'shop.livestream.moderate',
+  'shop.livestream.report.read',
   'shop.profile.read',
   'shop.product.read',
   'shop.product.manage',
