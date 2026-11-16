@@ -1,4 +1,4 @@
-# Nguồn ảnh seed
+﻿# Nguồn ảnh seed
 
 Ảnh lấy từ [Pexels](https://www.pexels.com) theo [Pexels License](https://www.pexels.com/license/) — dùng tự do (kể cả thương mại),
 không bắt buộc ghi công; vẫn ghi lại trang gốc để đối chiếu. Chọn tay theo tên sản phẩm/ngành hàng; tải qua CDN
@@ -117,4 +117,15 @@ ngành hàng, bộ sưu tập và banner trang chủ còn lại được thay b�
 Chỉ nhận giấy phép **CC0**, **Public domain**, **CC BY**, **CC BY-SA**. Với **CC BY / CC BY-SA** phải ghi công tác giả + giấy phép + liên kết trang gốc khi công bố;
 toàn bộ thông tin này nằm ở từng mục trong `scripts/seed/assets/real-images.json` (trường `page` = trang gốc, `photographer` = tác giả, `license` = giấy phép).
 CC BY-SA yêu cầu giữ cùng giấy phép nếu chỉnh sửa/phân phối lại ảnh. Danh sách ảnh đã bị loại khi duyệt: `real-images.rejected.json`.
+
+## Ảnh tìm bằng Google Images (provider `web`) — chỉ cho sàn DEMO đồ án
+
+Để phủ nốt các mục Wikimedia Commons không có ảnh đúng loại, 383 ảnh (sản phẩm, logo/banner gian hàng, ngành hàng, bộ sưu tập, banner trang chủ) được tìm bằng Google Images,
+chọn bằng mắt theo loại hàng, rồi **lưu thu nhỏ ngay trong repo** tại `scripts/seed/assets/web/<khoá>.jpg` (deploy không phụ thuộc Google hay trang gốc còn sống).
+
+- **Giấy phép: CHƯA RÕ.** Đây là ảnh của bên thứ ba (nhiều ảnh là ảnh quảng cáo/ảnh chụp của hãng, một số có logo thương hiệu). Chỉ dùng cho **sàn demo đồ án**, KHÔNG dùng cho sàn thương mại thật.
+  Muốn dùng thật: thay bằng ảnh tự chụp hoặc ảnh có giấy phép rõ (Pexels/Pixabay/Unsplash).
+- Trang gốc của từng ảnh nằm ở trường `page` trong `real-images.json`; ghi công/đối chiếu giấy phép nếu cần.
+- Chất lượng: ảnh thu nhỏ (~200–600 px) nên banner rộng có thể hơi mờ; ảnh chọn ở mức "đúng loại hàng", chưa chắc đúng thương hiệu/thông số trong tên sản phẩm.
+- Duyệt/gỡ ảnh sai: `npm run seed:real-images:review` rồi `npm run seed:real-images:prune -- <rejects.json>` (mục bị gỡ giữ ảnh mẫu; xoá luôn file trong `assets/web/` nếu muốn gọn repo).
 

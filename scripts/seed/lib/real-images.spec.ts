@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { alreadyRealAssetPaths, alreadyRealProductSlugs, bannerSamplePaths, cropFor, isSampleImage, parseKey, pexelsUrl } from './real-images';
+import { needsCrop, imageUrl, alreadyRealAssetPaths, alreadyRealProductSlugs, bannerSamplePaths, cropFor, isSampleImage, parseKey, pexelsUrl } from './real-images';
 
 describe('real-images', () => {
   it('chỉ coi ảnh mẫu là được phép thay', () => {
@@ -57,5 +57,11 @@ describe('real-images', () => {
     expect(set.has('catalog/collections/nu')).toBe(true);
     expect(set.has('product/a/main')).toBe(false);
     expect(bannerSamplePaths('nu')).toEqual(['banners/nu', 'catalog/collections/nu']);
+  });
+
+  it('ảnh đóng gói sẵn (provider web) dùng file trong repo, luôn được cắt khung và không có URL', () => {
+    const item = { provider: 'web' as const, file: 'web/product/x/a.jpg', page: 'https://example.com', photographer: 'example.com', query: 'x' };
+    expect(needsCrop(item)).toBe(true);
+    expect(() => imageUrl(item, 'product/x/a')).toThrow(/đóng gói sẵn/);
   });
 });

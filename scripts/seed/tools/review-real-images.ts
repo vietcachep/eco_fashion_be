@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { REAL_MANIFEST, type RealManifest } from '../lib/real-images';
 
-const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const esc = (s: string | undefined | null): string => (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function main(): void {
   const m = JSON.parse(fs.readFileSync(REAL_MANIFEST, 'utf8')) as RealManifest;
@@ -17,7 +17,8 @@ function main(): void {
   const rows = keys
     .map((k) => {
       const it = m.items[k];
-      const url = it.src ?? '';
+      // Ảnh đóng gói sẵn (provider web) nằm trong assets/; trang HTML nằm ở tools/.review/ nên đường dẫn tương đối là ../../assets/<file>.
+      const url = it.file ? `../../assets/${it.file}` : (it.src ?? '');
       return `<tr data-key="${esc(k)}"><td><label><input type="checkbox" class="bad"> Sai</label></td><td><b>${esc(k.split('/')[1])}</b><br><small>${esc(k.split('/')[2])} · tìm: ${esc(it.query)}</small></td>` +
         `<td><a href="${esc(it.page)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(url)}" width="220" alt=""></a></td>` +
         `<td><small>${esc((it.alt ?? '').slice(0, 220))}<br><i>${esc(it.license ?? '')}</i></small></td></tr>`;
