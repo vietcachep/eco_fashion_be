@@ -12,10 +12,12 @@
  */
 import 'reflect-metadata';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { v2 as cloudinary } from 'cloudinary';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { loadEnv } from '../../src/config/env';
 import { PrismaClient } from '../../src/generated/prisma/client';
+import { ASSETS_DIR } from './lib/seed-images';
 import { REAL_MANIFEST, REAL_PREFIX, alreadyRealAssetPaths, alreadyRealProductSlugs, bannerSamplePaths, cropFor, imageUrl, isSampleImage, needsCrop, parseKey, type RealManifest } from './lib/real-images';
 
 /* Wikimedia yêu cầu User-Agent mô tả rõ ứng dụng; tải về bằng fetch riêng rồi upload buffer (không nhờ Cloudinary tải để tránh bị chặn). */
@@ -108,13 +110,14 @@ async function main(): Promise<number> {
         if (dry) { replaced += 1; console.log(`  → ${key}  ←  ${real.page}`); return; }
         // 2. Pexels: Cloudinary tự tải từ CDN (đã cắt khung). Commons: tải bằng User-Agent riêng, upload buffer và cắt đúng khung.
         const publicId = `${REAL_PREFIX}${key}`;
-        const url = imageUrl(real, key);
+        const url = real.file ? '' : imageUrl(real, key);
         const opts = { public_id: publicId, overwrite: true, resource_type: 'image' as const };
         const up = needsCrop(real)
           ? await new Promise<{ secure_url: string }>((resolve, reject) => {
               const { w, h } = cropFor(key);
               const stream = cloudinary.uploader.upload_stream({ ...opts, transformation: [{ width: w, height: h, crop: 'fill', gravity: 'auto' }] }, (err, r) => (err || !r ? reject(new Error(err?.message ?? 'upload lỗi')) : resolve(r)));
-              download(url).then((buf) => stream.end(buf), (e: unknown) => reject(e instanceof Error ? e : new Error(String(e))));
+              // Ảnh đóng gói sẵn (provider web): đọc file trong repo; còn lại tải từ URL công khai.
+              (real.file ? Promise.resolve(fs.readFileSync(path.join(ASSETS_DIR, real.file))) : download(url)).then((buf) => stream.end(buf), (e: unknown) => reject(e instanceof Error ? e : new Error(String(e))));
             })
           : await cloudinary.uploader.upload(url, opts);
         // 3. Ghi DB sau khi upload thành công.

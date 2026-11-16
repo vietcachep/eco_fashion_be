@@ -20,9 +20,12 @@ export const REAL_PREFIX = 'ecofashion/real/';
 
 export interface RealImage {
   /* nguồn ảnh; thiếu = pexels (manifest cũ) */
-  provider?: 'pexels' | 'commons';
+  provider?: 'pexels' | 'commons' | 'web';
   /* id ảnh trên Pexels (provider pexels) */
   id?: number;
+  /* provider 'web' (ảnh tìm bằng Google Images, ghi giấy phép = chưa rõ): ảnh thu nhỏ ĐÓNG GÓI SẴN trong repo, đường dẫn tương đối trong assets/ (vd `web/product/x/a.jpg`).
+     Lưu file thay vì URL để deploy không phụ thuộc Google/trang gốc còn sống. */
+  file?: string;
   /* URL tải trực tiếp (provider commons: bản thu nhỏ 1000px trên upload.wikimedia.org) */
   src?: string;
   /* giấy phép + tác giả để ghi công khi cần (Commons: CC0 / Public domain / CC BY / CC BY-SA) */
@@ -86,6 +89,7 @@ export function parseKey(key: string): ParsedKey | null {
 
 /* URL gốc để tải ảnh của một mục manifest (Commons: `src`; Pexels: CDN đã cắt khung). */
 export function imageUrl(item: RealImage, key: string): string {
+  if (item.file) throw new Error(`Mục ${key} là ảnh đóng gói sẵn (file) — không có URL`);
   if (item.src) return item.src;
   if (item.id === undefined) throw new Error(`Mục ${key} thiếu cả src lẫn id`);
   return pexelsUrl(item.id, key);
@@ -93,7 +97,7 @@ export function imageUrl(item: RealImage, key: string): string {
 
 /* Ảnh Pexels đã được Pexels cắt đúng khung; ảnh Commons giữ tỉ lệ gốc nên Cloudinary phải cắt (fill, tự nhận chủ thể). */
 export function needsCrop(item: RealImage): boolean {
-  return Boolean(item.src);
+  return Boolean(item.src || item.file);
 }
 
 /*

@@ -229,6 +229,14 @@ async function main(): Promise<number> {
   for (const r of rejected) used.add(r.startsWith('pexels:') ? r.slice(7) : r);
   const targets = buildTargets().filter((t) => !manifest.items[t.key]);
   console.log(`Nguồn: ${provider.name}. Cần chọn ${targets.length} ảnh (đã có ${Object.keys(manifest.items).length}).`);
+  // --list-missing=<file>: chỉ xuất danh sách mục còn thiếu (khoá + từ khoá) để nguồn khác (vd tìm tay/bằng trình duyệt) nạp bổ sung, rồi thoát.
+  const listArg = process.argv.find((a) => a.startsWith('--list-missing='));
+  if (listArg) {
+    const outFile = listArg.slice('--list-missing='.length);
+    fs.writeFileSync(outFile, JSON.stringify(targets.filter((t) => !rejected.includes(t.key)), null, 1));
+    console.log(`Đã ghi ${targets.length} mục còn thiếu vào ${outFile}`);
+    return 0;
+  }
 
   // Cùng từ khoá + hướng chỉ tìm một lần trong lượt chạy (a/b của một sản phẩm dùng chung kết quả).
   const cache = new Map<string, Candidate[]>();
