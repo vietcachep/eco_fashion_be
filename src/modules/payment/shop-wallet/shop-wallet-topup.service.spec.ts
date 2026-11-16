@@ -235,7 +235,7 @@ describe('ShopWalletTopupService — tạo/đọc/huỷ link nạp cọc', () =>
   });
 
   it('[WTU-15] summaryFor: enabled=false khi cờ tắt / PayOS thiếu / EF_ADMIN_URL không dùng được; active=null khi hết hạn hoặc đã đóng; min/max đúng setting', async () => {
-    await expect(svc.summaryFor(SHOP_A)).resolves.toEqual({ enabled: true, minAmount: 500_000, maxAmount: 50_000_000, active: null });
+    await expect(svc.summaryFor(SHOP_A)).resolves.toEqual({ enabled: true, unavailableReason: null, minAmount: 500_000, maxAmount: 50_000_000, active: null });
 
     const active = fx.seedTopup({ shopId: SHOP_A, status: 'pending', payosOrderCode: nextTopupCode() });
     expect((await svc.summaryFor(SHOP_A)).active?.id).toBe(active.id);
@@ -244,13 +244,13 @@ describe('ShopWalletTopupService — tạo/đọc/huỷ link nạp cọc', () =>
     expect((await svc.summaryFor(SHOP_B)).active).toBeNull();
 
     fx.setting(SETTING_KEY.WALLET_PAYOS_DEPOSIT_ENABLED, false);
-    expect((await svc.summaryFor(SHOP_A)).enabled).toBe(false);
+    expect(await svc.summaryFor(SHOP_A)).toMatchObject({ enabled: false, unavailableReason: 'flag_off' });
 
     const offPayos = buildTopupFixture({ payosConfigured: false });
-    expect((await offPayos.topups.summaryFor(SHOP_A)).enabled).toBe(false);
+    expect(await offPayos.topups.summaryFor(SHOP_A)).toMatchObject({ enabled: false, unavailableReason: 'payos_not_configured' });
 
     const insecure = buildTopupFixture({ production: true, adminUrl: 'http://localhost:3001' });
-    expect((await insecure.topups.summaryFor(SHOP_A)).enabled).toBe(false);
+    expect(await insecure.topups.summaryFor(SHOP_A)).toMatchObject({ enabled: false, unavailableReason: 'admin_url_invalid' });
   });
 
   it('[WTU-16] listMine lọc theo shop ngữ cảnh + status, phân trang mới nhất trước; listAll lọc shopId/status; getForAdmin trả biên nhận theo thời gian; shopNames một truy vấn', async () => {

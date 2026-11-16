@@ -58,6 +58,7 @@ export class WalletTopupDetailResponse extends WalletTopupResponse {
 
 export class PayosTopupInfoResponse {
   @ApiProperty({ description: 'Cờ wallet.payos_deposit_enabled BẬT VÀ PayOS đã cấu hình VÀ EF_ADMIN_URL dùng được' }) enabled!: boolean;
+  @ApiProperty({ nullable: true, enum: ['flag_off', 'payos_not_configured', 'admin_url_invalid'], type: String, description: 'Vì sao nạp PayOS chưa mở (null khi đã mở): flag_off = tham số tắt · payos_not_configured = server thiếu khoá PayOS thu tiền · admin_url_invalid = EF_ADMIN_URL không phải https' }) unavailableReason!: 'flag_off' | 'payos_not_configured' | 'admin_url_invalid' | null;
   @ApiProperty({ example: 500000, description: 'Số tiền nạp tối thiểu (wallet.min_deposit)' }) minAmount!: number;
   @ApiProperty({ example: 50000000, description: 'Số tiền nạp tối đa mỗi lần (wallet.max_topup_amount)' }) maxAmount!: number;
   @ApiProperty({ nullable: true, type: () => WalletTopupResponse, description: 'Khoản pending|partial còn hạn của shop; không có thì null' }) active!: WalletTopupResponse | null;

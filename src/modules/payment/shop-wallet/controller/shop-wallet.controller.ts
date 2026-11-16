@@ -152,6 +152,7 @@ export class ShopWalletController {
       ...toWallet(wallet, shop.shopName),
       payosTopup: {
         enabled: topup.enabled,
+        unavailableReason: topup.unavailableReason,
         minAmount: topup.minAmount,
         maxAmount: topup.maxAmount,
         active: topup.active ? toTopupResponse(topup.active, { shopName: shop.shopName, exposeLink: true }) : null,

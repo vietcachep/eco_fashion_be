@@ -183,7 +183,7 @@ describe('ShopWalletTopupController — route, quyền, DTO, mapper, cách ly', 
   it('[WTI-02] GET /shop/wallet (vendor) trả payosTopup {enabled,minAmount,maxAmount,active}; GET /admin/shops/:id/wallet KHÔNG có trường payosTopup', async () => {
     const wallet = new ShopWalletController(fx.wallet, fx.topups);
     const mine = dataOf(await wallet.mine(CTX_A));
-    expect(mine.payosTopup).toEqual({ enabled: true, minAmount: 500_000, maxAmount: 50_000_000, active: null });
+    expect(mine.payosTopup).toEqual({ enabled: true, unavailableReason: null, minAmount: 500_000, maxAmount: 50_000_000, active: null });
 
     const open = fx.seedTopup({ shopId: SHOP_A, status: 'pending', payosOrderCode: nextTopupCode() });
     const withActive = dataOf(await wallet.mine(CTX_A));

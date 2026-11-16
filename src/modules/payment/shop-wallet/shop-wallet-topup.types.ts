@@ -27,8 +27,12 @@ export interface TopupShopContext {
 }
 
 /* Tóm tắt cho GET /shop/wallet (WalletResponse.payosTopup): cờ bật, mức tiền, và khoản còn mở (còn hạn) nếu có. */
+/* Vì sao nạp PayOS chưa mở (chỉ mã kỹ thuật, KHÔNG chứa khoá/giá trị cấu hình): để chủ shop báo sàn đúng chỗ cần sửa. null khi đã mở. */
+export type TopupUnavailableReason = 'flag_off' | 'payos_not_configured' | 'admin_url_invalid';
+
 export interface TopupSummary {
   enabled: boolean;
+  unavailableReason: TopupUnavailableReason | null;
   minAmount: number;
   maxAmount: number;
   active: TopupRow | null;

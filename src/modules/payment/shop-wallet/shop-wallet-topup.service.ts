@@ -12,7 +12,7 @@ import { SystemQueryApi } from '@modules/system/queryapi/system.queryapi';
 import { TOPUP_OPEN_STATUSES, TOPUP_STATUS, TOPUP_TIMING, WALLET_ERR } from '../foundation/payment.constants';
 import { PayosService } from '../payos/payos.service';
 import { ShopWalletTopupSettleService } from './shop-wallet-topup-settle.service';
-import type { TopupReceiptRow, TopupRow, TopupShopContext, TopupSummary } from './shop-wallet-topup.types';
+import type { TopupReceiptRow, TopupRow, TopupShopContext, TopupSummary, TopupUnavailableReason } from './shop-wallet-topup.types';
 
 /* Số lần thử khi ghi dòng `creating` gặp P2002 vì trùng mã PayOS (rất hiếm: dải mã ~1e15 × 1000) — quá số lần ⇒ TOPUP_LINK_FAILED. */
 const MAX_CODE_ATTEMPTS = 5;
@@ -38,6 +38,7 @@ export function topupDescription(shopCode: string): string {
 @Injectable()
 export class ShopWalletTopupService {
   private readonly logger = new Logger(ShopWalletTopupService.name);
+  private lastUnavailableLog = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -62,7 +63,13 @@ export class ShopWalletTopupService {
         orderBy: { createdAt: 'desc' },
       }),
     ]);
-    return { enabled: flag && this.payos.isConfigured && this.adminUrlUsable(), minAmount, maxAmount, active };
+    const unavailableReason: TopupUnavailableReason | null = !flag ? 'flag_off' : !this.payos.isConfigured ? 'payos_not_configured' : !this.adminUrlUsable() ? 'admin_url_invalid' : null;
+    // Ghi log (tối đa 1 lần/phút) để người vận hành thấy NGAY chỗ cấu hình đang thiếu khi chủ shop báo "không nạp được".
+    if (unavailableReason && Date.now() - this.lastUnavailableLog > 60_000) {
+      this.lastUnavailableLog = Date.now();
+      this.logger.warn(`Nạp cọc PayOS đang đóng: ${unavailableReason} (flag_off = tham số wallet.payos_deposit_enabled; payos_not_configured = thiếu EF_PAYOS_CLIENT_ID/API_KEY/CHECKSUM_KEY; admin_url_invalid = EF_ADMIN_URL không phải https khi production)`);
+    }
+    return { enabled: unavailableReason === null, unavailableReason, minAmount, maxAmount, active };
   }
 
   /*
