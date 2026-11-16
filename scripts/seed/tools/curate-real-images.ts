@@ -8,7 +8,7 @@
  * Hai nguồn (đổi bằng --provider=commons|pexels; mặc định: có EF_PEXELS_API_KEY thì pexels, không thì commons):
  *  - commons : Wikimedia Commons, KHÔNG cần khoá. Chỉ nhận ảnh JPEG ≥ 600px có giấy phép CC0 / Public domain / CC BY / CC BY-SA; ghi giấy phép +
  *              tác giả vào manifest (CC BY / BY-SA yêu cầu ghi công — xem scripts/seed/assets/NGUON-ANH.md). Chỉ nhận ảnh mà TÊN FILE khớp từ khoá
- *              (tất cả từ khi từ khoá ≤ 2 từ, ≥ 2/3 số từ khi dài hơn) — không khớp thì BỎ QUA và giữ ảnh mẫu, thay vì dùng ảnh sai.
+ *              (NGUYÊN TỪ, không khớp chuỗi con; tất cả từ khi từ khoá ≤ 2 từ, ≥ 2/3 khi dài hơn) và mô tả không có người/địa danh/sự kiện làm chủ thể — không khớp thì BỎ QUA và giữ ảnh mẫu, thay vì dùng ảnh sai.
  *  - pexels  : cần EF_PEXELS_API_KEY (miễn phí tại https://www.pexels.com/api/), hạn mức 200 lượt/giờ (tự chờ). Pexels không bắt buộc ghi công.
  * Chạy lại bao nhiêu lần cũng được: khoá đã có trong manifest thì bỏ qua (--force chọn lại hết; --limit=N giới hạn số ảnh mỗi lượt).
  * Mỗi ảnh chỉ dùng cho MỘT chỗ khi tìm đủ ảnh khác nhau. Nên lướt `assets/real-images.json` (có `page` từng ảnh) và xoá/sửa mục chưa hợp.
@@ -41,7 +41,7 @@ const SHOP_QUERIES: Record<string, [string, string]> = {
   'hang-nhai-24h': ['parcels', 'warehouse'],
 };
 
-interface Candidate { id: string; page: string; author: string; text: string; src?: string; license?: string; width: number; height: number; pexelsId?: number }
+interface Candidate { id: string; page: string; author: string; title: string; text: string; src?: string; license?: string; width: number; height: number; pexelsId?: number }
 interface Target { key: string; query: string; orientation: 'portrait' | 'landscape' | 'square' }
 interface Provider { name: 'commons' | 'pexels'; search(query: string, orientation: string): Promise<Candidate[]> }
 
@@ -49,16 +49,24 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 const UA = 'FitlySeedImageCurator/1.0 (student project; seed script)';
 
 const words = (q: string): string[] => q.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-const stem = (w: string): string => w.replace(/(ies|es|s)$/, '');
-/* Số từ khoá xuất hiện trong văn bản (so khớp theo gốc từ để "shoes" ~ "shoe"). */
+/* Số ít đơn giản: bỏ "s"/"es"/"ies" cuối — chỉ để "shoes" ~ "shoe"; KHÔNG so khớp chuỗi con ("watch" ≠ "watching"). */
+const stem = (w: string): string => (w.endsWith('ies') ? `${w.slice(0, -3)}y` : /(ss|ch|sh|x)es$/.test(w) ? w.slice(0, -2) : w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
+const wordSet = (text: string): Set<string> => new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stem));
+/* Số từ khoá xuất hiện NGUYÊN TỪ trong văn bản. */
 function hits(text: string, query: string): number {
-  const t = text.toLowerCase();
-  return words(query).filter((w) => t.includes(stem(w))).length;
+  const have = wordSet(text);
+  return words(query).filter((w) => have.has(stem(w))).length;
 }
-/* Ngưỡng khớp tối thiểu theo độ dài từ khoá. */
+/* Ngưỡng khớp tối thiểu (trên TÊN FILE) theo độ dài từ khoá: ≤ 2 từ = đủ hết; dài hơn = ≥ 2/3. */
 function minHits(query: string): number {
   const n = words(query).length;
   return n <= 2 ? n : Math.ceil((n * 2) / 3);
+}
+/* Ảnh có người/địa danh/sự kiện làm chủ thể (mô tả nhắc tới) KHÔNG phải ảnh sản phẩm — loại, trừ khi chính từ khoá tìm có từ đó (vd "women watch"). */
+const SUBJECT_NOISE = /\b(woman|women|man|men|boy|boys|girl|girls|child|children|kid|kids|people|person|student|students|guy|lady|ladies|crowd|fans|team|player|players|match|game|visitors?|tourists?|view|town|city|village|street|festival|exhibition|fair|expo|conference|ceremony|prototype|demonstration|speaker|presentation|wearing|holding|using|watching|playing|eating|riding|walking|selling|shopping|customers?)\b/gi;
+function hasNoise(text: string, query: string): boolean {
+  const allowed = wordSet(query);
+  return [...text.matchAll(SUBJECT_NOISE)].some((m) => !allowed.has(stem(m[0].toLowerCase())));
 }
 
 function buildTargets(): Target[] {
@@ -106,9 +114,10 @@ function commonsProvider(): Provider {
           const license = md.LicenseShortName?.value ?? '';
           if (!ii || ii.mime !== 'image/jpeg' || ii.width < 600 || ii.height < 600 || !COMMONS_LICENSE_OK.test(license) || !ii.thumburl) continue;
           const author = (md.Artist?.value ?? '').replace(/<[^>]*>/g, '').trim() || 'Wikimedia Commons contributor';
-          const text = `${pg.title.replace(/^File:/, '').replace(/\.[a-z]+$/i, '')} ${(md.ImageDescription?.value ?? '').replace(/<[^>]*>/g, ' ')}`;
+          const title = pg.title.replace(/^File:/, '').replace(/\.[a-z]+$/i, '');
+          const text = `${title} ${(md.ImageDescription?.value ?? '').replace(/<[^>]*>/g, ' ')}`;
           if (COMMONS_UNWANTED.test(text)) continue;
-          out.push({ id: pg.title, page: ii.descriptionurl, author: author.slice(0, 120), text, src: ii.thumburl, license, width: ii.width, height: ii.height });
+          out.push({ id: pg.title, page: ii.descriptionurl, author: author.slice(0, 120), title, text, src: ii.thumburl, license, width: ii.width, height: ii.height });
         }
         return out;
       }
@@ -137,7 +146,7 @@ function pexelsProvider(apiKey: string): Provider {
         if (res.status === 401 || res.status === 403) throw new Error('EF_PEXELS_API_KEY không hợp lệ.');
         if (!res.ok) { await sleep(2000 * (attempt + 1)); continue; }
         const photos = ((await res.json()) as { photos?: Array<{ id: number; url: string; photographer: string; alt?: string; width: number; height: number }> }).photos ?? [];
-        return photos.map((p) => ({ id: String(p.id), pexelsId: p.id, page: p.url, author: p.photographer, text: `${p.alt ?? ''} ${p.url}`, width: p.width, height: p.height }));
+        return photos.map((p) => ({ id: String(p.id), pexelsId: p.id, page: p.url, author: p.photographer, title: `${p.alt ?? ''} ${p.url}`, text: `${p.alt ?? ''} ${p.url}`, width: p.width, height: p.height }));
       }
       return [];
     },
@@ -183,9 +192,10 @@ async function main(): Promise<number> {
     // Commons: bắt buộc tên/mô tả ảnh khớp từ khoá; Pexels: lấy ảnh khớp nhiều từ nhất (Pexels đã xếp theo độ liên quan).
     const need = provider.name === 'commons' ? minHits(t.query) : 0;
     const ranked = cands
-      .map((c, i) => ({ c, i, score: hits(c.text, t.query) }))
+      .map((c, i) => ({ c, i, score: hits(c.title, t.query) }))
       .filter((r) => r.score >= need)
-      .filter((r) => (t.orientation === 'landscape' ? r.c.width >= r.c.height : t.orientation === 'portrait' ? true : true))
+      .filter((r) => provider.name !== 'commons' || !hasNoise(r.c.text, t.query))
+      .filter((r) => (t.orientation === 'landscape' ? r.c.width >= r.c.height : true))
       .sort((a, b) => b.score - a.score || a.i - b.i);
     const best = ranked.find((r) => !used.has(r.c.src ?? r.c.id));
     if (!best) { skipped += 1; console.warn(`  – ${t.key}: không có ảnh khớp "${t.query}" → giữ ảnh mẫu`); continue; }

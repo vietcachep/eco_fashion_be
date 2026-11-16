@@ -303,6 +303,20 @@ model ShopPayoutHold {
 }
 
 /**
+ * Cấu hình chi trả theo SHOP. `auto_enabled` = cron 02:00 hằng ngày có tự gom + chi PayOS cho shop này không (mặc định BẬT; shop chưa có dòng = bật).
+ * Tắt chỉ ảnh hưởng cron: kế toán vẫn chạy kỳ + chi cho shop đó bất cứ lúc nào bằng "Chạy đối soát" (chọn shop).
+ */
+model ShopPayoutSetting {
+  shopId      String   @id @map("shop_id") @db.Uuid
+  autoEnabled Boolean  @default(true) @map("auto_enabled")
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("shop_payout_settings")
+  @@schema("payment")
+}
+
+/**
  * Dòng chi tiết của kỳ: mỗi đơn online đã tính (sale) hoặc mỗi hoàn tiền đã trừ (refund). (orderCode, kind) UNIQUE toàn
  * bảng ⇒ một đơn/hoàn tiền không bao giờ bị tính vào hai kỳ.
  */

@@ -18,7 +18,7 @@ import type { PaymentOutboxService } from '../outbox/payment-outbox.service';
 import type { PayosService } from '../payos/payos.service';
 import { ShopPayoutController } from './controller/shop-payout.controller';
 import { MarkPaidRequest, PayoutListQuery, RunPayoutRequest } from './dto/shop-payout.dto';
-import { ShopPayoutService, uniquePayoutCode } from './shop-payout.service';
+import { ShopPayoutService, uniquePayoutCode, type ShopPayoutRunInput } from './shop-payout.service';
 
 /*
  * Test đối soát chi trả shop. Service chạy THẬT; Prisma được thay bằng DB giả trong bộ nhớ hiểu đúng các `where` mà service dùng
@@ -153,6 +153,8 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
   };
 
   const holds: HoldRow[] = [];
+  /* payment.shop_payout_settings — shop chưa có dòng = bật tự động. */
+  const autoSettings = new Map<string, { shopId: string; autoEnabled: boolean; updatedBy: string | null; updatedAt: Date }>();
   const copyAny = <T extends object>(r: T | undefined): T | null => (r ? { ...r } : null);
   const db = {
     shopPayout: {
@@ -195,6 +197,16 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
     /* tx.$queryRaw`SELECT id … WHERE shop_id = ${shopId} ORDER BY period_end DESC … FOR UPDATE` — khoá dòng kỳ gần nhất của shop (DB giả: chỉ trả id). */
     $queryRaw: jest.fn((_strings: TemplateStringsArray, shopId: string) => Promise.resolve(sortRows(state.payouts.filter((r) => r.shopId === shopId), [{ periodEnd: 'desc' }, { createdAt: 'desc' }]).slice(0, 1).map((r) => ({ id: r.id })))),
     /* Lệnh giữ tay (PLAN-0026 §2.4): unique một phần theo shop khi released_at NULL — như index uq_shop_payout_holds_active. */
+    shopPayoutSetting: {
+      findMany: jest.fn((args: { where?: { autoEnabled?: boolean; shopId?: { in: string[] } } }) =>
+        Promise.resolve([...autoSettings.values()].filter((r) => (args.where?.autoEnabled === undefined || r.autoEnabled === args.where.autoEnabled) && (!args.where?.shopId || args.where.shopId.in.includes(r.shopId))).map((r) => ({ ...r })))),
+      findUnique: jest.fn((args: { where: { shopId: string } }) => Promise.resolve(copyAny(autoSettings.get(args.where.shopId)))),
+      upsert: jest.fn((args: { where: { shopId: string }; create: { shopId: string; autoEnabled: boolean; updatedBy: string }; update: { autoEnabled: boolean; updatedBy: string } }) => {
+        const row = { ...(autoSettings.get(args.where.shopId) ?? args.create), ...(autoSettings.has(args.where.shopId) ? args.update : {}), updatedAt: new Date() };
+        autoSettings.set(args.where.shopId, row);
+        return Promise.resolve({ ...row });
+      }),
+    },
     shopPayoutHold: {
       findFirst: jest.fn((args: { where: Where }) => Promise.resolve(copyAny(holds.find((h) => matches(h as unknown as Record<string, unknown>, args.where))))),
       findUnique: jest.fn((args: { where: { id: string } }) => Promise.resolve(copyAny(holds.find((h) => h.id === args.where.id)))),
@@ -238,7 +250,9 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
   const suspended = new Set<string>();
   const shops = {
     bankAccountOf: jest.fn((shopId: string) => Promise.resolve(banks.get(shopId) ?? null)),
-    findBrief: jest.fn((shopId: string) => Promise.resolve({ id: shopId, name: `Shop ${shopId.slice(0, 4)}`, status: suspended.has(shopId) ? 'suspended' : 'approved' })),
+    findBrief: jest.fn((shopId: string) => Promise.resolve({ id: shopId, code: `SHOP-${shopId.slice(0, 2)}`, name: `Shop ${shopId.slice(0, 4)}`, status: suspended.has(shopId) ? 'suspended' : 'approved' })),
+    approvedShopIds: jest.fn(() => Promise.resolve([SHOP_A, SHOP_B])),
+    findManyBrief: jest.fn((ids: string[]) => Promise.resolve(new Map(ids.map((id) => [id, { id, code: `SHOP-${id.slice(0, 2)}`, name: `Shop ${id.slice(0, 4)}` }])))),
   };
   /* Mặc định: hạn đổi trả 7 ngày; KHÔNG có mức chi tối thiểu (0) + hạn mức tự chi rất lớn + giữ đổi TK 24h — để các test công thức nhỏ không dính luật PLAN-0026. */
   const settings: Record<string, number> = { [SETTING_KEY.RETURN_WINDOW_DAYS]: 7, [SETTING_KEY.PAYOUT_MIN_AMOUNT]: 0, [SETTING_KEY.PAYOUT_AUTO_MAX_AMOUNT]: 1e12, [SETTING_KEY.PAYOUT_BANK_CHANGE_HOLD_HOURS]: 24 };
@@ -345,6 +359,8 @@ function buildFixture(opts: { payoutConfigured?: boolean } = {}) {
     },
     linesOf: (payoutId: string) => state.lines.filter((l) => l.payoutId === payoutId),
     run: (period: { periodStart: Date; periodEnd: Date } = PERIOD) => service.run(period, actor),
+    runWith: (input: { shopId?: string; shopIds?: string[]; autoOnly?: boolean }, run: ShopPayoutRunInput = { ...PERIOD }) => service.run({ ...run, ...input }, input.autoOnly ? null : actor),
+    setAuto: (shopId: string, enabled: boolean) => autoSettings.set(shopId, { shopId, autoEnabled: enabled, updatedBy: null, updatedAt: new Date() }),
     auditActions: () => audit.write.mock.calls.map((c) => c[2].action),
     outboxTypes: () => outbox.publish.mock.calls.map((c) => c[1].eventType),
   };
@@ -511,6 +527,87 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       expect(f.auditActions()).toEqual([PAYOUT_AUDIT.CREATED]);
       expect(f.audit.write.mock.calls[0][2]).toMatchObject({ entityCode: CODE_A, after: contains({ grossRevenue: '100000', commission: '10000', refundAmount: '0', carriedDebt: '0', netPayout: '90000', lines: 1 }) });
       expect(f.outbox.publish.mock.calls[0][1]).toMatchObject({ eventType: PAYMENT_EVENT.PAYOUT_CREATED, payload: contains({ payoutCode: CODE_A, shopId: SHOP_A, netPayout: '90000' }) });
+    });
+  });
+
+  /* ============================================================ */
+  describe('công tắc chi trả TỰ ĐỘNG theo shop + chọn shop khi chạy tay', () => {
+    it('[AUTO-01] cron (autoOnly) bỏ qua shop đã tắt; shop còn bật vẫn được chi', async () => {
+      const f = buildFixture();
+      f.setEligible([order('DH-A', SHOP_A, 100_000), order('DH-B', SHOP_B, 200_000)]);
+      f.setAuto(SHOP_A, false);
+
+      const created = await f.runWith({ autoOnly: true });
+
+      expectNoSwallowedError();
+      expect(created.map((p) => p.shopId)).toEqual([SHOP_B]);
+    });
+
+    it('[AUTO-02] shop chưa có cấu hình = bật tự động (giữ nguyên hành vi cũ)', async () => {
+      const f = buildFixture();
+      f.setEligible([order('DH-A', SHOP_A, 100_000), order('DH-B', SHOP_B, 200_000)]);
+
+      const created = await f.runWith({ autoOnly: true });
+
+      expect(created.map((p) => p.shopId).sort()).toEqual([SHOP_A, SHOP_B].sort());
+    });
+
+    it('[AUTO-03] chạy TAY chọn 1 shop vẫn chi được shop đang tắt tự động — và đơn bị cron bỏ qua không mất', async () => {
+      const f = buildFixture();
+      f.setEligible([order('DH-A', SHOP_A, 100_000), order('DH-B', SHOP_B, 200_000)]);
+      f.setAuto(SHOP_A, false);
+      await f.runWith({ autoOnly: true }); // cron: chỉ shop B
+
+      const manual = await f.runWith({ shopId: SHOP_A }); // kế toán chọn shop A chi ngay
+
+      expectNoSwallowedError();
+      expect(manual.map((p) => p.shopId)).toEqual([SHOP_A]);
+      expect(f.payoutOf(SHOP_A).grossRevenue.toString()).toBe('100000');
+    });
+
+    it('[AUTO-04] chạy tay chọn NHIỀU shop: chỉ tạo kỳ cho các shop được chọn', async () => {
+      const f = buildFixture();
+      f.setEligible([order('DH-A', SHOP_A, 100_000), order('DH-B', SHOP_B, 200_000)]);
+
+      const created = await f.runWith({ shopIds: [SHOP_B] });
+
+      expect(created.map((p) => p.shopId)).toEqual([SHOP_B]);
+      expect(f.linesOf(f.payoutOf(SHOP_B).id).map((l) => l.orderCode)).toEqual(['DH-B']);
+    });
+
+    it('[AUTO-05] chọn nhiều shop không bị chặn bởi kỳ của shop KHÁC ngoài danh sách chọn', async () => {
+      const f = buildFixture();
+      f.setEligible([order('DH-A', SHOP_A, 100_000), order('DH-B', SHOP_B, 200_000)]);
+      await f.runWith({ shopId: SHOP_A }, PERIOD);
+      const later = { periodStart: new Date('2025-03-01T00:00:00.000Z'), periodEnd: new Date('2025-03-31T00:00:00.000Z') };
+
+      const created = await f.runWith({ shopIds: [SHOP_B] }, later);
+
+      expect(created.map((p) => p.shopId)).toEqual([SHOP_B]);
+    });
+
+    it('[AUTO-06] setAutoSetting: mặc định bật, tắt rồi bật lại; ghi audit đúng một lần mỗi lần ĐỔI', async () => {
+      const f = buildFixture();
+      expect((await f.service.listAutoSettings()).every((r) => r.autoEnabled)).toBe(true);
+
+      const off = await f.service.setAutoSetting(SHOP_A, false, actor);
+      const offAgain = await f.service.setAutoSetting(SHOP_A, false, actor); // không đổi ⇒ không audit thêm
+      const on = await f.service.setAutoSetting(SHOP_A, true, actor);
+
+      expect([off.autoEnabled, offAgain.autoEnabled, on.autoEnabled]).toEqual([false, false, true]);
+      expect(f.auditActions().filter((a) => a === 'PAYOUT_AUTO_SETTING_CHANGED')).toHaveLength(2);
+      const list = await f.service.listAutoSettings();
+      expect(list.find((r) => r.shopId === SHOP_A)?.autoEnabled).toBe(true);
+    });
+
+    it('[AUTO-07] tắt tự động không đụng tới shop khác trong danh sách', async () => {
+      const f = buildFixture();
+      await f.service.setAutoSetting(SHOP_A, false, actor);
+
+      const list = await f.service.listAutoSettings();
+
+      expect(list.find((r) => r.shopId === SHOP_A)?.autoEnabled).toBe(false);
+      expect(list.find((r) => r.shopId === SHOP_B)?.autoEnabled).toBe(true);
     });
   });
 

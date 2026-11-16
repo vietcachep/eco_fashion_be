@@ -78,7 +78,8 @@ export class AutoPayoutJob {
     const periodStart = latest ?? new Date(periodEnd.getTime() - DAY_MS);
     if (periodStart.getTime() >= periodEnd.getTime()) return { status: 'empty_period' };
 
-    const created = await this.payouts.run({ periodStart, periodEnd }, null);
+    // autoOnly: bỏ qua shop đã tắt công tắc tự động; kế toán vẫn chạy tay + chi được cho các shop đó.
+    const created = await this.payouts.run({ periodStart, periodEnd, autoOnly: true }, null);
     return { status: 'ran', periodStart, periodEnd, created: created.length };
   }
 }

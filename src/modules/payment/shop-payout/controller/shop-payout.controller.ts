@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Prisma } from '@common/prisma/types';
 import { ApiResponse, PageResponse } from '@common/response/api-response';
@@ -6,7 +6,7 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor, RequirePermission } from '@common/security/decorators';
 import { ShopContextGuard } from '@modules/shop/security/shop-context.guard';
 import { CurrentShop, RequireShopPermission, type ShopContext } from '@modules/shop/security/shop-permission.decorator';
-import { CreatePayoutHoldRequest, MarkPaidRequest, PayosBalanceResponse, PayoutHoldResponse, PayoutListQuery, ReleasePayoutHoldResponse, RunPayoutRequest, ShopPayoutDetailResponse, ShopPayoutResponse } from '../dto/shop-payout.dto';
+import { CreatePayoutHoldRequest, MarkPaidRequest, PayosBalanceResponse, PayoutAutoSettingResponse, UpdatePayoutAutoSettingRequest, PayoutHoldResponse, PayoutListQuery, ReleasePayoutHoldResponse, RunPayoutRequest, ShopPayoutDetailResponse, ShopPayoutResponse } from '../dto/shop-payout.dto';
 import { ShopPayoutService } from '../shop-payout.service';
 
 type PayoutRow = Prisma.ShopPayoutGetPayload<object>;
@@ -75,12 +75,33 @@ export class ShopPayoutController {
   @Post('admin/payouts/run')
   @HttpCode(HttpStatus.OK)
   @RequirePermission('supplier.payout.process')
-  @ApiOperation({ summary: 'Chạy kỳ đối soát toàn sàn (idempotent — chạy lại cùng kỳ không tạo trùng)' })
+  @ApiOperation({ summary: 'Chạy kỳ đối soát toàn sàn hoặc cho shop được chọn (shopId / shopIds) — idempotent; chi được cả shop đang tắt chi trả tự động' })
   @ApiOkResponse({ type: [ShopPayoutResponse] })
   async run(@Body() req: RunPayoutRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<ShopPayoutResponse[]>> {
-    const created = await this.service.run({ periodStart: new Date(req.periodStart), periodEnd: new Date(req.periodEnd), shopId: req.shopId }, actor);
+    const created = await this.service.run({ periodStart: new Date(req.periodStart), periodEnd: new Date(req.periodEnd), shopId: req.shopId, shopIds: req.shopIds }, actor);
     const names = await this.service.shopLabels(created.map((p) => p.shopId));
     return ApiResponse.ok(created.map((p) => toPayout(p, false, names.get(p.shopId))), `Đã tạo ${created.length} kỳ đối soát`);
+  }
+
+  // ---------- Công tắc chi trả tự động theo shop (cron 02:00) — route tĩnh khai báo TRƯỚC :id ----------
+
+  @Get('admin/payouts/auto-settings')
+  @RequirePermission('supplier.payout.read')
+  @ApiOperation({ summary: 'Các shop đã duyệt kèm công tắc chi trả tự động (mặc định bật)' })
+  @ApiOkResponse({ type: [PayoutAutoSettingResponse] })
+  async autoSettings(): Promise<ApiResponse<PayoutAutoSettingResponse[]>> {
+    const rows = await this.service.listAutoSettings();
+    return ApiResponse.ok(rows.map((r) => ({ ...r, updatedAt: r.updatedAt?.toISOString() ?? null })));
+  }
+
+  @Put('admin/payouts/auto-settings/:shopId')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.process')
+  @ApiOperation({ summary: 'Bật/tắt chi trả TỰ ĐỘNG (cron 02:00) của một shop. Tắt không chặn kế toán chạy kỳ tay cho shop đó.' })
+  @ApiOkResponse({ type: PayoutAutoSettingResponse })
+  async setAutoSetting(@Param('shopId', ParseUUIDPipe) shopId: string, @Body() req: UpdatePayoutAutoSettingRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<PayoutAutoSettingResponse>> {
+    const r = await this.service.setAutoSetting(shopId, req.enabled, actor);
+    return ApiResponse.ok({ ...r, updatedAt: r.updatedAt.toISOString() }, req.enabled ? 'Đã bật chi trả tự động cho gian hàng' : 'Đã tắt chi trả tự động — chỉ chi khi kế toán chạy tay');
   }
 
   // ---------- Giữ tay tiền chi trả (PLAN-0026 §2.4) — route tĩnh khai báo TRƯỚC :id ----------

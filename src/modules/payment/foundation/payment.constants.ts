@@ -102,7 +102,7 @@ export const PAYOUT_ERR = {
   HOLD_EXISTS: 'PAYOUT_HOLD_EXISTS',
   HOLD_NOT_FOUND: 'PAYOUT_HOLD_NOT_FOUND',
 } as const;
-export const PAYOUT_AUDIT = { CREATED: 'PAYOUT_CREATED', SENT: 'PAYOUT_SENT', FAILED: 'PAYOUT_FAILED', RETRIED: 'PAYOUT_RETRIED', MARKED_PAID: 'PAYOUT_MARKED_PAID', APPROVED: 'PAYOUT_APPROVED', UNKNOWN: 'PAYOUT_UNKNOWN', RECONCILED: 'PAYOUT_RECONCILED', HOLD_CREATED: 'PAYOUT_HOLD_CREATED', HOLD_RELEASED: 'PAYOUT_HOLD_RELEASED' } as const;
+export const PAYOUT_AUDIT = { CREATED: 'PAYOUT_CREATED', SENT: 'PAYOUT_SENT', FAILED: 'PAYOUT_FAILED', RETRIED: 'PAYOUT_RETRIED', MARKED_PAID: 'PAYOUT_MARKED_PAID', APPROVED: 'PAYOUT_APPROVED', UNKNOWN: 'PAYOUT_UNKNOWN', RECONCILED: 'PAYOUT_RECONCILED', HOLD_CREATED: 'PAYOUT_HOLD_CREATED', HOLD_RELEASED: 'PAYOUT_HOLD_RELEASED', AUTO_SETTING_CHANGED: 'PAYOUT_AUTO_SETTING_CHANGED' } as const;
 /* PLAN-0026: unknown = gửi lệnh nhưng không rõ kết quả (không chi lại, không đánh dấu tay) · awaiting_approval = vượt hạn mức tự chi, chờ kế toán duyệt · held = shop bị khoá / đang giữ · deferred = dưới mức chi tối thiểu, dồn kỳ sau. */
 export const PAYOUT_STATUS = { PENDING: 'pending', AWAITING_APPROVAL: 'awaiting_approval', PROCESSING: 'processing', PAID: 'paid', FAILED: 'failed', UNKNOWN: 'unknown', HELD: 'held', DEFERRED: 'deferred', MERGED: 'merged', CARRIED: 'carried', SETTLED: 'settled' } as const;
 export const PAYOUT_LINE_KIND = { SALE: 'sale', REFUND: 'refund' } as const;

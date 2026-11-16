@@ -21,6 +21,10 @@ export interface ShopPayoutRunInput {
   periodEnd: Date;
   /* PLAN-0026 §2.6: chỉ chạy cho MỘT shop (xử lý sự cố / chạy bù) — bỏ trống = mọi shop. */
   shopId?: string;
+  /* Chạy cho NHIỀU shop được chọn (kế toán chọn tay). Gộp với `shopId` nếu có cả hai. Rỗng/bỏ trống = không giới hạn theo danh sách. */
+  shopIds?: string[];
+  /* Cron tự động: BỎ QUA shop đã tắt công tắc "tự động" (payment.shop_payout_settings). Chạy tay (kế toán chọn shop) KHÔNG đặt cờ này nên vẫn chi được cho shop đang tắt. */
+  autoOnly?: boolean;
 }
 
 /* Snapshot tài khoản nhận lúc chạy kỳ — đổi hồ sơ shop sau đó không làm lệch chứng từ. */
@@ -110,14 +114,17 @@ export class ShopPayoutService {
 
     // Kỳ mới không được chồng lên kỳ đã chạy (chuỗi nợ mang sang tính theo thứ tự thời gian) — trừ chạy lại ĐÚNG kỳ cũ (idempotent).
     // Kiểm theo TỪNG SHOP: chạy kỳ cho shop A không bị chặn vì kỳ của shop B (AUD-08); chạy toàn sàn thì kiểm mọi shop.
+    const scope = [...new Set([...(input.shopIds ?? []), ...(input.shopId ? [input.shopId] : [])])];
     const overlap = await this.prisma.shopPayout.findFirst({
-      where: { ...(input.shopId ? { shopId: input.shopId } : {}), periodEnd: { gt: periodStart }, OR: [{ periodStart: { not: periodStart } }, { periodEnd: { not: periodEnd } }] },
+      where: { ...(scope.length ? { shopId: { in: scope } } : {}), periodEnd: { gt: periodStart }, OR: [{ periodStart: { not: periodStart } }, { periodEnd: { not: periodEnd } }] },
       select: { code: true },
     });
     if (overlap) throw new BusinessException(PAYOUT_ERR.PERIOD_OVERLAP, `Kỳ chồng lên kỳ đã chạy (${overlap.code}) — chọn kỳ bắt đầu sau ngày kết thúc kỳ trước`, HttpStatus.CONFLICT);
 
     const all = await this.collect(periodEnd);
-    const drafts = input.shopId ? new Map([...all].filter(([id]) => id === input.shopId)) : all;
+    // Cron (autoOnly) bỏ qua shop tắt tự động; đơn của họ KHÔNG mất — `collect` chọn theo hạn đổi trả nên kỳ chạy tay sau đó vẫn gom đủ.
+    const autoOff = input.autoOnly ? await this.autoDisabledShopIds() : new Set<string>();
+    const drafts = new Map([...all].filter(([id]) => (scope.length === 0 || scope.includes(id)) && !autoOff.has(id)));
     const created = [];
     for (const [shopId, lines] of drafts) {
       try {
@@ -461,6 +468,38 @@ export class ShopPayoutService {
     if (uniq.length === 0) return new Map();
     const briefs = await this.shops.findManyBrief(uniq);
     return new Map([...briefs].map(([id, b]) => [id, { name: b.name, code: b.code }]));
+  }
+
+  /* ============================== Công tắc chi trả TỰ ĐỘNG theo shop ============================== */
+
+  /* Shop đã TẮT tự động (cron 02:00 bỏ qua). Shop chưa có dòng cấu hình = bật. */
+  async autoDisabledShopIds(): Promise<Set<string>> {
+    const rows = await this.prisma.shopPayoutSetting.findMany({ where: { autoEnabled: false }, select: { shopId: true } });
+    return new Set(rows.map((r) => r.shopId));
+  }
+
+  /* Danh sách shop ĐÃ DUYỆT kèm công tắc tự động — màn kế toán bật/tắt từng shop. */
+  async listAutoSettings(): Promise<Array<{ shopId: string; shopName: string; shopCode: string; autoEnabled: boolean; updatedAt: Date | null }>> {
+    const ids = await this.shops.approvedShopIds();
+    if (ids.length === 0) return [];
+    const [labels, rows] = await Promise.all([this.shopLabels(ids), this.prisma.shopPayoutSetting.findMany({ where: { shopId: { in: ids } } })]);
+    const byShop = new Map(rows.map((r) => [r.shopId, r]));
+    return ids
+      .map((shopId) => ({ shopId, shopName: labels.get(shopId)?.name ?? shopId, shopCode: labels.get(shopId)?.code ?? '', autoEnabled: byShop.get(shopId)?.autoEnabled ?? true, updatedAt: byShop.get(shopId)?.updatedAt ?? null }))
+      .sort((a, b) => a.shopName.localeCompare(b.shopName, 'vi'));
+  }
+
+  /* Bật/tắt chi trả tự động của MỘT shop. Chỉ ảnh hưởng cron 02:00 — chạy kỳ tay vẫn chi được cho shop đang tắt. Ghi audit (ai bật/tắt, trước → sau). */
+  async setAutoSetting(shopId: string, enabled: boolean, actor: AuthenticatedActor) {
+    const brief = await this.shops.findBrief(shopId);
+    if (!brief) throw new NotFoundException(PAYOUT_ERR.NOT_FOUND, 'Không tìm thấy gian hàng');
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.shopPayoutSetting.findUnique({ where: { shopId } });
+      const row = await tx.shopPayoutSetting.upsert({ where: { shopId }, create: { shopId, autoEnabled: enabled, updatedBy: actor.userId }, update: { autoEnabled: enabled, updatedBy: actor.userId } });
+      if ((before?.autoEnabled ?? true) !== enabled)
+        await this.audit.write(tx, actor, { action: PAYOUT_AUDIT.AUTO_SETTING_CHANGED, entityType: 'ShopPayoutSetting', entityId: shopId, entityCode: brief.code, before: { autoEnabled: before?.autoEnabled ?? true }, after: { autoEnabled: enabled } });
+      return { shopId, shopName: brief.name, shopCode: brief.code, autoEnabled: row.autoEnabled, updatedAt: row.updatedAt };
+    });
   }
 
   /* shopId có giá trị = vendor xem kỳ của chính mình (kỳ shop khác → 404, không lộ sự tồn tại). */

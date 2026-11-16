@@ -44,14 +44,14 @@ describe('AutoPayoutJob', () => {
     const r = await job.runOnce(NOW);
     expect(system.settingBool).toHaveBeenCalledWith(SETTING_KEY.PAYOUT_AUTO_ENABLED);
     expect(r).toEqual({ status: 'ran', periodStart: new Date(TODAY_START.getTime() - DAY), periodEnd: TODAY_START, created: 2 });
-    expect(payouts.run).toHaveBeenCalledWith({ periodStart: new Date(TODAY_START.getTime() - DAY), periodEnd: TODAY_START }, null);
+    expect(payouts.run).toHaveBeenCalledWith({ periodStart: new Date(TODAY_START.getTime() - DAY), periodEnd: TODAY_START, autoOnly: true }, null);
   });
 
   it('đã có kỳ ⇒ kỳ mới nối ngay sau mốc kết thúc kỳ gần nhất', async () => {
     const latest = new Date(TODAY_START.getTime() - 3 * DAY);
     const { payouts, job } = build({ latest });
     await job.runOnce(NOW);
-    expect(payouts.run).toHaveBeenCalledWith({ periodStart: latest, periodEnd: TODAY_START }, null);
+    expect(payouts.run).toHaveBeenCalledWith({ periodStart: latest, periodEnd: TODAY_START, autoOnly: true }, null);
   });
 
   it('IDEMPOTENT: kỳ gần nhất đã kết thúc đúng 00:00 hôm nay (lượt trước cùng ngày) ⇒ khoảng rỗng, không gọi run lần hai', async () => {

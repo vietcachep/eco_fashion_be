@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { PageQuery } from '@common/utils/pagination';
 
 export class RunPayoutRequest {
@@ -15,6 +15,27 @@ export class RunPayoutRequest {
   @IsOptional()
   @IsUUID()
   shopId?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Chạy kỳ cho NHIỀU gian hàng được chọn (tối đa 200). Chạy tay luôn chi được cả shop đang tắt chi trả tự động.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsUUID('all', { each: true })
+  shopIds?: string[];
+}
+
+export class UpdatePayoutAutoSettingRequest {
+  @ApiProperty({ description: 'true = cron 02:00 tự chi cho shop này; false = chỉ chi khi kế toán chạy tay' })
+  @IsBoolean()
+  enabled!: boolean;
+}
+
+export class PayoutAutoSettingResponse {
+  @ApiProperty() shopId!: string;
+  @ApiProperty() shopName!: string;
+  @ApiProperty() shopCode!: string;
+  @ApiProperty({ description: 'Cron 02:00 có tự chi cho shop này không (mặc định true)' }) autoEnabled!: boolean;
+  @ApiProperty({ nullable: true, type: String, description: 'Lần đổi cuối (null = chưa từng đổi, đang theo mặc định)' }) updatedAt!: string | null;
 }
 
 export class CreatePayoutHoldRequest {
