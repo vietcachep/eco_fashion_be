@@ -63,7 +63,9 @@ Thêm module/bước = thêm một dòng vào `STEPS` (đúng thứ tự phụ t
 - Có `EF_CLOUDINARY_*` và ảnh MỚI chưa có trong manifest (hoặc `upload`) → upload với `public_id` cố định `ecofashion/seed/<đường dẫn không đuôi>`. Hàng trăm ảnh mà gọi Admin API từng ảnh sẽ chạm hạn mức 500 lệnh/giờ nên có **manifest cache** `assets/.cloudinary-manifest.json` (đường dẫn → url + sha1 nội dung): file không đổi thì không gọi mạng; chưa có trong manifest thì HEAD URL CDN (không tính hạn mức), có rồi dùng luôn, chưa có mới upload — chạy lại không tạo bản trùng.
 - Không có Cloudinary → URL tĩnh `${EF_API_PUBLIC_URL}/static/seed/...` do API phục vụ (`main.ts` mount thư mục assets).
 - Đổi tài khoản Cloudinary hoặc muốn nạp lại ảnh vào DB đã seed: `npm run seed:images` (đồng bộ URL ảnh ngành/bộ sưu tập/banner/sản phẩm theo `public_id` cố định).
-- Muốn ảnh thật thay ảnh tự sinh: đặt `EF_PEXELS_API_KEY` rồi (chưa có script thay ảnh — lệnh `seed:images:pexels` đã gỡ khỏi package.json vì file `fetch-pexels.ts` không tồn tại; xem PLAN-0017 §12) — **lưu ý: lệnh này trỏ tới `scripts/seed/tools/fetch-pexels.ts`, file đó hiện KHÔNG có trong repo nên lệnh sẽ lỗi cho tới khi bổ sung** (ảnh minh hoạ tự sinh vẫn dùng bình thường).
+- **Ảnh thật thay ảnh mẫu** (sản phẩm + logo/banner gian hàng, nguồn Pexels — dùng tự do kể cả thương mại): 2 bước tách rời.
+  1. Một lần trên máy dev: đặt `EF_PEXELS_API_KEY` (khoá miễn phí tại pexels.com/api) rồi `npm run seed:real-images:curate` — tìm ảnh theo `img.query` từng sản phẩm, ghi `scripts/seed/assets/real-images.json` (có trang gốc + tác giả; hạn mức 200 lượt/giờ nên chạy vài giờ, chạy lại được, tiến độ được lưu). Nên lướt file và sửa `id` ảnh nào chưa hợp rồi commit.
+  2. Lúc deploy: container `migrate` tự chạy `npm run seed:real-images` (không cần khoá Pexels) — Cloudinary tự tải ảnh từ CDN Pexels (`ecofashion/real/...`) và thay URL ảnh MẪU trong DB; ảnh chủ shop tự tải lên được giữ nguyên, `npm run seed` không đè ảnh thật lại. Cần `EF_CLOUDINARY_*`; thiếu thì bỏ qua. `--dry-run` để xem trước, `--force` để áp lại.
 - Module có ảnh phải dùng lớp `SeedImages` này (không tự gọi Cloudinary).
 
 ## Tài khoản demo

@@ -13,6 +13,7 @@ import { DEMO_VENDOR_PASSWORD, SHOPS } from './data/shops';
 import type { DeptSeed, SeedProduct, SeedShopDef } from './data/types';
 import { axisValueName, mergeAttributes, validateSeedData } from './data/validate';
 import { SeedImages } from './lib/seed-images';
+import { REAL_PREFIX, isSampleImage } from './lib/real-images';
 
 const ARGON2 = { type: 2 as const, memoryCost: 19456, timeCost: 2, parallelism: 1 };
 const OFFICIAL_CODE = 'SHOP-000001';
@@ -115,7 +116,13 @@ async function seedShops(prisma: PrismaClient, images: SeedImages): Promise<Map<
       });
       created += 1;
     } else if (Object.keys(imgData).length > 0) {
-      await prisma.shop.update({ where: { id: shop.id }, data: imgData });
+      // Logo/banner đã là ảnh thật (hoặc do chủ shop tự đổi) thì giữ nguyên, chỉ làm mới ảnh còn là ảnh mẫu.
+      const cur = await prisma.shop.findUnique({ where: { id: shop.id }, select: { logoUrl: true, bannerUrl: true } });
+      const fresh = {
+        ...(imgData.logoUrl && (!cur?.logoUrl || isSampleImage(cur.logoUrl)) ? { logoUrl: imgData.logoUrl } : {}),
+        ...(imgData.bannerUrl && (!cur?.bannerUrl || isSampleImage(cur.bannerUrl)) ? { bannerUrl: imgData.bannerUrl } : {}),
+      };
+      if (Object.keys(fresh).length > 0) await prisma.shop.update({ where: { id: shop.id }, data: fresh });
     }
     if (s.code === OFFICIAL_CODE) {
       const admin = await prisma.user.findFirst({ where: { email: { equals: s.owner.email, mode: 'insensitive' }, isDeleted: false }, select: { id: true } });
@@ -156,11 +163,13 @@ function planVariants(p: SeedProduct, attrs: Map<string, AttrRef>): VariantPlan[
 }
 
 async function syncImages(prisma: PrismaClient, productId: string, imgs: Array<{ url: string; publicId: string | null }>, alt: string): Promise<void> {
-  const existing = await prisma.productImage.findMany({ where: { productId }, select: { id: true, url: true, sortOrder: true } });
+  const existing = await prisma.productImage.findMany({ where: { productId }, select: { id: true, url: true, publicId: true, sortOrder: true } });
   const bySort = new Map(existing.map((e) => [e.sortOrder, e]));
   for (const [k, img] of imgs.entries()) {
     const cur = bySort.get(k);
     if (cur) {
+      // Ảnh thật đã áp dụng (npm run seed:real-images) thì không bị seed đè lại bằng ảnh mẫu.
+      if (cur.publicId?.startsWith(REAL_PREFIX)) continue;
       if (cur.url !== img.url) await prisma.productImage.update({ where: { id: cur.id }, data: { url: img.url, publicId: img.publicId } });
     } else {
       await prisma.productImage.create({ data: { productId, url: img.url, publicId: img.publicId, alt, sortOrder: k, isPrimary: k === 0 } });

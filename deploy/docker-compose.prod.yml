@@ -61,13 +61,14 @@ services:
       retries: 20
 
   # Chạy MỘT LẦN mỗi lần deploy: migration + đồng bộ catalog quyền + đảm bảo có tài khoản admin (EF_ADMIN_*). api/worker chờ nó thành công.
+  # Bước cuối thay ảnh mẫu bằng ảnh thật (assets/real-images.json) — chỉ đụng ảnh còn là ảnh mẫu, lỗi/thiếu Cloudinary thì bỏ qua, không chặn deploy.
   migrate:
     <<: *backend-env
     build:
       context: ..
       dockerfile: Dockerfile
     image: ${FITLY_IMAGE:-fitly-backend:prod}
-    command: ["sh", "-c", "npx prisma migrate deploy && npm run -s perms:sync && npm run -s seed:admin"]
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run -s perms:sync && npm run -s seed:admin && (npm run -s seed:real-images || true)"]
     restart: "no"
     depends_on:
       db:
