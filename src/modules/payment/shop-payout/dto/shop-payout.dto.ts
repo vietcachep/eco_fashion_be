@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsInt, Matches, Max, Min, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { PageQuery } from '@common/utils/pagination';
 
 export class RunPayoutRequest {
@@ -137,4 +137,33 @@ export class ShopPayoutDetailResponse {
 export class PayosBalanceResponse {
   @ApiProperty({ description: 'Đã cấu hình khoá PayOS payout chưa' }) configured!: boolean;
   @ApiProperty({ example: '50000000', nullable: true, type: String, description: 'Số dư tài khoản chi (VND); null nếu chưa cấu hình hoặc tra cứu lỗi' }) balance!: string | null;
+}
+
+export class TestTransferRequest {
+  @ApiProperty({ example: '970422', description: 'Mã BIN ngân hàng nhận (6 số)' }) @Matches(/^\d{6}$/, { message: 'Mã BIN phải gồm 6 chữ số' }) bankCode!: string;
+  @ApiProperty({ example: '0123456789', description: 'Số tài khoản nhận (6–20 chữ số)' }) @Matches(/^\d{6,20}$/, { message: 'Số tài khoản phải gồm 6–20 chữ số' }) accountNumber!: string;
+  @ApiProperty({ example: 10000, description: 'Số tiền VND (nguyên, từ 1.000 tới payout.test_max_amount)' }) @IsInt() @Min(1000) @Max(1000000) amount!: number;
+  @ApiProperty({ description: 'UUID MỖI lần bấm — khoá idempotency để bấm đúp không chuyển hai lần' }) @IsUUID() clientKey!: string;
+  @ApiPropertyOptional({ description: 'Nội dung chuyển khoản (tối đa 50 ký tự)' }) @IsOptional() @IsString() @MaxLength(50) note?: string;
+}
+
+export class TestTransferConfigResponse {
+  @ApiProperty() enabled!: boolean;
+  @ApiProperty({ description: 'Trần số tiền mỗi lần thử (payout.test_max_amount)' }) maxAmount!: number;
+  @ApiProperty({ description: 'Đã có khoá chi PayOS (EF_PAYOS_PAYOUT_*)' }) configured!: boolean;
+  @ApiProperty({ nullable: true, type: String, description: 'Số dư tài khoản chi PayOS (VND); null = chưa cấu hình/tra lỗi' }) balance!: string | null;
+}
+
+export class TestTransferResponse {
+  @ApiProperty({ enum: ['submitted', 'failed', 'unknown'], description: 'submitted = PayOS đã NHẬN lệnh (chưa chắc tiền đã về) · failed = PayOS từ chối chắc chắn · unknown = không rõ (tiền CÓ THỂ đã đi — kiểm tra trạng thái, đừng gửi lại)' }) outcome!: 'submitted' | 'failed' | 'unknown';
+  @ApiProperty() ok!: boolean;
+  @ApiProperty() code!: string;
+  @ApiProperty() message!: string;
+  @ApiProperty() referenceId!: string;
+  @ApiProperty({ nullable: true, type: String, description: 'Mã lệnh PayOS — dùng để tra trạng thái' }) transactionId!: string | null;
+}
+
+export class TestTransferStatusResponse {
+  @ApiProperty({ enum: ['succeeded', 'failed', 'processing', 'unknown'] }) state!: 'succeeded' | 'failed' | 'processing' | 'unknown';
+  @ApiProperty() detail!: string;
 }

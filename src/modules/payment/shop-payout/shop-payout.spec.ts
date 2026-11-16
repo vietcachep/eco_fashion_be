@@ -612,6 +612,69 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
   });
 
   /* ============================================================ */
+  describe('thử chi tự động (tài khoản nhập tay) — rào chắn tiền thật', () => {
+    const KEY = '11111111-1111-4111-8111-111111111111';
+    const input = { bankCode: '970422', accountNumber: '0123456789', amount: 10_000, clientKey: KEY };
+    const enable = (f: Fixture, max = 20_000) => {
+      (f.system.settingBool as jest.Mock).mockImplementation((k: string) => Promise.resolve(k === SETTING_KEY.PAYOUT_TEST_ENABLED));
+      (f.system.settingNumber as jest.Mock).mockImplementation((k: string) => Promise.resolve(k === SETTING_KEY.PAYOUT_TEST_MAX_AMOUNT ? max : 7));
+    };
+
+    it('[TST-01] cờ tắt (mặc định) ⇒ từ chối, KHÔNG gọi PayOS', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      const e = await catchBusiness(f.service.testTransfer(input, actor));
+      expect(e.errorCode).toBe('PAYOUT_TEST_DISABLED');
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    it('[TST-02] chưa có khoá chi PayOS ⇒ từ chối', async () => {
+      const f = buildFixture({ payoutConfigured: false });
+      enable(f);
+      expect((await catchBusiness(f.service.testTransfer(input, actor))).errorCode).toBe('PAYOUT_TEST_NOT_CONFIGURED');
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    it.each([[999], [20_001], [10_500.5]])('[TST-03] số tiền %p ngoài khoảng/không nguyên ⇒ từ chối, không gọi PayOS', async (amount) => {
+      const f = buildFixture({ payoutConfigured: true });
+      enable(f);
+      await catchBusiness(f.service.testTransfer({ ...input, amount }, actor));
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    it('[TST-04] quỹ chi không đủ số dư ⇒ từ chối trước khi gửi', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      enable(f);
+      (f.payos.payoutBalance as jest.Mock).mockResolvedValue({ balance: 5_000n, code: '00', message: 'ok' });
+      expect((await catchBusiness(f.service.testTransfer(input, actor))).errorCode).toBe('PAYOUT_TEST_INSUFFICIENT_BALANCE');
+      expect(f.payos.payout).not.toHaveBeenCalled();
+    });
+
+    it('[TST-05] hợp lệ ⇒ gọi PayOS đúng tài khoản/số tiền, khoá idempotency suy từ clientKey, audit chỉ giữ 4 số cuối', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      enable(f);
+      (f.payos.payoutBalance as jest.Mock).mockResolvedValue({ balance: 1_000_000n, code: '00', message: 'ok' });
+
+      const r = await f.service.testTransfer(input, actor);
+
+      expect(r).toMatchObject({ outcome: 'submitted', ok: true, transactionId: 'TX-1', referenceId: 'TEST-111111111111411181111111' });
+      expect(f.payos.payout).toHaveBeenCalledWith(expect.objectContaining({ amount: 10_000n, toBin: '970422', toAccountNumber: '0123456789', idempotencyKey: r.referenceId, referenceId: r.referenceId }));
+      expect(f.auditActions()).toContain('PAYOUT_TEST_TRANSFER');
+      const entry = f.audit.write.mock.calls.find((c) => c[2].action === 'PAYOUT_TEST_TRANSFER')![2];
+      expect(JSON.stringify(entry)).toContain('6789');
+      expect(JSON.stringify(entry)).not.toContain('0123456789');
+    });
+
+    it('[TST-06] PayOS từ chối chắc chắn ⇒ outcome failed; lỗi không rõ ⇒ unknown (không báo thành công)', async () => {
+      const f = buildFixture({ payoutConfigured: true });
+      enable(f);
+      (f.payos.payout as jest.Mock).mockResolvedValueOnce({ ok: false, code: '20', message: 'từ chối', raw: null, definite: true });
+      expect((await f.service.testTransfer(input, actor)).outcome).toBe('failed');
+      (f.payos.payout as jest.Mock).mockResolvedValueOnce({ ok: false, code: 'TIMEOUT', message: 'hết giờ', raw: null });
+      expect((await f.service.testTransfer({ ...input, clientKey: '22222222-2222-4222-8222-222222222222' }, actor)).outcome).toBe('unknown');
+    });
+  });
+
+  /* ============================================================ */
   describe('run — escrow & chống tính trùng', () => {
     it('lấy hạn đổi trả từ setting RETURN_WINDOW_DAYS và gọi settlementOrders(windowDays, periodEnd); chỉ tính đơn nó trả về', async () => {
       const f = buildFixture();

@@ -470,6 +470,45 @@ export class ShopPayoutService {
     return new Map([...briefs].map(([id, b]) => [id, { name: b.name, code: b.code }]));
   }
 
+  /* ============================== Thử chi tự động (tài khoản nhập tay) ============================== */
+
+  /* Trạng thái công cụ cho màn quản trị: cờ bật, trần số tiền, đã có khoá chi PayOS chưa, số dư quỹ chi (null nếu chưa cấu hình/tra lỗi). */
+  async testTransferConfig(): Promise<{ enabled: boolean; maxAmount: number; configured: boolean; balance: string | null }> {
+    const [enabled, maxAmount] = await Promise.all([this.system.settingBool(SETTING_KEY.PAYOUT_TEST_ENABLED), this.system.settingNumber(SETTING_KEY.PAYOUT_TEST_MAX_AMOUNT)]);
+    const configured = this.payos.isPayoutConfigured;
+    const bal = configured ? await this.payos.payoutBalance().catch(() => ({ balance: null as bigint | null })) : { balance: null as bigint | null };
+    return { enabled, maxAmount, configured, balance: bal.balance === null ? null : bal.balance.toString() };
+  }
+
+  /*
+   * THỬ CHI: chuyển TIỀN THẬT từ tài khoản chi PayOS tới tài khoản người dùng nhập, để kiểm tra luồng tự chi mà không cần đơn/shop. Rào chắn:
+   *  - cờ `payout.test_enabled` (mặc định TẮT) + khoá chi PayOS + số tiền trong [1.000, `payout.test_max_amount`] + quỹ chi đủ số dư;
+   *  - `clientKey` (UUID do màn tạo MỖI lần bấm) làm khoá idempotency PayOS ⇒ bấm đúp/gửi lại không chuyển hai lần;
+   *  - audit đầy đủ nhưng số tài khoản chỉ lưu 4 số cuối. Không ghi vào kỳ đối soát nào — không ảnh hưởng số liệu shop.
+   */
+  async testTransfer(input: { bankCode: string; accountNumber: string; amount: number; clientKey: string; note?: string }, actor: AuthenticatedActor) {
+    if (!(await this.system.settingBool(SETTING_KEY.PAYOUT_TEST_ENABLED))) throw new BusinessException(PAYOUT_ERR.TEST_DISABLED, 'Công cụ thử chi đang tắt — bật tham số payout.test_enabled ở màn Tham số', HttpStatus.CONFLICT);
+    if (!this.payos.isPayoutConfigured) throw new BusinessException(PAYOUT_ERR.TEST_NOT_CONFIGURED, 'Chưa cấu hình khoá chi PayOS (EF_PAYOS_PAYOUT_*)', HttpStatus.CONFLICT);
+    const max = await this.system.settingNumber(SETTING_KEY.PAYOUT_TEST_MAX_AMOUNT);
+    if (!Number.isInteger(input.amount) || input.amount < 1000 || input.amount > max) throw new BusinessException('COMMON_VALIDATION_ERROR', `Số tiền thử chi phải từ 1.000đ đến ${max.toLocaleString('vi-VN')}đ`);
+    const amount = BigInt(input.amount);
+    const bal = await this.payos.payoutBalance().catch(() => ({ balance: null as bigint | null }));
+    if (bal.balance !== null && bal.balance < amount) throw new BusinessException(PAYOUT_ERR.TEST_INSUFFICIENT_BALANCE, `Số dư tài khoản chi PayOS không đủ (còn ${bal.balance.toString()}đ)`, HttpStatus.CONFLICT);
+
+    const key = `TEST-${input.clientKey.replace(/-/g, '').slice(0, 24)}`;
+    const res = await this.payos.payout({ referenceId: key, amount, toBin: input.bankCode, toAccountNumber: input.accountNumber, description: (input.note?.trim() || 'FITLY thu chi tu dong').slice(0, 50), idempotencyKey: key });
+    const outcome: 'submitted' | 'failed' | 'unknown' = res.ok ? 'submitted' : res.definite ? 'failed' : 'unknown';
+    await this.prisma.$transaction((tx) =>
+      this.audit.write(tx, actor, { action: PAYOUT_AUDIT.TEST_TRANSFER, entityType: 'PayoutTest', entityId: key, entityCode: key, after: { outcome, code: res.code, amount: input.amount, bankCode: input.bankCode, accountLast4: input.accountNumber.slice(-4), transactionId: res.transactionId ?? null } }),
+    );
+    return { outcome, ok: res.ok, code: res.code, message: res.message, referenceId: key, transactionId: res.transactionId ?? null };
+  }
+
+  /* Tra trạng thái một lệnh thử chi theo mã lệnh PayOS (transactionId) — `processing` nghĩa là PayOS còn đang chuyển. */
+  async testTransferStatus(payoutId: string) {
+    return this.payos.getPayout(payoutId);
+  }
+
   /* ============================== Công tắc chi trả TỰ ĐỘNG theo shop ============================== */
 
   /* Shop đã TẮT tự động (cron 02:00 bỏ qua). Shop chưa có dòng cấu hình = bật. */

@@ -6,7 +6,7 @@ import type { AuthenticatedActor } from '@common/security/authenticated-actor';
 import { CurrentActor, RequirePermission } from '@common/security/decorators';
 import { ShopContextGuard } from '@modules/shop/security/shop-context.guard';
 import { CurrentShop, RequireShopPermission, type ShopContext } from '@modules/shop/security/shop-permission.decorator';
-import { CreatePayoutHoldRequest, MarkPaidRequest, PayosBalanceResponse, PayoutAutoSettingResponse, UpdatePayoutAutoSettingRequest, PayoutHoldResponse, PayoutListQuery, ReleasePayoutHoldResponse, RunPayoutRequest, ShopPayoutDetailResponse, ShopPayoutResponse } from '../dto/shop-payout.dto';
+import { CreatePayoutHoldRequest, MarkPaidRequest, PayosBalanceResponse, PayoutAutoSettingResponse, TestTransferConfigResponse, TestTransferRequest, TestTransferResponse, TestTransferStatusResponse, UpdatePayoutAutoSettingRequest, PayoutHoldResponse, PayoutListQuery, ReleasePayoutHoldResponse, RunPayoutRequest, ShopPayoutDetailResponse, ShopPayoutResponse } from '../dto/shop-payout.dto';
 import { ShopPayoutService } from '../shop-payout.service';
 
 type PayoutRow = Prisma.ShopPayoutGetPayload<object>;
@@ -102,6 +102,33 @@ export class ShopPayoutController {
   async setAutoSetting(@Param('shopId', ParseUUIDPipe) shopId: string, @Body() req: UpdatePayoutAutoSettingRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<PayoutAutoSettingResponse>> {
     const r = await this.service.setAutoSetting(shopId, req.enabled, actor);
     return ApiResponse.ok({ ...r, updatedAt: r.updatedAt.toISOString() }, req.enabled ? 'Đã bật chi trả tự động cho gian hàng' : 'Đã tắt chi trả tự động — chỉ chi khi kế toán chạy tay');
+  }
+
+  // ---------- Thử chi tự động bằng tài khoản nhập tay (PLAN-0046) — route tĩnh khai báo TRƯỚC :id ----------
+
+  @Get('admin/payouts/test-transfer/config')
+  @RequirePermission('supplier.payout.approve')
+  @ApiOperation({ summary: 'Trạng thái công cụ thử chi: cờ bật, trần số tiền, đã có khoá chi PayOS, số dư quỹ chi' })
+  @ApiOkResponse({ type: TestTransferConfigResponse })
+  async testTransferConfig(): Promise<ApiResponse<TestTransferConfigResponse>> {
+    return ApiResponse.ok(await this.service.testTransferConfig());
+  }
+
+  @Post('admin/payouts/test-transfer')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('supplier.payout.approve')
+  @ApiOperation({ summary: 'THỬ CHI: chuyển TIỀN THẬT từ tài khoản chi PayOS tới tài khoản nhập tay (cờ payout.test_enabled + trần payout.test_max_amount; idempotent theo clientKey)' })
+  @ApiOkResponse({ type: TestTransferResponse })
+  async testTransfer(@Body() req: TestTransferRequest, @CurrentActor() actor: AuthenticatedActor): Promise<ApiResponse<TestTransferResponse>> {
+    return ApiResponse.ok(await this.service.testTransfer(req, actor), 'Đã gửi lệnh thử chi');
+  }
+
+  @Get('admin/payouts/test-transfer/status')
+  @RequirePermission('supplier.payout.approve')
+  @ApiOperation({ summary: 'Tra trạng thái lệnh thử chi theo mã lệnh PayOS (transactionId)' })
+  @ApiOkResponse({ type: TestTransferStatusResponse })
+  async testTransferStatus(@Query('id') id: string): Promise<ApiResponse<TestTransferStatusResponse>> {
+    return ApiResponse.ok(await this.service.testTransferStatus(id));
   }
 
   // ---------- Giữ tay tiền chi trả (PLAN-0026 §2.4) — route tĩnh khai báo TRƯỚC :id ----------

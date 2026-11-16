@@ -43,4 +43,7 @@ export const SETTING_KEY = {
   PAYOUT_AUTO_MAX_AMOUNT: 'payout.auto_max_amount',
   REFUND_AUTO_MAX_AMOUNT: 'refund.auto_max_amount',
   PAYOUT_BANK_CHANGE_HOLD_HOURS: 'payout.bank_change_hold_hours',
+  /* PLAN-0046 — thử chi tự động bằng tài khoản nhập tay (TIỀN THẬT, mặc định TẮT) + trần số tiền mỗi lần thử. */
+  PAYOUT_TEST_ENABLED: 'payout.test_enabled',
+  PAYOUT_TEST_MAX_AMOUNT: 'payout.test_max_amount',
 } as const;
