@@ -18,8 +18,15 @@ export const REAL_MANIFEST = path.join(ASSETS_DIR, 'real-images.json');
 export const REAL_PREFIX = 'ecofashion/real/';
 
 export interface RealImage {
-  /* id ảnh trên Pexels */
-  id: number;
+  /* nguồn ảnh; thiếu = pexels (manifest cũ) */
+  provider?: 'pexels' | 'commons';
+  /* id ảnh trên Pexels (provider pexels) */
+  id?: number;
+  /* URL tải trực tiếp (provider commons: bản thu nhỏ 1000px trên upload.wikimedia.org) */
+  src?: string;
+  /* giấy phép + tác giả để ghi công khi cần (Commons: CC0 / Public domain / CC BY / CC BY-SA) */
+  license?: string;
+  author?: string;
   /* trang gốc để đối chiếu giấy phép */
   page: string;
   photographer: string;
@@ -31,7 +38,7 @@ export interface RealImage {
   match?: number;
 }
 export interface RealManifest {
-  source: 'pexels';
+  source: string;
   license: string;
   items: Record<string, RealImage>;
 }
@@ -64,4 +71,16 @@ export function parseKey(key: string): { kind: 'product' | 'shop'; slug: string;
   const slot = m[3] as 'a' | 'b' | 'logo' | 'banner';
   if (kind === 'product' ? slot !== 'a' && slot !== 'b' : slot !== 'logo' && slot !== 'banner') return null;
   return { kind, slug: m[2], slot };
+}
+
+/* URL gốc để tải ảnh của một mục manifest (Commons: `src`; Pexels: CDN đã cắt khung). */
+export function imageUrl(item: RealImage, key: string): string {
+  if (item.src) return item.src;
+  if (item.id === undefined) throw new Error(`Mục ${key} thiếu cả src lẫn id`);
+  return pexelsUrl(item.id, key);
+}
+
+/* Ảnh Pexels đã được Pexels cắt đúng khung; ảnh Commons giữ tỉ lệ gốc nên Cloudinary phải cắt (fill, tự nhận chủ thể). */
+export function needsCrop(item: RealImage): boolean {
+  return Boolean(item.src);
 }

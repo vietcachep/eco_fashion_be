@@ -16,7 +16,19 @@ import { v2 as cloudinary } from 'cloudinary';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { loadEnv } from '../../src/config/env';
 import { PrismaClient } from '../../src/generated/prisma/client';
-import { REAL_MANIFEST, REAL_PREFIX, isSampleImage, parseKey, pexelsUrl, type RealManifest } from './lib/real-images';
+import { REAL_MANIFEST, REAL_PREFIX, cropFor, imageUrl, isSampleImage, needsCrop, parseKey, type RealManifest } from './lib/real-images';
+
+/* Wikimedia yêu cầu User-Agent mô tả rõ ứng dụng; tải về bằng fetch riêng rồi upload buffer (không nhờ Cloudinary tải để tránh bị chặn). */
+const UA = 'FitlySeedImageApplier/1.0 (student project; seed script)';
+async function download(url: string): Promise<Buffer> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) });
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+    if (res.status === 429 || res.status >= 500) { await new Promise((r) => setTimeout(r, 1500 * attempt)); continue; }
+    throw new Error(`HTTP ${res.status}`);
+  }
+  throw new Error('tải ảnh lỗi sau 3 lần');
+}
 
 const CONCURRENCY = 4;
 
@@ -71,9 +83,17 @@ async function main(): Promise<number> {
           target = { kind: 'shop', id: shop.id, field };
         }
         if (dry) { replaced += 1; console.log(`  → ${key}  ←  ${real.page}`); return; }
-        // 2. Cloudinary tự tải ảnh từ CDN công khai của Pexels (đã cắt đúng khung).
+        // 2. Pexels: Cloudinary tự tải từ CDN (đã cắt khung). Commons: tải bằng User-Agent riêng, upload buffer và cắt đúng khung.
         const publicId = `${REAL_PREFIX}${key}`;
-        const up = await cloudinary.uploader.upload(pexelsUrl(real.id, key), { public_id: publicId, overwrite: true, resource_type: 'image' });
+        const url = imageUrl(real, key);
+        const opts = { public_id: publicId, overwrite: true, resource_type: 'image' as const };
+        const up = needsCrop(real)
+          ? await new Promise<{ secure_url: string }>((resolve, reject) => {
+              const { w, h } = cropFor(key);
+              const stream = cloudinary.uploader.upload_stream({ ...opts, transformation: [{ width: w, height: h, crop: 'fill', gravity: 'auto' }] }, (err, r) => (err || !r ? reject(new Error(err?.message ?? 'upload lỗi')) : resolve(r)));
+              download(url).then((buf) => stream.end(buf), (e: unknown) => reject(e instanceof Error ? e : new Error(String(e))));
+            })
+          : await cloudinary.uploader.upload(url, opts);
         // 3. Ghi DB sau khi upload thành công.
         if (target.kind === 'img') await prisma.productImage.update({ where: { id: target.id }, data: { url: up.secure_url, publicId } });
         else await prisma.shop.update({ where: { id: target.id }, data: { [target.field]: up.secure_url } });

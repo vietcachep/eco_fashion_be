@@ -1,16 +1,17 @@
 /*
- * CHỌN ẢNH THẬT TỪ PEXELS CHO SẢN PHẨM + GIAN HÀNG  —  `npm run seed:real-images:curate`
+ * CHỌN ẢNH THẬT CHO SẢN PHẨM + GIAN HÀNG  —  `npm run seed:real-images:curate`
  *
- * Với mỗi sản phẩm (`img.query` trong data/dept/*.ts, tiếng Anh) tìm 2 ảnh dọc (a = ảnh chính, b = ảnh phụ); với mỗi gian hàng tìm
- * logo + banner theo từ khoá bên dưới. Kết quả ghi vào `assets/real-images.json` (commit cùng repo) — bước deploy
- * (`npm run seed:real-images`) chỉ đọc file này, không cần khoá Pexels.
+ * Với mỗi sản phẩm (`img.query` trong data/dept/*.ts, tiếng Anh) tìm 2 ảnh (a = ảnh chính, b = ảnh phụ); với mỗi gian hàng tìm logo + banner
+ * theo từ khoá bên dưới. Kết quả ghi vào `assets/real-images.json` (commit cùng repo) — bước deploy (`npm run seed:real-images`) chỉ đọc file
+ * này, không cần khoá nào của nguồn ảnh.
  *
- * Cần: EF_PEXELS_API_KEY trong .env (miễn phí tại https://www.pexels.com/api/). Hạn mức Pexels 200 lượt/giờ — công cụ đọc header
- * X-Ratelimit-* và tự chờ khi hết; chạy lại bao nhiêu lần cũng được: khoá đã có trong manifest thì bỏ qua (thêm --force để chọn lại hết).
- * Mỗi ảnh được dùng cho đúng MỘT chỗ (không trùng giữa các sản phẩm) khi tìm đủ ảnh khác nhau.
- *
- * Chất lượng khớp ảnh–sản phẩm phụ thuộc kết quả tìm kiếm của Pexels: nên lướt `assets/real-images.json` (có `page` từng ảnh) và sửa
- * tay `id` của ảnh nào chưa hợp trước khi deploy. Giấy phép Pexels: dùng tự do kể cả thương mại, không bắt buộc ghi công.
+ * Hai nguồn (đổi bằng --provider=commons|pexels; mặc định: có EF_PEXELS_API_KEY thì pexels, không thì commons):
+ *  - commons : Wikimedia Commons, KHÔNG cần khoá. Chỉ nhận ảnh JPEG ≥ 600px có giấy phép CC0 / Public domain / CC BY / CC BY-SA; ghi giấy phép +
+ *              tác giả vào manifest (CC BY / BY-SA yêu cầu ghi công — xem scripts/seed/assets/NGUON-ANH.md). Chỉ nhận ảnh mà TÊN FILE khớp từ khoá
+ *              (tất cả từ khi từ khoá ≤ 2 từ, ≥ 2/3 số từ khi dài hơn) — không khớp thì BỎ QUA và giữ ảnh mẫu, thay vì dùng ảnh sai.
+ *  - pexels  : cần EF_PEXELS_API_KEY (miễn phí tại https://www.pexels.com/api/), hạn mức 200 lượt/giờ (tự chờ). Pexels không bắt buộc ghi công.
+ * Chạy lại bao nhiêu lần cũng được: khoá đã có trong manifest thì bỏ qua (--force chọn lại hết; --limit=N giới hạn số ảnh mỗi lượt).
+ * Mỗi ảnh chỉ dùng cho MỘT chỗ khi tìm đủ ảnh khác nhau. Nên lướt `assets/real-images.json` (có `page` từng ảnh) và xoá/sửa mục chưa hợp.
  */
 import 'reflect-metadata';
 import * as fs from 'node:fs';
@@ -20,38 +21,45 @@ import { REAL_MANIFEST, type RealImage, type RealManifest } from '../lib/real-im
 
 /* Từ khoá tiếng Anh cho gian hàng: [logo, banner]. Logo = vật thể gọn, banner = cảnh rộng. */
 const SHOP_QUERIES: Record<string, [string, string]> = {
-  'fitly-official': ['fashion boutique hanger', 'fashion clothing store interior'],
-  'techzone-vn': ['laptop on desk', 'electronics store technology'],
-  'mobile-hub': ['smartphone accessories', 'mobile phones display shop'],
-  'gia-dung-thong-minh': ['air fryer kitchen appliance', 'modern kitchen appliances'],
-  'nha-xinh-decor': ['scandinavian lamp decor', 'scandinavian living room interior'],
-  'beauty-box-vn': ['skincare bottles cosmetics', 'makeup cosmetics flatlay'],
-  'healthy-life': ['vitamins supplements bottle', 'healthy food fresh vegetables'],
-  'sneaker-station': ['sneakers shoes', 'sneaker store shelf'],
-  'bag-and-co': ['leather handbag', 'handbags fashion store'],
-  'time-lab': ['wrist watch', 'watches collection display'],
-  'sport-planet': ['sport equipment gym', 'outdoor camping hiking gear'],
-  'baby-land': ['baby toys', 'nursery baby room'],
-  'book-cafe': ['stack of books', 'bookstore shelves'],
-  'ngon-viet': ['vietnamese food', 'asian market food products'],
-  'pet-world': ['dog and cat pet', 'pet shop supplies'],
-  'auto-moto-pro': ['motorcycle helmet', 'motorcycle garage'],
-  'cua-hang-moi': ['small shop storefront', 'shopping retail store'],
-  'hang-nhai-24h': ['online shopping packages', 'warehouse parcels shipping'],
+  'fitly-official': ['fashion boutique hanger', 'clothing store interior'],
+  'techzone-vn': ['laptop', 'electronics store'],
+  'mobile-hub': ['smartphone', 'mobile phone shop'],
+  'gia-dung-thong-minh': ['air fryer', 'kitchen appliances'],
+  'nha-xinh-decor': ['table lamp', 'living room interior'],
+  'beauty-box-vn': ['cosmetics', 'makeup products'],
+  'healthy-life': ['vitamin supplements', 'vegetables market'],
+  'sneaker-station': ['sneakers', 'shoe store'],
+  'bag-and-co': ['handbag', 'handbag store'],
+  'time-lab': ['wrist watch', 'watch shop'],
+  'sport-planet': ['dumbbell', 'camping equipment'],
+  'baby-land': ['baby toys', 'nursery room'],
+  'book-cafe': ['books', 'bookstore'],
+  'ngon-viet': ['vietnamese food', 'vietnamese market'],
+  'pet-world': ['dog cat', 'pet shop'],
+  'auto-moto-pro': ['motorcycle helmet', 'motorcycle workshop'],
+  'cua-hang-moi': ['shop storefront', 'retail store'],
+  'hang-nhai-24h': ['parcels', 'warehouse'],
 };
 
-interface PexelsPhoto { id: number; url: string; photographer: string; width: number; height: number; alt?: string }
-
-/* Độ khớp ảnh–từ khoá: Pexels trả `alt` (mô tả ảnh) và slug trong URL trang ảnh — đếm số từ khoá xuất hiện ở đó. Ảnh khớp nhiều từ nhất được chọn trước,
-   thay vì lấy kết quả đầu tiên một cách máy móc. Điểm 0 = ảnh chỉ "liên quan" theo thuật toán của Pexels, cần người xem lại. */
-function relevance(photo: PexelsPhoto, query: string): number {
-  const text = `${photo.alt ?? ''} ${photo.url}`.toLowerCase();
-  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-  return words.filter((w) => text.includes(w.replace(/s$/, ''))).length;
-}
+interface Candidate { id: string; page: string; author: string; text: string; src?: string; license?: string; width: number; height: number; pexelsId?: number }
 interface Target { key: string; query: string; orientation: 'portrait' | 'landscape' | 'square' }
+interface Provider { name: 'commons' | 'pexels'; search(query: string, orientation: string): Promise<Candidate[]> }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const UA = 'FitlySeedImageCurator/1.0 (student project; seed script)';
+
+const words = (q: string): string[] => q.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+const stem = (w: string): string => w.replace(/(ies|es|s)$/, '');
+/* Số từ khoá xuất hiện trong văn bản (so khớp theo gốc từ để "shoes" ~ "shoe"). */
+function hits(text: string, query: string): number {
+  const t = text.toLowerCase();
+  return words(query).filter((w) => t.includes(stem(w))).length;
+}
+/* Ngưỡng khớp tối thiểu theo độ dài từ khoá. */
+function minHits(query: string): number {
+  const n = words(query).length;
+  return n <= 2 ? n : Math.ceil((n * 2) / 3);
+}
 
 function buildTargets(): Target[] {
   const out: Target[] = [];
@@ -69,27 +77,71 @@ function buildTargets(): Target[] {
   return out;
 }
 
-class Pexels {
-  private remaining = 200;
-  constructor(private readonly apiKey: string) {}
-  async search(query: string, orientation: string): Promise<PexelsPhoto[]> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      if (this.remaining <= 1) {
-        console.log('  … hết hạn mức giờ này, chờ 60 phút (Ctrl+C rồi chạy lại sau cũng được — tiến độ đã lưu).');
-        await sleep(61 * 60 * 1000);
-        this.remaining = 200;
+/* ------------------------------------------------------------- Wikimedia Commons (không cần khoá) */
+/* Loại ảnh không phải ảnh sản phẩm: bản đồ/biểu đồ/ảnh chụp màn hình/logo/hình vẽ/hàng hỏng/người dùng đang làm gì đó... (xét trên tên file + mô tả). */
+const COMMONS_UNWANTED = /\b(map|maps|chart|graph|diagram|statistic|statistics|screenshot|logo|icon|flag|drawing|illustration|poster|sketch|damaged|broken|bad|ownership|countries|infographic|protest|accident|crash|fire|wreck|museum|stamp|advertis\w*|sign|signs|vector|svg|comic|cartoon)\b/i;
+const COMMONS_LICENSE_OK = /^(CC0|Public domain|PD\b|CC BY(?!-NC)(?!-ND)|CC BY-SA)/i;
+function commonsProvider(): Provider {
+  let last = 0;
+  return {
+    name: 'commons',
+    async search(query) {
+      const wait = 1100 - (Date.now() - last); // lịch sự với máy chủ: tối đa ~1 lượt/giây
+      if (wait > 0) await sleep(wait);
+      last = Date.now();
+      const params = new URLSearchParams({
+        action: 'query', format: 'json', generator: 'search', gsrsearch: `${query} filetype:bitmap`, gsrnamespace: '6', gsrlimit: '30',
+        prop: 'imageinfo', iiprop: 'url|size|mime|extmetadata', iiurlwidth: '1000',
+      });
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params.toString()}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) });
+        if (res.status === 429 || res.status >= 500) { await sleep(3000 * attempt); continue; }
+        if (!res.ok) return [];
+        const json = (await res.json()) as { query?: { pages?: Record<string, { index: number; title: string; imageinfo?: Array<{ thumburl?: string; descriptionurl: string; width: number; height: number; mime: string; extmetadata?: Record<string, { value: string }> }> }> } };
+        const pages = Object.values(json.query?.pages ?? {}).sort((a, b) => a.index - b.index);
+        const out: Candidate[] = [];
+        for (const pg of pages) {
+          const ii = pg.imageinfo?.[0];
+          const md = ii?.extmetadata ?? {};
+          const license = md.LicenseShortName?.value ?? '';
+          if (!ii || ii.mime !== 'image/jpeg' || ii.width < 600 || ii.height < 600 || !COMMONS_LICENSE_OK.test(license) || !ii.thumburl) continue;
+          const author = (md.Artist?.value ?? '').replace(/<[^>]*>/g, '').trim() || 'Wikimedia Commons contributor';
+          const text = `${pg.title.replace(/^File:/, '').replace(/\.[a-z]+$/i, '')} ${(md.ImageDescription?.value ?? '').replace(/<[^>]*>/g, ' ')}`;
+          if (COMMONS_UNWANTED.test(text)) continue;
+          out.push({ id: pg.title, page: ii.descriptionurl, author: author.slice(0, 120), text, src: ii.thumburl, license, width: ii.width, height: ii.height });
+        }
+        return out;
       }
-      const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=40&orientation=${orientation}`;
-      const res = await fetch(url, { headers: { Authorization: this.apiKey }, signal: AbortSignal.timeout(20_000) });
-      const left = Number(res.headers.get('x-ratelimit-remaining'));
-      if (Number.isFinite(left)) this.remaining = left;
-      if (res.status === 429) { this.remaining = 0; continue; }
-      if (res.status === 401 || res.status === 403) throw new Error('EF_PEXELS_API_KEY không hợp lệ.');
-      if (!res.ok) { await sleep(2000 * (attempt + 1)); continue; }
-      return ((await res.json()) as { photos?: PexelsPhoto[] }).photos ?? [];
-    }
-    return [];
-  }
+      return [];
+    },
+  };
+}
+
+/* ------------------------------------------------------------- Pexels (cần khoá) */
+function pexelsProvider(apiKey: string): Provider {
+  let remaining = 200;
+  return {
+    name: 'pexels',
+    async search(query, orientation) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        if (remaining <= 1) {
+          console.log('  … hết hạn mức giờ này, chờ 60 phút (Ctrl+C rồi chạy lại sau cũng được — tiến độ đã lưu).');
+          await sleep(61 * 60 * 1000);
+          remaining = 200;
+        }
+        const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=40&orientation=${orientation}`;
+        const res = await fetch(url, { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(20_000) });
+        const left = Number(res.headers.get('x-ratelimit-remaining'));
+        if (Number.isFinite(left)) remaining = left;
+        if (res.status === 429) { remaining = 0; continue; }
+        if (res.status === 401 || res.status === 403) throw new Error('EF_PEXELS_API_KEY không hợp lệ.');
+        if (!res.ok) { await sleep(2000 * (attempt + 1)); continue; }
+        const photos = ((await res.json()) as { photos?: Array<{ id: number; url: string; photographer: string; alt?: string; width: number; height: number }> }).photos ?? [];
+        return photos.map((p) => ({ id: String(p.id), pexelsId: p.id, page: p.url, author: p.photographer, text: `${p.alt ?? ''} ${p.url}`, width: p.width, height: p.height }));
+      }
+      return [];
+    },
+  };
 }
 
 function load(): RealManifest {
@@ -97,7 +149,7 @@ function load(): RealManifest {
     const raw = JSON.parse(fs.readFileSync(REAL_MANIFEST, 'utf8')) as RealManifest;
     if (raw && raw.items) return raw;
   } catch { /* chưa có — bình thường */ }
-  return { source: 'pexels', license: 'Pexels License — https://www.pexels.com/license/', items: {} };
+  return { source: 'pexels + wikimedia-commons', license: 'Pexels License (free to use) · Wikimedia Commons: CC0 / Public domain / CC BY / CC BY-SA — see each item', items: {} };
 }
 
 function save(m: RealManifest): void {
@@ -107,47 +159,46 @@ function save(m: RealManifest): void {
 
 async function main(): Promise<number> {
   const env = loadEnv();
-  if (!env.EF_PEXELS_API_KEY) {
-    console.error('Thiếu EF_PEXELS_API_KEY trong .env — lấy khoá miễn phí tại https://www.pexels.com/api/ rồi chạy lại.');
-    return 1;
-  }
+  const argProvider = process.argv.find((a) => a.startsWith('--provider='))?.slice(11);
+  const useKey = argProvider ? argProvider === 'pexels' : Boolean(env.EF_PEXELS_API_KEY);
+  if (useKey && !env.EF_PEXELS_API_KEY) { console.error('Thiếu EF_PEXELS_API_KEY — bỏ cờ --provider=pexels để dùng Wikimedia Commons (không cần khoá).'); return 1; }
+  const provider = useKey ? pexelsProvider(env.EF_PEXELS_API_KEY) : commonsProvider();
   const force = process.argv.includes('--force');
   const limitArg = process.argv.find((a) => a.startsWith('--limit='));
   const limit = limitArg ? Number(limitArg.slice(8)) : Infinity;
   const manifest = load();
   if (force) manifest.items = {};
-  const used = new Set(Object.values(manifest.items).map((i) => i.id));
+  const used = new Set(Object.values(manifest.items).map((i) => i.src ?? String(i.id)));
   const targets = buildTargets().filter((t) => !manifest.items[t.key]);
-  console.log(`Cần chọn ${targets.length} ảnh (đã có ${Object.keys(manifest.items).length}).`);
+  console.log(`Nguồn: ${provider.name}. Cần chọn ${targets.length} ảnh (đã có ${Object.keys(manifest.items).length}).`);
 
-  const api = new Pexels(env.EF_PEXELS_API_KEY);
-  // Cùng một từ khoá + hướng chỉ tìm một lần trong lượt chạy (nhiều sản phẩm dùng chung từ khoá, và a/b của một sản phẩm).
-  const cache = new Map<string, PexelsPhoto[]>();
-  let done = 0;
-  let missing = 0;
-  let weak = 0;
+  // Cùng từ khoá + hướng chỉ tìm một lần trong lượt chạy (a/b của một sản phẩm dùng chung kết quả).
+  const cache = new Map<string, Candidate[]>();
+  let done = 0, skipped = 0;
   for (const t of targets) {
     if (done >= limit) break;
     const ck = `${t.orientation}|${t.query}`;
-    let photos = cache.get(ck);
-    if (!photos) {
-      photos = await api.search(t.query, t.orientation);
-      cache.set(ck, photos);
-    }
-    // Ưu tiên ảnh khớp từ khoá nhất (và chưa dùng ở sản phẩm khác); cùng điểm thì giữ thứ hạng của Pexels.
-    const ranked = photos.map((p, i) => ({ p, i, score: relevance(p, t.query) })).sort((a, b) => b.score - a.score || a.i - b.i);
-    const best = ranked.find((r) => !used.has(r.p.id)) ?? ranked[0];
-    const pick = best?.p;
-    if (best && best.score === 0) weak += 1;
-    if (!pick) { missing += 1; console.warn(`  ✗ ${t.key}: không có kết quả cho "${t.query}"`); continue; }
-    used.add(pick.id);
-    const item: RealImage = { id: pick.id, page: pick.url, photographer: pick.photographer, query: t.query, alt: pick.alt ?? '', match: best.score };
+    let cands = cache.get(ck);
+    if (!cands) { cands = await provider.search(t.query, t.orientation); cache.set(ck, cands); }
+    // Commons: bắt buộc tên/mô tả ảnh khớp từ khoá; Pexels: lấy ảnh khớp nhiều từ nhất (Pexels đã xếp theo độ liên quan).
+    const need = provider.name === 'commons' ? minHits(t.query) : 0;
+    const ranked = cands
+      .map((c, i) => ({ c, i, score: hits(c.text, t.query) }))
+      .filter((r) => r.score >= need)
+      .filter((r) => (t.orientation === 'landscape' ? r.c.width >= r.c.height : t.orientation === 'portrait' ? true : true))
+      .sort((a, b) => b.score - a.score || a.i - b.i);
+    const best = ranked.find((r) => !used.has(r.c.src ?? r.c.id));
+    if (!best) { skipped += 1; console.warn(`  – ${t.key}: không có ảnh khớp "${t.query}" → giữ ảnh mẫu`); continue; }
+    used.add(best.c.src ?? best.c.id);
+    const item: RealImage = provider.name === 'commons'
+      ? { provider: 'commons', src: best.c.src, page: best.c.page, photographer: best.c.author, license: best.c.license, query: t.query, alt: best.c.text.slice(0, 160), match: best.score }
+      : { provider: 'pexels', id: best.c.pexelsId, page: best.c.page, photographer: best.c.author, query: t.query, alt: best.c.text.slice(0, 160), match: best.score };
     manifest.items[t.key] = item;
     done += 1;
-    if (done % 20 === 0) { save(manifest); console.log(`  … ${done}/${targets.length}`); }
+    if (done % 20 === 0) { save(manifest); console.log(`  … ${done} ảnh (bỏ qua ${skipped})`); }
   }
   save(manifest);
-  console.log(`Xong: chọn thêm ${done} ảnh, không tìm thấy ${missing}, khớp yếu (match=0, nên xem lại) ${weak}. Tổng trong manifest: ${Object.keys(manifest.items).length}.`);
+  console.log(`Xong: chọn thêm ${done} ảnh, không có ảnh khớp ${skipped}. Tổng trong manifest: ${Object.keys(manifest.items).length}.`);
   return 0;
 }
 
