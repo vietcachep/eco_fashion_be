@@ -60,4 +60,15 @@ describe('SettingService.update — min/max theo khoá', () => {
     await expect(svc.update(actor, SETTING_KEY.RETURN_WINDOW_DAYS, 0)).resolves.toMatchObject({ value: 0 });
     await expect(svc.update(actor, SETTING_KEY.RETURN_WINDOW_DAYS, -1)).rejects.toMatchObject({ errorCode: 'COMMON_VALIDATION_ERROR' });
   });
+
+  it('chuỗi số cho tham số kiểu số được đưa về số (không báo "phải là number"), vẫn chịu min/max', async () => {
+    const { svc, upsert } = build();
+    const saved = await svc.update(actor, SETTING_KEY.PAYOUT_BANK_CHANGE_HOLD_HOURS, '48');
+    expect(saved.value).toBe(48);
+    expect(upsert).toHaveBeenCalledTimes(1);
+    // dưới mức tối thiểu 24 giờ vẫn bị chặn dù gửi dạng chuỗi
+    await expect(svc.update(actor, SETTING_KEY.PAYOUT_BANK_CHANGE_HOLD_HOURS, '0')).rejects.toMatchObject({ errorCode: 'COMMON_VALIDATION_ERROR' });
+    // chuỗi không phải số vẫn bị từ chối đúng kiểu
+    await expect(svc.update(actor, SETTING_KEY.PAYOUT_BANK_CHANGE_HOLD_HOURS, 'abc')).rejects.toMatchObject({ errorCode: 'COMMON_VALIDATION_ERROR' });
+  });
 });

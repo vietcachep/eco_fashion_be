@@ -20,6 +20,14 @@ export interface SettingRow {
  * Tham số vận hành: đọc qua cache 10' (order/cart/payment hỏi mỗi request), ghi → audit + xoá cache.
  * Khoá phải có trong SETTING_DEFAULTS (không tạo khoá tự do — tránh "tham số ma"); thiếu trong DB thì trả mặc định.
  */
+/* Giá trị lưu trong DB có thể là CHUỖI số/boolean (nhập tay hoặc phiên bản cũ) trong khi tham số khai kiểu số/boolean: đưa về đúng kiểu mặc định để màn quản trị
+   hiện đúng ô số và lưu lại không bị "phải là number". Chuỗi không chuyển được thì giữ nguyên (để validate báo lỗi). */
+export function coerceToDefaultType(def: { value: unknown }, v: unknown): unknown {
+  if (typeof def.value === 'number' && typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+  if (typeof def.value === 'boolean' && (v === 'true' || v === 'false')) return v === 'true';
+  return v;
+}
+
 @Injectable()
 export class SettingService {
   constructor(
@@ -33,7 +41,7 @@ export class SettingService {
       const rows = await this.prisma.setting.findMany();
       const out: Record<string, unknown> = {};
       for (const [k, d] of Object.entries(SETTING_DEFAULTS)) out[k] = d.value;
-      for (const r of rows) out[r.key] = r.value;
+      for (const r of rows) out[r.key] = SETTING_DEFAULTS[r.key] ? coerceToDefaultType(SETTING_DEFAULTS[r.key], r.value) : r.value;
       return out;
     });
   }
@@ -58,13 +66,14 @@ export class SettingService {
     const rows = new Map((await this.prisma.setting.findMany()).map((r) => [r.key, r]));
     return Object.entries(SETTING_DEFAULTS).map(([key, d]) => {
       const r = rows.get(key);
-      return { key, value: r?.value ?? d.value, groupCode: d.group, description: d.description, isPublic: d.isPublic, updatedAt: r?.updatedAt.toISOString() ?? '' };
+      return { key, value: r ? coerceToDefaultType(d, r.value) : d.value, groupCode: d.group, description: d.description, isPublic: d.isPublic, updatedAt: r?.updatedAt.toISOString() ?? '' };
     });
   }
 
   async update(actor: AuthenticatedActor, key: string, value: unknown): Promise<SettingRow> {
     const def = SETTING_DEFAULTS[key];
     if (!def) throw new NotFoundException(SYSTEM_ERR.SETTING_NOT_FOUND, `Không có tham số '${key}'`);
+    value = coerceToDefaultType(def, value);
     if (typeof value !== typeof def.value) throw new BusinessException('COMMON_VALIDATION_ERROR', `Tham số '${key}' phải là ${typeof def.value}`);
     if (typeof value === 'number' && (!Number.isFinite(value) || value < 0)) throw new BusinessException('COMMON_VALIDATION_ERROR', 'Giá trị phải là số không âm');
     // Khoảng cho phép theo khoá (vd hạn chót đổi trả ≥ 1): giá trị 0/quá lớn sẽ tạo ngày sai hoặc chuyển bước ngay.
