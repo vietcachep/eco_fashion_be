@@ -25,50 +25,50 @@ const SHOP_QUERIES: Record<string, [string, string]> = {
   'techzone-vn': ['laptop', 'electronics store'],
   'mobile-hub': ['smartphone', 'mobile phone shop'],
   'gia-dung-thong-minh': ['air fryer', 'kitchen appliances'],
-  'nha-xinh-decor': ['table lamp', 'living room interior'],
-  'beauty-box-vn': ['cosmetics', 'makeup products'],
+  'nha-xinh-decor': ['table lamp', 'sofa'],
+  'beauty-box-vn': ['cosmetics', 'lipstick'],
   'healthy-life': ['vitamin supplements', 'vegetables market'],
   'sneaker-station': ['sneakers', 'shoe store'],
   'bag-and-co': ['handbag', 'handbag store'],
   'time-lab': ['wrist watch', 'watch shop'],
-  'sport-planet': ['dumbbell', 'camping equipment'],
-  'baby-land': ['baby toys', 'nursery room'],
-  'book-cafe': ['books', 'bookstore'],
+  'sport-planet': ['football', 'camping equipment'],
+  'baby-land': ['baby toys', 'baby stroller'],
+  'book-cafe': ['stack of books', 'bookstore'],
   'ngon-viet': ['vietnamese food', 'vietnamese market'],
   'pet-world': ['dog cat', 'pet shop'],
   'auto-moto-pro': ['motorcycle helmet', 'motorcycle workshop'],
   'cua-hang-moi': ['shop storefront', 'retail store'],
-  'hang-nhai-24h': ['parcels', 'warehouse'],
+  'hang-nhai-24h': ['cardboard boxes', 'warehouse'],
 };
 
 /* Ngành hàng (ảnh vuông) — `category/<slug>`. 7 ngành thời trang gốc đã có ảnh thật (NGUON-ANH.md) nên không có ở đây. */
 const CATEGORY_QUERIES: Record<string, string> = {
-  'balo-vali': 'backpack', 'ca-phe-tra': 'coffee', 'cham-soc-da': 'skincare', 'cham-soc-toc': 'shampoo', 'cham-soc-xe': 'car wash',
-  'chan-ga-goi-nem': 'bedding', 'chuot-ban-phim': 'computer mouse', 'dac-san-viet-nam': 'vietnamese food', 'dien-thoai-phu-kien': 'phone accessories',
-  'dien-thoai': 'smartphone', 'do-an-vat': 'snacks', 'do-choi-tre-em': 'toys', 'do-da-ngoai-cam-trai': 'camping tent', 'do-dien-gia-dung': 'kitchen appliance',
-  'do-dung-nha-bep': 'cookware', 'do-the-thao-ngoai-troi': 'hiking', 'dong-ho-nam': 'wrist watch', 'dong-ho-nu': 'wrist watch', 'dong-ho-phu-kien': 'watch',
-  'dung-cu-gym-yoga': 'dumbbell', 'dung-cu-hoc-tap': 'stationery', 'giay-dep-tui-xach': 'shoes', 'giay-the-thao': 'running shoes', 'kinh-mat': 'sunglasses',
-  'laptop': 'laptop', 'man-hinh-linh-kien': 'computer monitor', 'may-tinh-bang': 'tablet computer', 'may-tinh-thiet-bi-dien-tu': 'computer',
-  'me-be': 'baby', 'mu-bao-hiem': 'motorcycle helmet', 'ngu-coc-hat-dinh-duong': 'nuts', 'nha-cua-doi-song': 'living room', 'noi-that': 'furniture',
-  'nuoc-hoa': 'perfume', 'o-to-xe-may': 'car', 'phu-kien-dien-thoai': 'phone case', 'phu-kien-do-choi-thu-cung': 'pet toy', 'phu-kien-o-to': 'car interior',
-  'phu-kien-xe-may': 'motorcycle', 'quan-ao-so-sinh': 'baby clothes', 'sac-dep-suc-khoe': 'cosmetics', 'sach-thieu-nhi': 'children book',
+  'balo-vali': 'backpack', 'ca-phe-tra': 'coffee', 'cham-soc-da': 'moisturizer', 'cham-soc-toc': 'shampoo', 'cham-soc-xe': 'car wash',
+  'chan-ga-goi-nem': 'duvet', 'chuot-ban-phim': 'computer keyboard', 'dac-san-viet-nam': 'banh mi', 'dien-thoai-phu-kien': 'phone charger',
+  'dien-thoai': 'smartphone', 'do-an-vat': 'snacks', 'do-choi-tre-em': 'toys', 'do-da-ngoai-cam-trai': 'camping tent', 'do-dien-gia-dung': 'air fryer',
+  'do-dung-nha-bep': 'cookware', 'do-the-thao-ngoai-troi': 'hiking', 'dong-ho-nam': 'wrist watch', 'dong-ho-nu': 'ladies watch', 'dong-ho-phu-kien': 'watch',
+  'dung-cu-gym-yoga': 'yoga mat', 'dung-cu-hoc-tap': 'stationery', 'giay-dep-tui-xach': 'sneakers', 'giay-the-thao': 'running shoes', 'kinh-mat': 'sunglasses',
+  'laptop': 'laptop', 'man-hinh-linh-kien': 'computer monitor screen', 'may-tinh-bang': 'tablet', 'may-tinh-thiet-bi-dien-tu': 'laptop computer',
+  'me-be': 'baby bottle', 'mu-bao-hiem': 'motorcycle helmet', 'ngu-coc-hat-dinh-duong': 'almonds', 'nha-cua-doi-song': 'sofa', 'noi-that': 'furniture',
+  'nuoc-hoa': 'perfume bottle', 'o-to-xe-may': 'car', 'phu-kien-dien-thoai': 'smartphone case', 'phu-kien-do-choi-thu-cung': 'dog toy', 'phu-kien-o-to': 'car steering wheel',
+  'phu-kien-xe-may': 'motorcycle', 'quan-ao-so-sinh': 'baby bodysuit', 'sac-dep-suc-khoe': 'cosmetics', 'sach-thieu-nhi': 'children book',
   'sach-van-hoc-ky-nang': 'books', 'sach-van-phong-pham': 'books', 'sandal-dep': 'sandals', 'sua-ta-be': 'diapers', 'tai-nghe-loa': 'headphones',
-  'the-thao-da-ngoai': 'sports equipment', 'thu-cung': 'pet', 'thuc-an-thu-cung': 'pet food', 'thuc-pham-chuc-nang': 'vitamin', 'thuc-pham-do-uong': 'food',
-  'trang-diem': 'makeup', 'trang-suc': 'jewelry', 'trang-tri-nha-cua': 'home decor', 'tui-xach': 'handbag',
+  'the-thao-da-ngoai': 'football', 'thu-cung': 'pet', 'thuc-an-thu-cung': 'dog food', 'thuc-pham-chuc-nang': 'vitamin pills', 'thuc-pham-do-uong': 'food',
+  'trang-diem': 'makeup', 'trang-suc': 'necklace', 'trang-tri-nha-cua': 'home decor', 'tui-xach': 'handbag',
 };
 /* Bộ sưu tập (ảnh ngang 3:2) — `collection/<slug>` (nam/nu/hang-moi/dam-du-tiec đã là ảnh thật). */
 const COLLECTION_QUERIES: Record<string, string> = {
-  'thoi-trang': 'clothing', 'dien-thoai-cong-nghe': 'smartphone', 'nha-cua-doi-song': 'living room', 'sac-dep-suc-khoe': 'cosmetics',
-  'dien-thoai-phu-kien': 'smartphone', 'dong-ho-phu-kien': 'wrist watch', 'giay-dep-tui-xach': 'shoes', 'may-tinh-thiet-bi-dien-tu': 'laptop',
-  'me-be': 'baby', 'o-to-xe-may': 'motorcycle', 'sach-van-phong-pham': 'books', 'the-thao-da-ngoai': 'sports equipment', 'thu-cung': 'pet',
+  'thoi-trang': 'clothing', 'dien-thoai-cong-nghe': 'smartphone', 'nha-cua-doi-song': 'living room', 'sac-dep-suc-khoe': 'lipstick',
+  'dien-thoai-phu-kien': 'smartphone', 'dong-ho-phu-kien': 'wrist watch', 'giay-dep-tui-xach': 'sneakers', 'may-tinh-thiet-bi-dien-tu': 'laptop',
+  'me-be': 'baby bottle', 'o-to-xe-may': 'motorcycle', 'sach-van-phong-pham': 'books', 'the-thao-da-ngoai': 'football', 'thu-cung': 'dog',
   'thuc-pham-do-uong': 'food',
 };
 /* Banner trang chủ (ảnh ngang rộng) — `banner/<slug>`: 3 banner chung + 12 banner ngành (cùng slug với bộ sưu tập ngành). */
 const BANNER_QUERIES: Record<string, string> = {
-  'home-1': 'shopping', 'home-2': 'delivery truck', 'home-3': 'shopping bags',
-  'dien-thoai-phu-kien': 'smartphone', 'dong-ho-phu-kien': 'wrist watch', 'giay-dep-tui-xach': 'shoes', 'may-tinh-thiet-bi-dien-tu': 'laptop',
-  'me-be': 'baby', 'nha-cua-doi-song': 'living room', 'o-to-xe-may': 'motorcycle', 'sac-dep-suc-khoe': 'cosmetics', 'sach-van-phong-pham': 'books',
-  'the-thao-da-ngoai': 'sports equipment', 'thu-cung': 'pet', 'thuc-pham-do-uong': 'food',
+  'home-1': 'shopping cart', 'home-2': 'delivery truck', 'home-3': 'gift box',
+  'dien-thoai-phu-kien': 'smartphone', 'dong-ho-phu-kien': 'wrist watch', 'giay-dep-tui-xach': 'sneakers', 'may-tinh-thiet-bi-dien-tu': 'laptop computer',
+  'me-be': 'baby bottle', 'nha-cua-doi-song': 'sofa', 'o-to-xe-may': 'motorcycle', 'sac-dep-suc-khoe': 'lipstick', 'sach-van-phong-pham': 'books',
+  'the-thao-da-ngoai': 'football', 'thu-cung': 'dog', 'thuc-pham-do-uong': 'food',
 };
 
 interface Candidate { id: string; page: string; author: string; title: string; text: string; src?: string; license?: string; width: number; height: number; pexelsId?: number }
@@ -93,7 +93,7 @@ function minHits(query: string): number {
   return n <= 2 ? n : Math.ceil((n * 2) / 3);
 }
 /* Từ khoá DỰ PHÒNG khi từ khoá đầy đủ không ra ảnh: rút gọn về LOẠI hàng (2 từ cuối, rồi từ cuối) — ảnh đúng loại, không cần đúng mẫu. */
-const GENERIC = new Set(['pro', 'max', 'set', 'kit', 'mini', 'plus', 'lite', 'new', 'size', 'premium', 'classic', 'basic']);
+const GENERIC = new Set(['pro', 'max', 'set', 'kit', 'mini', 'plus', 'lite', 'new', 'size', 'premium', 'classic', 'basic', 'equipment', 'accessories', 'products', 'appliance', 'supplies', 'care', 'store', 'shop', 'market', 'room', 'bag', 'bags', 'home', 'pet', 'baby', 'food', 'sports', 'car', 'tool', 'tools', 'gear']);
 function fallbackQueries(query: string): string[] {
   const w = query.toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length > 2 && !GENERIC.has(x));
   const out: string[] = [];
@@ -102,7 +102,7 @@ function fallbackQueries(query: string): string[] {
   return [...new Set(out)].filter((q) => q !== query.toLowerCase());
 }
 /* Ảnh có người/địa danh/sự kiện làm chủ thể (mô tả nhắc tới) KHÔNG phải ảnh sản phẩm — loại, trừ khi chính từ khoá tìm có từ đó (vd "women watch"). */
-const SUBJECT_NOISE = /\b(woman|women|man|men|boy|boys|girl|girls|child|children|kid|kids|people|person|student|students|guy|lady|ladies|crowd|fans|team|player|players|match|game|visitors?|tourists?|view|town|city|village|street|festival|exhibition|fair|expo|conference|ceremony|prototype|demonstration|speaker|presentation|wearing|holding|using|watching|playing|eating|riding|walking|selling|shopping|customers?)\b/gi;
+const SUBJECT_NOISE = /\b(woman|women|man|men|boy|boys|girl|girls|child|children|kid|kids|people|person|student|students|guy|lady|ladies|crowd|fans|team|player|players|match|game|visitors?|tourists?|view|town|city|village|street|festival|exhibition|fair|expo|conference|ceremony|prototype|demonstration|speaker|presentation|wearing|holding|using|watching|playing|eating|riding|walking|selling|shopping|customers?|bird|birds|dove|pigeon|cat|cats|dog|dogs|whale|mouse|lizard|monkey|horse)\b/gi;
 function hasNoise(text: string, query: string): boolean {
   const allowed = wordSet(query);
   return [...text.matchAll(SUBJECT_NOISE)].some((m) => !allowed.has(stem(m[0].toLowerCase())));
@@ -132,7 +132,7 @@ function buildTargets(): Target[] {
 
 /* ------------------------------------------------------------- Wikimedia Commons (không cần khoá) */
 /* Loại ảnh không phải ảnh sản phẩm: bản đồ/biểu đồ/ảnh chụp màn hình/logo/hình vẽ/hàng hỏng/người dùng đang làm gì đó... (xét trên tên file + mô tả). */
-const COMMONS_UNWANTED = /\b(map|maps|chart|graph|diagram|statistic|statistics|screenshot|logo|icon|flag|drawing|illustration|poster|sketch|damaged|broken|bad|ownership|countries|infographic|protest|accident|crash|fire|wreck|museum|stamp|advertis\w*|sign|signs|vector|svg|comic|cartoon)\b/i;
+const COMMONS_UNWANTED = /\b(map|maps|chart|graph|diagram|statistic|statistics|screenshot|logo|icon|flag|drawing|illustration|poster|sketch|damaged|broken|bad|ownership|countries|infographic|protest|accident|crash|fire|wreck|museum|stamp|advertis\w*|sign|signs|vector|svg|comic|cartoon|antique|vintage|historic|historical|ruins|abandoned|rusty|postcard|newspaper|magazine|painting|engraving|satellite|microscope|micrograph|sepia|grayscale|monochrome|exhibit|exhibition|souvenir|replica|sculpture|statue|temple|church|cathedral|castle)\b/i;
 const COMMONS_LICENSE_OK = /^(CC0|Public domain|PD\b|CC BY(?!-NC)(?!-ND)|CC BY-SA)/i;
 function commonsProvider(): Provider {
   let last = 0;
@@ -223,10 +223,11 @@ async function main(): Promise<number> {
   const manifest = load();
   if (force) manifest.items = {};
   const used = new Set(Object.values(manifest.items).map((i) => i.src ?? String(i.id)));
-  // Khoá đã bị người xem lại loại (real-images.rejected.json) thì KHÔNG chọn lại — giữ ảnh mẫu.
+  // Ảnh đã bị người xem lại loại (real-images.rejected.json) nạp vào `used` ⇒ không bao giờ chọn lại đúng ảnh đó; khoá của nó vẫn được chọn lại bằng ảnh khác.
   const rejectedFile = REAL_MANIFEST.replace(/real-images\.json$/, 'real-images.rejected.json');
-  const rejected = new Set<string>(fs.existsSync(rejectedFile) ? (JSON.parse(fs.readFileSync(rejectedFile, 'utf8')) as string[]) : []);
-  const targets = buildTargets().filter((t) => !manifest.items[t.key] && !rejected.has(t.key));
+  const rejected = fs.existsSync(rejectedFile) ? (JSON.parse(fs.readFileSync(rejectedFile, 'utf8')) as string[]) : [];
+  for (const r of rejected) used.add(r.startsWith('pexels:') ? r.slice(7) : r);
+  const targets = buildTargets().filter((t) => !manifest.items[t.key]);
   console.log(`Nguồn: ${provider.name}. Cần chọn ${targets.length} ảnh (đã có ${Object.keys(manifest.items).length}).`);
 
   // Cùng từ khoá + hướng chỉ tìm một lần trong lượt chạy (a/b của một sản phẩm dùng chung kết quả).
