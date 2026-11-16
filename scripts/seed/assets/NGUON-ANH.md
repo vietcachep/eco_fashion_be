@@ -109,3 +109,12 @@ không bắt buộc ghi công; vẫn ghi lại trang gốc để đối chiếu.
 | `catalog/collections/nam.jpg` | https://www.pexels.com/photo/28452448/ |
 | `catalog/collections/hang-moi.jpg` | https://www.pexels.com/photo/9594684/ |
 | `catalog/collections/dam-du-tiec.jpg` | https://www.pexels.com/photo/24740635/ |
+
+## Ảnh thật bổ sung từ Wikimedia Commons (`real-images.json`)
+
+Ngoài bảng Pexels ở trên (24 sản phẩm thời trang, 7 ngành thời trang, 4 bộ sưu tập — đã là ảnh thật, KHÔNG bị thay), các sản phẩm 12 ngành mở rộng, logo/banner gian hàng,
+ngành hàng, bộ sưu tập và banner trang chủ còn lại được thay bằng ảnh từ [Wikimedia Commons](https://commons.wikimedia.org) khi tìm được ảnh đúng và qua duyệt bằng mắt.
+Chỉ nhận giấy phép **CC0**, **Public domain**, **CC BY**, **CC BY-SA**. Với **CC BY / CC BY-SA** phải ghi công tác giả + giấy phép + liên kết trang gốc khi công bố;
+toàn bộ thông tin này nằm ở từng mục trong `scripts/seed/assets/real-images.json` (trường `page` = trang gốc, `photographer` = tác giả, `license` = giấy phép).
+CC BY-SA yêu cầu giữ cùng giấy phép nếu chỉnh sửa/phân phối lại ảnh. Danh sách ảnh đã bị loại khi duyệt: `real-images.rejected.json`.
+
