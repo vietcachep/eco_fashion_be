@@ -1,13 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Length, Matches, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsDefined, IsBoolean, IsEmail, IsIn, IsInt, IsNumberString, IsOptional, IsString, IsUUID, Length, Matches, MaxLength, Min } from 'class-validator';
 import { PageQuery } from '@common/utils/pagination';
 import { NormalizeEmail, ToBoolean } from '@common/utils/transform';
 
 /* Request DTO của module system — gom một file vì mỗi feature chỉ 1–2 DTO nhỏ. */
 
 export class UpdateSettingRequest {
-  @ApiProperty({ description: 'Giá trị JSON đúng kiểu với mặc định (số/chuỗi/boolean)' }) value: unknown;
+  /* BẮT BUỘC có decorator class-validator: ValidationPipe chạy `whitelist: true` nên thuộc tính CHỈ có @ApiProperty bị LOẠI khỏi body ⇒ `value` thành undefined
+     và mọi lần lưu tham số đều báo "phải là number/boolean/string". IsDefined giữ lại giá trị (kiểu đúng/sai do SettingService.update kiểm theo mặc định từng khoá). */
+  @ApiProperty({ description: 'Giá trị JSON đúng kiểu với mặc định (số/chuỗi/boolean)' }) @IsDefined() value: unknown;
 }
 
 export class UpdateProvinceRequest {
