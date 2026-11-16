@@ -227,3 +227,71 @@ describe('Webhook terminal không hồi sinh', () => {
     expect(update.data.processedAt).toBeInstanceOf(Date);
   });
 });
+
+describe('Bình luận phát tức thời qua Redis', () => {
+  const body = { body: ' xin chào ', clientMessageId: 'c1' };
+  function chatFixture(opts: { duplicate?: Record<string, unknown>; publish?: jest.Mock } = {}) {
+    const order: string[] = [];
+    const created = { id: 'm1', sessionId: SESSION, userId: USER, body: 'xin chào', sequence: 5, createdAt: new Date('2026-11-16T00:00:00Z') };
+    const tx = {
+      liveMessage: {
+        findUnique: jest.fn().mockResolvedValue(opts.duplicate ?? null),
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(created),
+      },
+      liveMute: { findUnique: jest.fn().mockResolvedValue(null) },
+      liveSession: { update: jest.fn().mockResolvedValue({ nextSequence: 5 }) },
+    };
+    const repo = {
+      db: {
+        liveAdmission: { findFirst: jest.fn().mockResolvedValue({ id: 'adm' }) },
+        liveRestriction: { findUnique: jest.fn().mockResolvedValue(null) },
+      },
+      session: jest.fn().mockResolvedValue(session()),
+      rowLock: jest.fn().mockResolvedValue(undefined),
+      audit: jest.fn().mockResolvedValue(undefined),
+      event: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) => {
+        const r = await cb(tx);
+        order.push('commit');
+        return r;
+      }),
+    } as unknown as LiveRepository;
+    const publish = opts.publish ?? jest.fn().mockImplementation(() => { order.push('publish'); return Promise.resolve(1); });
+    const service = new LiveService(
+      repo,
+      new LiveKitProvider(env),
+      {} as ProductQueryApi,
+      { existsApproved: jest.fn().mockResolvedValue(true), memberUserIdsWithPermission: jest.fn().mockResolvedValue([]) } as unknown as ShopQueryApi,
+      {} as ShopFollowApplicationApi,
+      { findUserBrief: jest.fn().mockResolvedValue({ status: 'active', fullName: 'Khách' }) } as unknown as IdentityQueryApi,
+      env,
+      {} as UserDirectoryGateway,
+      undefined,
+      { publish } as never,
+    );
+    return { service, publish, order };
+  }
+  const actor = { userId: USER } as never;
+
+  it('đẩy message.accepted lên Redis ngay SAU commit, đúng khuôn của relay outbox', async () => {
+    const f = chatFixture();
+    await f.service.sendMessage(actor, SESSION, body);
+    expect(f.order).toEqual(['commit', 'publish']);
+    const [channel, raw] = f.publish.mock.calls[0] as [string, string];
+    expect(channel).toBe('fitly:livestream:events');
+    const msg = JSON.parse(raw) as { sessionId: string; event: string; payload: { sessionId: string; message: { id: string } } };
+    expect(msg).toMatchObject({ sessionId: SESSION, event: 'message.accepted', payload: { sessionId: SESSION, message: { id: 'm1' } } });
+  });
+  it('gửi lặp cùng clientMessageId trả bản cũ và KHÔNG phát lại', async () => {
+    const dup = { id: 'm0', body: 'xin chào', replyToId: null, createdAt: new Date('2026-11-16T00:00:00Z') };
+    const f = chatFixture({ duplicate: dup });
+    await f.service.sendMessage(actor, SESSION, body);
+    expect(f.publish).not.toHaveBeenCalled();
+  });
+  it('Redis lỗi không làm hỏng việc gửi bình luận', async () => {
+    const f = chatFixture({ publish: jest.fn().mockRejectedValue(new Error('redis down')) });
+    await expect(f.service.sendMessage(actor, SESSION, body as never)).resolves.toMatchObject({ id: 'm1' });
+  });
+});

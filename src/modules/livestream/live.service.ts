@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import type Redis from 'ioredis';
+import { REDIS } from '@common/redis/redis.module';
 import {
   LIVE_COMMERCE_ORDER_GATEWAY,
   type LiveCommerceOrderGateway,
@@ -55,6 +57,7 @@ export class LiveService implements LiveSourceGateway {
     @Inject(ENV) private readonly env: Env,
     @Inject(USER_DIRECTORY_GATEWAY) private readonly users: UserDirectoryGateway,
     @Optional() private readonly modules?: ModuleRef,
+    @Optional() @Inject(REDIS) private readonly redis?: Redis,
   ) {}
   async required(id: string, tx?: Tx): Promise<LiveSession> {
     const s = await this.repo.session(id, tx);
@@ -810,7 +813,9 @@ export class LiveService implements LiveSourceGateway {
     const user = await this.identity.findUserBrief(actor.userId);
     if (!user || user.status !== 'active')
       throw new ForbiddenException('LIVE_USER_INVALID', 'Tài khoản không hoạt động.');
-    return this.repo.transaction(async (tx) => {
+    // Chỉ có giá trị khi LẦN GỌI NÀY thật sự tạo bình luận mới (gửi lặp cùng clientMessageId trả lại bản cũ, không phát lại).
+    const created: { message?: Record<string, unknown> } = {};
+    const out = await this.repo.transaction(async (tx) => {
       await this.repo.rowLock(tx, id);
       const duplicate = await tx.liveMessage.findUnique({
         where: {
@@ -868,8 +873,23 @@ export class LiveService implements LiveSourceGateway {
         length: msg.body.length,
       });
       await this.repo.event(tx, id, 'message.accepted', { message: result });
+      created.message = result;
       return result;
     });
+    // Đẩy thẳng lên Redis SAU commit để người xem thấy bình luận ngay, không chờ worker quét outbox (3 giây/lượt, chung với việc xử lý media).
+    // Sự kiện outbox vẫn được worker phát lại như đường dự phòng; phía client chỉ làm mới danh sách nên nhận hai lần là vô hại.
+    if (created.message) this.publishNow(id, 'message.accepted', { sessionId: id, message: created.message });
+    return out;
+  }
+  /* Phát tức thời tới mọi API process (cùng khuôn với relay outbox trong livestream-worker.module.ts). Redis lỗi/thiếu thì bỏ qua — bình luận đã lưu và outbox lo phần còn lại. */
+  private publishNow(sessionId: string, event: string, payload: Record<string, unknown>): void {
+    try {
+      void this.redis
+        ?.publish('fitly:livestream:events', JSON.stringify({ sessionId, event, payload }))
+        .catch(() => undefined);
+    } catch {
+      /* không để lỗi phát tức thời ảnh hưởng việc gửi bình luận */
+    }
   }
   async moderate(actor: AuthenticatedActor, shopId: string, id: string, body: LiveModerationRequest) {
     const s = await this.required(id);
