@@ -522,6 +522,14 @@ describe('PayosService', () => {
       expect(call.body).toEqual({ referenceId: 'refund-1', amount: 100000, toBin: '970436', toAccountNumber: '0011223344', description: 'Hoan tien don FT1' });
     });
 
+    it('mô tả dài hơn 20 ký tự bị cắt về 20 (PayOS từ chối cả lệnh nếu quá) — lỗi thật: "Hoan tien don DHN2611160003"', async () => {
+      fetchMock.mockResolvedValueOnce(reply({ code: '00', desc: 'success', data: { id: 'PO-124' } }));
+      await makeService().payout({ ...payoutInput, description: 'Hoan tien don DHN2611160003' });
+      const sent = callAt().body as { description: string };
+      expect(sent.description).toBe('Hoan tien don DHN261');
+      expect(sent.description).toHaveLength(20);
+    });
+
     it('x-signature = HMAC-SHA256(checksum key CHI tiền, body sắp theo khoá, khoá+giá trị mã hoá encodeURIComponent) — KHÔNG dùng checksum key thu tiền', async () => {
       fetchMock.mockResolvedValueOnce(reply({ code: '00', data: { id: 'PO-1' } }));
       await makeService().payout(payoutInput);

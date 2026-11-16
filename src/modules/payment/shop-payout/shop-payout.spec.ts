@@ -841,7 +841,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
 
       expectNoSwallowedError();
       expect(f.payos.payout).toHaveBeenCalledTimes(1);
-      expect(f.payos.payout).toHaveBeenCalledWith({ referenceId: CODE_A, amount: 900_094n, toBin: BANK.bankCode, toAccountNumber: BANK.accountNumber, description: `FITLY ${CODE_A}`, idempotencyKey: CODE_A });
+      expect(f.payos.payout).toHaveBeenCalledWith({ referenceId: CODE_A, amount: 900_094n, toBin: BANK.bankCode, toAccountNumber: BANK.accountNumber, description: `FITLY ${CODE_A}`.slice(0, 20), idempotencyKey: CODE_A });
       const p = f.payoutOf(SHOP_A);
       expect(p.netPayout.toString()).toBe('900094'); // 1.000.105 − (11 + 100.000)
       expect(p.status).toBe(PAYOUT_STATUS.PROCESSING);
@@ -1678,7 +1678,7 @@ describe('ShopPayoutService — đối soát chi trả shop', () => {
       const res = await f.service.retry('p-1', actor);
 
       expect(f.payos.payout).toHaveBeenCalledTimes(1);
-      expect(f.payos.payout).toHaveBeenCalledWith({ referenceId: seed.code, amount: 90_000n, toBin: BANK.bankCode, toAccountNumber: BANK.accountNumber, description: `FITLY ${seed.code}`, idempotencyKey: seed.code });
+      expect(f.payos.payout).toHaveBeenCalledWith({ referenceId: seed.code, amount: 90_000n, toBin: BANK.bankCode, toAccountNumber: BANK.accountNumber, description: `FITLY ${seed.code}`.slice(0, 20), idempotencyKey: seed.code });
       expect(res.status).toBe(PAYOUT_STATUS.PROCESSING);
       expect(res.providerRef).toBe('TX-1');
       expect(res.failReason).toBeNull();

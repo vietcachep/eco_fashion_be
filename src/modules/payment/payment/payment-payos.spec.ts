@@ -2831,7 +2831,7 @@ describe('PaymentService — PayOS', () => {
         const submitted = await f.service.processRefund(actor, refund.id, { note: 'Đã kiểm tra' });
 
         expect(f.payout).toHaveBeenCalledTimes(1);
-        expect(f.payout).toHaveBeenCalledWith({ referenceId: REFUND_ID, amount: 100_000n, toBin: '970436', toAccountNumber: '0011223344', description: `Hoan tien don ${ORDER_CODE}`, idempotencyKey: REFUND_ID });
+        expect(f.payout).toHaveBeenCalledWith({ referenceId: REFUND_ID, amount: 100_000n, toBin: '970436', toAccountNumber: '0011223344', description: `Hoan ${ORDER_CODE}`.slice(0, 20), idempotencyKey: REFUND_ID });
         // chưa xong: mới NHẬN lệnh
         expect(submitted).toMatchObject({ id: REFUND_ID, status: REFUND_STATUS.PROCESSING, method: 'gateway', providerRef: null, gatewayStatus: GATEWAY_STATUS.SUBMITTED, note: 'Đã kiểm tra', needsManual: false });
         expect(f.refund(refund.id)).toMatchObject({ status: REFUND_STATUS.PROCESSING, providerRef: null, gatewayPayoutId: 'TX-123', gatewayAttempt: 1, payeeSource: PAYEE_SOURCE.PAYER, processedBy: actor.userId, version: 1 });

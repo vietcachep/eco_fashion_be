@@ -12,6 +12,9 @@ import { isLoopbackFinanceEndpoint } from '../foundation/disbursement-safety';
  * orderCode phải là số nguyên ≤ 9007199254740991 (Number.MAX_SAFE_INTEGER) — sinh từ mili-giây hiện tại + 3 ký số ngẫu nhiên (không trùng).
  * Mọi khoá để TRỐNG ⇒ `isConfigured` = false ⇒ method `payos` bị tắt khỏi danh sách thanh toán, không gọi mạng.
  */
+/* Lệnh chi (payout) PayOS chỉ nhận mô tả tối đa 20 ký tự — dài hơn bị từ chối cả lệnh (đã gặp ở hoàn tiền: "Hoan tien don DHN…" = 27 ký tự). Cắt ở một chỗ để mọi nơi gọi payout đều an toàn. */
+export const PAYOUT_DESCRIPTION_MAX = 20;
+
 @Injectable()
 export class PayosService {
   private readonly logger = new Logger(PayosService.name);
@@ -205,7 +208,7 @@ export class PayosService {
     const body = {
       referenceId: input.referenceId,
       amount: Number(input.amount),
-      description: input.description,
+      description: input.description.slice(0, PAYOUT_DESCRIPTION_MAX), // PayOS chi: mô tả tối đa 20 ký tự (quá thì từ chối: "Mô tả tối đa 25 kí tự (20)")
       toBin: input.toBin,
       toAccountNumber: input.toAccountNumber,
     };

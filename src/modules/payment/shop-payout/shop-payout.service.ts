@@ -496,7 +496,7 @@ export class ShopPayoutService {
     if (bal.balance !== null && bal.balance < amount) throw new BusinessException(PAYOUT_ERR.TEST_INSUFFICIENT_BALANCE, `Số dư tài khoản chi PayOS không đủ (còn ${bal.balance.toString()}đ)`, HttpStatus.CONFLICT);
 
     const key = `TEST-${input.clientKey.replace(/-/g, '').slice(0, 24)}`;
-    const res = await this.payos.payout({ referenceId: key, amount, toBin: input.bankCode, toAccountNumber: input.accountNumber, description: (input.note?.trim() || 'FITLY thu chi tu dong').slice(0, 50), idempotencyKey: key });
+    const res = await this.payos.payout({ referenceId: key, amount, toBin: input.bankCode, toAccountNumber: input.accountNumber, description: (input.note?.trim() || 'FITLY thu chi').slice(0, 20), idempotencyKey: key });
     const outcome: 'submitted' | 'failed' | 'unknown' = res.ok ? 'submitted' : res.definite ? 'failed' : 'unknown';
     await this.prisma.$transaction((tx) =>
       this.audit.write(tx, actor, { action: PAYOUT_AUDIT.TEST_TRANSFER, entityType: 'PayoutTest', entityId: key, entityCode: key, after: { outcome, code: res.code, amount: input.amount, bankCode: input.bankCode, accountLast4: input.accountNumber.slice(-4), transactionId: res.transactionId ?? null } }),
@@ -790,7 +790,7 @@ export class ShopPayoutService {
       amount: BigInt(net.toFixed(0)),
       toBin: bank.bankCode,
       toAccountNumber: bank.accountNumber,
-      description: `FITLY ${code}`.slice(0, 50),
+      description: `FITLY ${code}`.slice(0, 20),
       idempotencyKey: key,
     });
 

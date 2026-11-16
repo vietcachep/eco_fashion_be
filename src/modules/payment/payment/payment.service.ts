@@ -1160,7 +1160,7 @@ export class PaymentService implements PaymentGateway {
     ctx.gatewayCalled = true;
     let res: Awaited<ReturnType<PayosService['payout']>>;
     try {
-      res = await this.payos.payout({ referenceId: reference, amount, toBin: dest.bankBin, toAccountNumber: dest.accountNumber, description: `Hoan tien don ${r.orderCode}`, idempotencyKey: reference });
+      res = await this.payos.payout({ referenceId: reference, amount, toBin: dest.bankBin, toAccountNumber: dest.accountNumber, description: `Hoan ${r.orderCode}`.slice(0, 20), idempotencyKey: reference });
     } catch (err) {
       res = { ok: false, code: '99', message: err instanceof Error ? err.message : 'Không gọi được cổng PayOS', raw: null };
     }
