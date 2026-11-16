@@ -31,3 +31,6 @@ scripts/seed/assets/.cloudinary-manifest.local.json
 
 # Prisma client sinh ra (prisma generate) — không commit
 src/generated/
+
+# trang xem lại ảnh (tạo bởi seed:real-images:review)
+scripts/seed/tools/.review/

@@ -17,7 +17,7 @@ import 'reflect-metadata';
 import * as fs from 'node:fs';
 import { loadEnv } from '../../../src/config/env';
 import { DEPARTMENTS } from '../data/dept';
-import { REAL_MANIFEST, type RealImage, type RealManifest } from '../lib/real-images';
+import { REAL_MANIFEST, alreadyRealAssetPaths, alreadyRealProductSlugs, type RealImage, type RealManifest } from '../lib/real-images';
 
 /* Từ khoá tiếng Anh cho gian hàng: [logo, banner]. Logo = vật thể gọn, banner = cảnh rộng. */
 const SHOP_QUERIES: Record<string, [string, string]> = {
@@ -41,6 +41,36 @@ const SHOP_QUERIES: Record<string, [string, string]> = {
   'hang-nhai-24h': ['parcels', 'warehouse'],
 };
 
+/* Ngành hàng (ảnh vuông) — `category/<slug>`. 7 ngành thời trang gốc đã có ảnh thật (NGUON-ANH.md) nên không có ở đây. */
+const CATEGORY_QUERIES: Record<string, string> = {
+  'balo-vali': 'backpack', 'ca-phe-tra': 'coffee', 'cham-soc-da': 'skincare', 'cham-soc-toc': 'shampoo', 'cham-soc-xe': 'car wash',
+  'chan-ga-goi-nem': 'bedding', 'chuot-ban-phim': 'computer mouse', 'dac-san-viet-nam': 'vietnamese food', 'dien-thoai-phu-kien': 'phone accessories',
+  'dien-thoai': 'smartphone', 'do-an-vat': 'snacks', 'do-choi-tre-em': 'toys', 'do-da-ngoai-cam-trai': 'camping tent', 'do-dien-gia-dung': 'kitchen appliance',
+  'do-dung-nha-bep': 'cookware', 'do-the-thao-ngoai-troi': 'hiking', 'dong-ho-nam': 'wrist watch', 'dong-ho-nu': 'wrist watch', 'dong-ho-phu-kien': 'watch',
+  'dung-cu-gym-yoga': 'dumbbell', 'dung-cu-hoc-tap': 'stationery', 'giay-dep-tui-xach': 'shoes', 'giay-the-thao': 'running shoes', 'kinh-mat': 'sunglasses',
+  'laptop': 'laptop', 'man-hinh-linh-kien': 'computer monitor', 'may-tinh-bang': 'tablet computer', 'may-tinh-thiet-bi-dien-tu': 'computer',
+  'me-be': 'baby', 'mu-bao-hiem': 'motorcycle helmet', 'ngu-coc-hat-dinh-duong': 'nuts', 'nha-cua-doi-song': 'living room', 'noi-that': 'furniture',
+  'nuoc-hoa': 'perfume', 'o-to-xe-may': 'car', 'phu-kien-dien-thoai': 'phone case', 'phu-kien-do-choi-thu-cung': 'pet toy', 'phu-kien-o-to': 'car interior',
+  'phu-kien-xe-may': 'motorcycle', 'quan-ao-so-sinh': 'baby clothes', 'sac-dep-suc-khoe': 'cosmetics', 'sach-thieu-nhi': 'children book',
+  'sach-van-hoc-ky-nang': 'books', 'sach-van-phong-pham': 'books', 'sandal-dep': 'sandals', 'sua-ta-be': 'diapers', 'tai-nghe-loa': 'headphones',
+  'the-thao-da-ngoai': 'sports equipment', 'thu-cung': 'pet', 'thuc-an-thu-cung': 'pet food', 'thuc-pham-chuc-nang': 'vitamin', 'thuc-pham-do-uong': 'food',
+  'trang-diem': 'makeup', 'trang-suc': 'jewelry', 'trang-tri-nha-cua': 'home decor', 'tui-xach': 'handbag',
+};
+/* Bộ sưu tập (ảnh ngang 3:2) — `collection/<slug>` (nam/nu/hang-moi/dam-du-tiec đã là ảnh thật). */
+const COLLECTION_QUERIES: Record<string, string> = {
+  'thoi-trang': 'clothing', 'dien-thoai-cong-nghe': 'smartphone', 'nha-cua-doi-song': 'living room', 'sac-dep-suc-khoe': 'cosmetics',
+  'dien-thoai-phu-kien': 'smartphone', 'dong-ho-phu-kien': 'wrist watch', 'giay-dep-tui-xach': 'shoes', 'may-tinh-thiet-bi-dien-tu': 'laptop',
+  'me-be': 'baby', 'o-to-xe-may': 'motorcycle', 'sach-van-phong-pham': 'books', 'the-thao-da-ngoai': 'sports equipment', 'thu-cung': 'pet',
+  'thuc-pham-do-uong': 'food',
+};
+/* Banner trang chủ (ảnh ngang rộng) — `banner/<slug>`: 3 banner chung + 12 banner ngành (cùng slug với bộ sưu tập ngành). */
+const BANNER_QUERIES: Record<string, string> = {
+  'home-1': 'shopping', 'home-2': 'delivery truck', 'home-3': 'shopping bags',
+  'dien-thoai-phu-kien': 'smartphone', 'dong-ho-phu-kien': 'wrist watch', 'giay-dep-tui-xach': 'shoes', 'may-tinh-thiet-bi-dien-tu': 'laptop',
+  'me-be': 'baby', 'nha-cua-doi-song': 'living room', 'o-to-xe-may': 'motorcycle', 'sac-dep-suc-khoe': 'cosmetics', 'sach-van-phong-pham': 'books',
+  'the-thao-da-ngoai': 'sports equipment', 'thu-cung': 'pet', 'thuc-pham-do-uong': 'food',
+};
+
 interface Candidate { id: string; page: string; author: string; title: string; text: string; src?: string; license?: string; width: number; height: number; pexelsId?: number }
 interface Target { key: string; query: string; orientation: 'portrait' | 'landscape' | 'square' }
 interface Provider { name: 'commons' | 'pexels'; search(query: string, orientation: string): Promise<Candidate[]> }
@@ -62,6 +92,15 @@ function minHits(query: string): number {
   const n = words(query).length;
   return n <= 2 ? n : Math.ceil((n * 2) / 3);
 }
+/* Từ khoá DỰ PHÒNG khi từ khoá đầy đủ không ra ảnh: rút gọn về LOẠI hàng (2 từ cuối, rồi từ cuối) — ảnh đúng loại, không cần đúng mẫu. */
+const GENERIC = new Set(['pro', 'max', 'set', 'kit', 'mini', 'plus', 'lite', 'new', 'size', 'premium', 'classic', 'basic']);
+function fallbackQueries(query: string): string[] {
+  const w = query.toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length > 2 && !GENERIC.has(x));
+  const out: string[] = [];
+  if (w.length > 2) out.push(w.slice(-2).join(' '));
+  if (w.length > 1) out.push(w[w.length - 1]);
+  return [...new Set(out)].filter((q) => q !== query.toLowerCase());
+}
 /* Ảnh có người/địa danh/sự kiện làm chủ thể (mô tả nhắc tới) KHÔNG phải ảnh sản phẩm — loại, trừ khi chính từ khoá tìm có từ đó (vd "women watch"). */
 const SUBJECT_NOISE = /\b(woman|women|man|men|boy|boys|girl|girls|child|children|kid|kids|people|person|student|students|guy|lady|ladies|crowd|fans|team|player|players|match|game|visitors?|tourists?|view|town|city|village|street|festival|exhibition|fair|expo|conference|ceremony|prototype|demonstration|speaker|presentation|wearing|holding|using|watching|playing|eating|riding|walking|selling|shopping|customers?)\b/gi;
 function hasNoise(text: string, query: string): boolean {
@@ -71,13 +110,19 @@ function hasNoise(text: string, query: string): boolean {
 
 function buildTargets(): Target[] {
   const out: Target[] = [];
+  const real = alreadyRealProductSlugs(); // đã có ảnh thật chọn tay (NGUON-ANH.md) — không tìm ảnh mới
   for (const d of DEPARTMENTS) {
     for (const p of d.products) {
+      if (real.has(p.slug)) continue;
       const q = p.img.query?.trim() || p.name;
       out.push({ key: `product/${p.slug}/a`, query: q, orientation: 'portrait' });
       out.push({ key: `product/${p.slug}/b`, query: q, orientation: 'portrait' });
     }
   }
+  const realAssets = alreadyRealAssetPaths();
+  for (const [slug, q] of Object.entries(CATEGORY_QUERIES)) if (!realAssets.has(`catalog/categories/${slug}`)) out.push({ key: `category/${slug}`, query: q, orientation: 'square' });
+  for (const [slug, q] of Object.entries(COLLECTION_QUERIES)) if (!realAssets.has(`catalog/collections/${slug}`)) out.push({ key: `collection/${slug}`, query: q, orientation: 'landscape' });
+  for (const [slug, q] of Object.entries(BANNER_QUERIES)) if (!realAssets.has(`banners/${slug}`)) out.push({ key: `banner/${slug}`, query: q, orientation: 'landscape' });
   for (const [slug, [logo, banner]] of Object.entries(SHOP_QUERIES)) {
     out.push({ key: `shop/${slug}/logo`, query: logo, orientation: 'square' });
     out.push({ key: `shop/${slug}/banner`, query: banner, orientation: 'landscape' });
@@ -178,7 +223,10 @@ async function main(): Promise<number> {
   const manifest = load();
   if (force) manifest.items = {};
   const used = new Set(Object.values(manifest.items).map((i) => i.src ?? String(i.id)));
-  const targets = buildTargets().filter((t) => !manifest.items[t.key]);
+  // Khoá đã bị người xem lại loại (real-images.rejected.json) thì KHÔNG chọn lại — giữ ảnh mẫu.
+  const rejectedFile = REAL_MANIFEST.replace(/real-images\.json$/, 'real-images.rejected.json');
+  const rejected = new Set<string>(fs.existsSync(rejectedFile) ? (JSON.parse(fs.readFileSync(rejectedFile, 'utf8')) as string[]) : []);
+  const targets = buildTargets().filter((t) => !manifest.items[t.key] && !rejected.has(t.key));
   console.log(`Nguồn: ${provider.name}. Cần chọn ${targets.length} ảnh (đã có ${Object.keys(manifest.items).length}).`);
 
   // Cùng từ khoá + hướng chỉ tìm một lần trong lượt chạy (a/b của một sản phẩm dùng chung kết quả).
@@ -186,23 +234,29 @@ async function main(): Promise<number> {
   let done = 0, skipped = 0;
   for (const t of targets) {
     if (done >= limit) break;
-    const ck = `${t.orientation}|${t.query}`;
-    let cands = cache.get(ck);
-    if (!cands) { cands = await provider.search(t.query, t.orientation); cache.set(ck, cands); }
-    // Commons: bắt buộc tên/mô tả ảnh khớp từ khoá; Pexels: lấy ảnh khớp nhiều từ nhất (Pexels đã xếp theo độ liên quan).
-    const need = provider.name === 'commons' ? minHits(t.query) : 0;
-    const ranked = cands
-      .map((c, i) => ({ c, i, score: hits(c.title, t.query) }))
-      .filter((r) => r.score >= need)
-      .filter((r) => provider.name !== 'commons' || !hasNoise(r.c.text, t.query))
-      .filter((r) => (t.orientation === 'landscape' ? r.c.width >= r.c.height : true))
-      .sort((a, b) => b.score - a.score || a.i - b.i);
-    const best = ranked.find((r) => !used.has(r.c.src ?? r.c.id));
+    // Thử từ khoá đầy đủ trước, không ra thì lần lượt các từ khoá dự phòng (đúng loại hàng).
+    let best: { c: Candidate; i: number; score: number } | undefined;
+    let usedQuery = t.query;
+    for (const q of [t.query, ...fallbackQueries(t.query)]) {
+      const ck = `${t.orientation}|${q}`;
+      let cands = cache.get(ck);
+      if (!cands) { cands = await provider.search(q, t.orientation); cache.set(ck, cands); }
+      // Commons: bắt buộc TÊN FILE khớp từ khoá; Pexels: lấy ảnh khớp nhiều từ nhất (Pexels đã xếp theo độ liên quan).
+      const need = provider.name === 'commons' ? minHits(q) : 0;
+      const ranked = cands
+        .map((c, i) => ({ c, i, score: hits(c.title, q) }))
+        .filter((r) => r.score >= need)
+        .filter((r) => provider.name !== 'commons' || !hasNoise(r.c.text, q))
+        .filter((r) => (t.orientation === 'landscape' ? r.c.width >= r.c.height : true))
+        .sort((x, y) => y.score - x.score || x.i - y.i);
+      best = ranked.find((r) => !used.has(r.c.src ?? r.c.id));
+      if (best) { usedQuery = q; break; }
+    }
     if (!best) { skipped += 1; console.warn(`  – ${t.key}: không có ảnh khớp "${t.query}" → giữ ảnh mẫu`); continue; }
     used.add(best.c.src ?? best.c.id);
     const item: RealImage = provider.name === 'commons'
-      ? { provider: 'commons', src: best.c.src, page: best.c.page, photographer: best.c.author, license: best.c.license, query: t.query, alt: best.c.text.slice(0, 160), match: best.score }
-      : { provider: 'pexels', id: best.c.pexelsId, page: best.c.page, photographer: best.c.author, query: t.query, alt: best.c.text.slice(0, 160), match: best.score };
+      ? { provider: 'commons', src: best.c.src, page: best.c.page, photographer: best.c.author, license: best.c.license, query: usedQuery, alt: best.c.text.slice(0, 160), match: best.score }
+      : { provider: 'pexels', id: best.c.pexelsId, page: best.c.page, photographer: best.c.author, query: usedQuery, alt: best.c.text.slice(0, 160), match: best.score };
     manifest.items[t.key] = item;
     done += 1;
     if (done % 20 === 0) { save(manifest); console.log(`  … ${done} ảnh (bỏ qua ${skipped})`); }

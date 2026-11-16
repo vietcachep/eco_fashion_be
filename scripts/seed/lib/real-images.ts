@@ -10,6 +10,7 @@
  *
  * Quy ước khoá trong manifest: `product/<slug>/a` · `product/<slug>/b` · `shop/<slug>/logo` · `shop/<slug>/banner`.
  */
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ASSETS_DIR } from './seed-images';
 
@@ -45,6 +46,9 @@ export interface RealManifest {
 
 /* Kích thước cắt theo loại ảnh (cùng tỉ lệ với ảnh mẫu cũ để giao diện không vỡ khung). */
 export function cropFor(key: string): { w: number; h: number } {
+  if (key.startsWith('banner/')) return { w: 1600, h: 520 };
+  if (key.startsWith('collection/')) return { w: 900, h: 600 };
+  if (key.startsWith('category/')) return { w: 600, h: 600 };
   if (key.endsWith('/logo')) return { w: 400, h: 400 };
   if (key.endsWith('/banner')) return { w: 1600, h: 533 };
   return { w: 800, h: 1000 };
@@ -63,14 +67,21 @@ export function isSampleImage(url: string | null | undefined, publicId?: string 
   return Boolean(url && (url.includes('/static/seed/') || url.includes('/ecofashion/seed/')));
 }
 
-/* `product/<slug>/a` → { kind:'product', slug, slot:'a' } ; trả null nếu khoá không đúng khuôn. */
-export function parseKey(key: string): { kind: 'product' | 'shop'; slug: string; slot: 'a' | 'b' | 'logo' | 'banner' } | null {
-  const m = /^(product|shop)\/([a-z0-9-]+)\/(a|b|logo|banner)$/.exec(key);
-  if (!m) return null;
-  const kind = m[1] as 'product' | 'shop';
-  const slot = m[3] as 'a' | 'b' | 'logo' | 'banner';
-  if (kind === 'product' ? slot !== 'a' && slot !== 'b' : slot !== 'logo' && slot !== 'banner') return null;
-  return { kind, slug: m[2], slot };
+export type ParsedKey =
+  | { kind: 'product'; slug: string; slot: 'a' | 'b' }
+  | { kind: 'shop'; slug: string; slot: 'logo' | 'banner' }
+  | { kind: 'category' | 'collection' | 'banner'; slug: string; slot: 'main' };
+
+/* `product/<slug>/a` · `shop/<slug>/logo` · `category/<slug>` · `collection/<slug>` · `banner/<slug>`; trả null nếu khoá không đúng khuôn. */
+export function parseKey(key: string): ParsedKey | null {
+  const three = /^(product|shop)\/([a-z0-9-]+)\/(a|b|logo|banner)$/.exec(key);
+  if (three) {
+    if (three[1] === 'product' && (three[3] === 'a' || three[3] === 'b')) return { kind: 'product', slug: three[2], slot: three[3] };
+    if (three[1] === 'shop' && (three[3] === 'logo' || three[3] === 'banner')) return { kind: 'shop', slug: three[2], slot: three[3] };
+    return null;
+  }
+  const two = /^(category|collection|banner)\/([a-z0-9-]+)$/.exec(key);
+  return two ? { kind: two[1] as 'category' | 'collection' | 'banner', slug: two[2], slot: 'main' } : null;
 }
 
 /* URL gốc để tải ảnh của một mục manifest (Commons: `src`; Pexels: CDN đã cắt khung). */
@@ -83,4 +94,33 @@ export function imageUrl(item: RealImage, key: string): string {
 /* Ảnh Pexels đã được Pexels cắt đúng khung; ảnh Commons giữ tỉ lệ gốc nên Cloudinary phải cắt (fill, tự nhận chủ thể). */
 export function needsCrop(item: RealImage): boolean {
   return Boolean(item.src);
+}
+
+/*
+ * Sản phẩm mà ảnh ĐÃ LÀ ẢNH THẬT (chọn tay từ Pexels, liệt kê trong assets/NGUON-ANH.md) — KHÔNG bao giờ bị thay. Cần danh sách riêng vì ảnh thật của
+ * nhóm này vẫn được tải lên Cloudinary với public_id `ecofashion/seed/...` (giống ảnh mẫu) nên `isSampleImage` một mình không phân biệt được.
+ */
+export function alreadyRealProductSlugs(file = path.join(path.dirname(REAL_MANIFEST), 'NGUON-ANH.md')): Set<string> {
+  try {
+    return new Set([...fs.readFileSync(file, 'utf8').matchAll(/`product\/([a-z0-9-]+)\//g)].map((m) => m[1]));
+  } catch {
+    return new Set();
+  }
+}
+
+/*
+ * Đường dẫn ảnh (không đuôi) đã là ảnh thật chọn tay trong NGUON-ANH.md, vd `catalog/categories/ao-thun`, `catalog/collections/nu`.
+ * Ngành hàng/bộ sưu tập/banner trỏ tới các ảnh này KHÔNG bị thay.
+ */
+export function alreadyRealAssetPaths(file = path.join(path.dirname(REAL_MANIFEST), 'NGUON-ANH.md')): Set<string> {
+  try {
+    return new Set([...fs.readFileSync(file, 'utf8').matchAll(/`((?:catalog\/categories|catalog\/collections|banners)\/[a-z0-9-]+)\./g)].map((m) => m[1]));
+  } catch {
+    return new Set();
+  }
+}
+
+/* public_id mẫu mà các hàng banner có thể mang cho khoá `banner/<slug>`: ảnh dải banner (`banners/<slug>`) hoặc ảnh bộ sưu tập dùng lại làm banner. */
+export function bannerSamplePaths(slug: string): string[] {
+  return [`banners/${slug}`, `catalog/collections/${slug}`];
 }

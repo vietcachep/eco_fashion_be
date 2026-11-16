@@ -16,7 +16,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { loadEnv } from '../../src/config/env';
 import { PrismaClient } from '../../src/generated/prisma/client';
-import { REAL_MANIFEST, REAL_PREFIX, cropFor, imageUrl, isSampleImage, needsCrop, parseKey, type RealManifest } from './lib/real-images';
+import { REAL_MANIFEST, REAL_PREFIX, alreadyRealAssetPaths, alreadyRealProductSlugs, bannerSamplePaths, cropFor, imageUrl, isSampleImage, needsCrop, parseKey, type RealManifest } from './lib/real-images';
 
 /* Wikimedia yêu cầu User-Agent mô tả rõ ứng dụng; tải về bằng fetch riêng rồi upload buffer (không nhờ Cloudinary tải để tránh bị chặn). */
 const UA = 'FitlySeedImageApplier/1.0 (student project; seed script)';
@@ -59,6 +59,8 @@ async function main(): Promise<number> {
   if (cloudOk) cloudinary.config({ cloud_name: env.EF_CLOUDINARY_CLOUD_NAME, api_key: env.EF_CLOUDINARY_API_KEY, api_secret: env.EF_CLOUDINARY_API_SECRET, secure: true });
 
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: env.EF_DATABASE_URL.replace('://localhost:', '://127.0.0.1:') }) });
+  const protectedReal = alreadyRealProductSlugs(); // sản phẩm đã có ảnh thật chọn tay — không đụng
+  const protectedAssets = alreadyRealAssetPaths(); // ngành hàng/bộ sưu tập/banner đã có ảnh thật chọn tay — không đụng
   let replaced = 0, kept = 0, missing = 0, failed = 0;
   try {
     console.log(`[ảnh thật] ${keys.length} ảnh trong manifest${dry ? ' (dry-run)' : ''}…`);
@@ -66,21 +68,42 @@ async function main(): Promise<number> {
       const parsed = parseKey(key);
       if (!parsed) { failed += 1; console.warn(`  ✗ khoá không hợp lệ: ${key}`); return; }
       const real = manifest.items[key];
+      if (parsed.kind === 'product' && protectedReal.has(parsed.slug)) { kept += 1; return; }
       try {
         // 1. Tìm bản ghi cần thay và kiểm tra còn là ảnh mẫu.
-        let target: { kind: 'img'; id: string } | { kind: 'shop'; id: string; field: 'logoUrl' | 'bannerUrl' } | null = null;
+        type Target = { kind: 'img'; id: string } | { kind: 'shop'; id: string; field: 'logoUrl' | 'bannerUrl' } | { kind: 'category'; id: string } | { kind: 'collection'; id: string } | { kind: 'banners'; ids: string[] };
+        let target!: Target; // mọi nhánh bên dưới hoặc gán hoặc return
         if (parsed.kind === 'product') {
           const product = await prisma.product.findFirst({ where: { slug: parsed.slug, isDeleted: false }, select: { id: true } });
           const img = product && (await prisma.productImage.findFirst({ where: { productId: product.id, sortOrder: parsed.slot === 'a' ? 0 : 1 }, select: { id: true, url: true, publicId: true } }));
           if (!img) { missing += 1; return; }
           if (!force && !isSampleImage(img.url, img.publicId)) { kept += 1; return; }
           target = { kind: 'img', id: img.id };
-        } else {
+        } else if (parsed.kind === 'shop') {
           const field = parsed.slot === 'logo' ? 'logoUrl' : 'bannerUrl';
           const shop = await prisma.shop.findFirst({ where: { slug: parsed.slug, isDeleted: false }, select: { id: true, logoUrl: true, bannerUrl: true } });
           if (!shop) { missing += 1; return; }
           if (!force && !isSampleImage(shop[field])) { kept += 1; return; }
           target = { kind: 'shop', id: shop.id, field };
+        } else if (parsed.kind === 'category' || parsed.kind === 'collection') {
+          if (protectedAssets.has(`catalog/${parsed.kind === 'category' ? 'categories' : 'collections'}/${parsed.slug}`)) { kept += 1; return; }
+          const row = parsed.kind === 'category'
+            ? await prisma.category.findFirst({ where: { slug: parsed.slug, isDeleted: false }, select: { id: true, imageUrl: true, imagePublicId: true } })
+            : await prisma.collection.findFirst({ where: { slug: parsed.slug, isDeleted: false }, select: { id: true, imageUrl: true, imagePublicId: true } });
+          if (!row) { missing += 1; return; }
+          if (!force && !isSampleImage(row.imageUrl, row.imagePublicId)) { kept += 1; return; }
+          target = { kind: parsed.kind, id: row.id };
+        } else {
+          // Banner: nhận diện theo public_id/URL ảnh mẫu (`banners/<slug>` hoặc `catalog/collections/<slug>`), bỏ ảnh đã là ảnh thật chọn tay.
+          const paths = bannerSamplePaths(parsed.slug).filter((x) => !protectedAssets.has(x));
+          const rows = await prisma.banner.findMany({
+            where: { isDeleted: false, OR: [{ imagePublicId: { in: paths.map((x) => `ecofashion/seed/${x}`) } }, ...paths.map((x) => ({ imageUrl: { contains: `/static/seed/${x}.jpg` } }))] },
+            select: { id: true, imageUrl: true, imagePublicId: true },
+          });
+          if (rows.length === 0) { missing += 1; return; }
+          const ids = rows.filter((r) => force || isSampleImage(r.imageUrl, r.imagePublicId)).map((r) => r.id);
+          if (ids.length === 0) { kept += 1; return; }
+          target = { kind: 'banners', ids };
         }
         if (dry) { replaced += 1; console.log(`  → ${key}  ←  ${real.page}`); return; }
         // 2. Pexels: Cloudinary tự tải từ CDN (đã cắt khung). Commons: tải bằng User-Agent riêng, upload buffer và cắt đúng khung.
@@ -96,7 +119,10 @@ async function main(): Promise<number> {
           : await cloudinary.uploader.upload(url, opts);
         // 3. Ghi DB sau khi upload thành công.
         if (target.kind === 'img') await prisma.productImage.update({ where: { id: target.id }, data: { url: up.secure_url, publicId } });
-        else await prisma.shop.update({ where: { id: target.id }, data: { [target.field]: up.secure_url } });
+        else if (target.kind === 'shop') await prisma.shop.update({ where: { id: target.id }, data: { [target.field]: up.secure_url } });
+        else if (target.kind === 'category') await prisma.category.update({ where: { id: target.id }, data: { imageUrl: up.secure_url, imagePublicId: publicId } });
+        else if (target.kind === 'collection') await prisma.collection.update({ where: { id: target.id }, data: { imageUrl: up.secure_url, imagePublicId: publicId } });
+        else await prisma.banner.updateMany({ where: { id: { in: target.ids } }, data: { imageUrl: up.secure_url, imagePublicId: publicId } });
         replaced += 1;
       } catch (e) {
         failed += 1;
