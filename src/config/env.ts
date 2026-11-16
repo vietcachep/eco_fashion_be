@@ -82,6 +82,7 @@ export const envSchema = z.object({
   EF_VISUAL_IMAGE_ORIGINS: z.string().default('https://res.cloudinary.com'),
   EF_VISUAL_CATALOG_BASE_URL: z.string().default(''),
   EF_VISUAL_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.65),
+  EF_VISUAL_RELATED_SIMILARITY: z.coerce.number().min(0).max(1).default(0.5),
   EF_VISUAL_RERANK: z.string().default('true').transform((v) => v.toLowerCase() === 'true'),
   EF_LIVEKIT_URL: z.string().default(''),
   EF_LIVEKIT_API_KEY: z.string().default(''),

@@ -53,6 +53,7 @@ function fixture() {
     EF_OPENAI_VISION_MODEL: 'test',
     EF_VISUAL_RERANK: true,
     EF_VISUAL_MIN_SIMILARITY: 0.65,
+    EF_VISUAL_RELATED_SIMILARITY: 0.5,
   } as Env;
   const service = new ImageSearchService(
     openai as unknown as OpenAiProvider,
@@ -115,6 +116,14 @@ describe('PLAN-0044 visual search', () => {
     expect(r.items).toHaveLength(1);
     expect(r.searchMode).toBe('visual');
     expect(r.message).toContain('chưa có bước');
+  });
+  it('vector giống vừa (giữa hai ngưỡng) trả về dạng related khi không rerank được', async () => {
+    const f = fixture();
+    f.hit.similarity = 0.55;
+    f.env.EF_VISUAL_RERANK = false;
+    const r = await f.service.search({}, file);
+    expect(r.items).toHaveLength(1);
+    expect(r.matches?.[0]).toMatchObject({ relevance: 'related' });
   });
   it('vector yếu không lấp đầy kết quả khi không rerank được', async () => {
     const f = fixture();
